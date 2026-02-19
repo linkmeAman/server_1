@@ -1,0 +1,26 @@
+
+pyenv/
+
+_pycache_/
+
+
+# Ignore all .env files
+.env
+
+# Ignore all .venv directories
+.venv/
+
+#zip files
+*.zip
+
+
+#cache files
+*.cache
+*.pyc*.pyo *.pyd__pycache__/ *.so
+__pycache__/
+
+
+
+#log files *.log # Ignore database files *.db
+*.db
+*.log

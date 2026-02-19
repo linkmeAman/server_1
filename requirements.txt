@@ -1,0 +1,29 @@
+# Dynamic Multi-Project API Requirements
+
+# FastAPI and server
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# ASGI server
+python-multipart==0.0.6
+
+# Environment variables
+python-dotenv==1.0.0
+
+# Database
+sqlalchemy==2.0.23
+pymysql==1.1.0
+aiomysql==0.2.0
+cryptography==41.0.7
+
+# Logging (already in Python standard library)
+# No additional packages needed for basic logging
+
+# HTTP Client
+httpx==0.25.1
+
+# Security
+pyseto==1.7.6
+bcrypt==4.1.3
