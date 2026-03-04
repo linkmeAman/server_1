@@ -3,8 +3,8 @@ Core settings and configuration management
 """
 import json
 import os
-from typing import List
-from pydantic import field_validator
+from typing import Any, Dict, List
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, EnvSettingsSource, PydanticBaseSettingsSource
 from dotenv import load_dotenv
 from pathlib import Path
@@ -97,6 +97,34 @@ class Settings(BaseSettings):
     ALLOW_PRIVATE_METHODS: bool = False
     MAX_CONTROLLER_NAME_LENGTH: int = 50
     MAX_FUNCTION_NAME_LENGTH: int = 50
+
+    # SQL Gateway
+    SQL_GATEWAY_ALLOWLIST: Dict[str, Any] = Field(
+        default_factory=dict,
+        alias="SQL_GATEWAY_ALLOWLIST_JSON",
+    )
+    SQL_GATEWAY_ALLOWLIST_SOURCE: str = "auto"
+    SQL_GATEWAY_ALLOWLIST_PATH: str = ""
+    SQL_GATEWAY_DB_ENGINE_MAP: Dict[str, str] = Field(
+        default_factory=lambda: {"STORE": "default", "CENTRAL": "central", "DEFAULT": "default"},
+        alias="SQL_GATEWAY_DB_ENGINE_MAP_JSON",
+    )
+    SQL_GATEWAY_ENABLE_TOTAL_COUNT: bool = True
+    SQL_GATEWAY_DEFAULT_LIMIT: int = 100
+    SQL_GATEWAY_MAX_LIMIT: int = 1000
+    SQL_GATEWAY_MAX_FILTERS: int = 25
+    SQL_GATEWAY_MAX_IN_LIST: int = 200
+    SQL_GATEWAY_MAX_COLUMNS: int = 50
+    SQL_GATEWAY_MAX_ORDER_BY: int = 5
+    SQL_GATEWAY_MAX_GROUP_BY: int = 10
+    SQL_GATEWAY_MAX_BULK_INSERT_ROWS: int = 500
+    SQL_GATEWAY_MAX_BODY_BYTES: int = 1048576
+    SQL_GATEWAY_MAX_WRITE_ROWS_DEFAULT: int = 100
+    SQL_GATEWAY_RATE_LIMIT_PER_MINUTE: int = 120
+    SQL_GATEWAY_STATEMENT_TIMEOUT_MS: int = 15000
+    SQL_GATEWAY_POLICY_CACHE_TTL_SECONDS: int = 60
+    SQL_GATEWAY_SCHEMA_CACHE_TTL_SECONDS: int = 600
+    SQLGW_ADMIN_REQUIRE_RBAC: bool = True
     
     class Config:
         env_file = ".env"
@@ -158,6 +186,46 @@ class Settings(BaseSettings):
             return [raw]
 
         return value
+
+    @field_validator("SQL_GATEWAY_ALLOWLIST", "SQL_GATEWAY_DB_ENGINE_MAP", mode="before")
+    @classmethod
+    def parse_gateway_json_env(cls, value, info: ValidationInfo):
+        """Parse JSON object env values safely for SQL gateway settings."""
+        if isinstance(value, dict):
+            return value
+
+        default_db_map = {"STORE": "default", "CENTRAL": "central", "DEFAULT": "default"}
+
+        if value is None:
+            if info.field_name == "SQL_GATEWAY_DB_ENGINE_MAP":
+                return default_db_map
+            return {}
+
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                if info.field_name == "SQL_GATEWAY_DB_ENGINE_MAP":
+                    return default_db_map
+                return {}
+            try:
+                parsed = json.loads(raw)
+            except Exception:
+                return {"__invalid__": "__invalid__"}
+            if isinstance(parsed, dict):
+                return parsed
+            return {"__invalid__": "__invalid__"}
+
+        return {"__invalid__": "__invalid__"}
+
+    @field_validator("SQL_GATEWAY_ALLOWLIST_SOURCE", mode="before")
+    @classmethod
+    def parse_allowlist_source(cls, value):
+        if value is None:
+            return "auto"
+        source = str(value).strip().lower()
+        if source not in {"auto", "env", "file", "db"}:
+            return "auto"
+        return source
 
 
 # Global settings instance

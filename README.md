@@ -19,7 +19,7 @@ This README is the current development skeleton for this repository.
 Request flow:
 
 1. `main.py` creates the FastAPI app, exception handlers, and middleware.
-2. `include_routers(app, "controllers")` auto-discovers explicit routers first.
+2. `app.include_router(api_router)` loads explicit routes from a central registry.
 3. `app.include_router(dynamic_router)` adds legacy dynamic fallback second.
 4. Middleware applies API key auth, logging, CORS, and optional rate limiting.
 
@@ -42,8 +42,10 @@ Routing precedence:
 │   ├── response.py               # Standard response models/helpers
 │   ├── exceptions.py             # Custom exception types
 │   └── database.py               # DB init + SQLAlchemy models (Venue, City)
+├── api/
+│   └── v1/router.py              # Central explicit router registry
 ├── loader/
-│   └── autodiscover.py           # Explicit APIRouter auto-discovery
+│   └── autodiscover.py           # Legacy/optional autodiscovery utility (not used in startup)
 ├── controllers/
 │   ├── example.py                # Legacy function-based controller
 │   ├── geosearch.py              # Legacy function-based controller
@@ -129,7 +131,7 @@ Health check:
 ### Explicit standard routes (preferred)
 
 - Implemented as modules exporting `router = APIRouter(...)`.
-- Auto-discovered recursively under `controllers` package.
+- Included centrally from `api/v1/router.py`.
 - Best location for new work: `controllers/api/<domain>.py`.
 
 Current explicit route examples:
@@ -140,6 +142,7 @@ Current explicit route examples:
 - `/api/example/*`
 - `/api/geosearch/*`
 - `/api/llm/*`
+- `/api/query/gateway`
 
 ### Legacy dynamic routes (kept for compatibility)
 
@@ -248,7 +251,7 @@ async def create_item(payload: CreateItemRequest):
     return {"success": True, "data": payload.model_dump()}
 ```
 
-No manual registration needed. `loader/autodiscover.py` will include it at startup.
+After creating the module, add it to `api/v1/router.py` so it is included at startup.
 
 ## 13) How To Wrap an Existing Legacy Controller
 
@@ -304,3 +307,52 @@ curl -H "X-API-Key: <key>" https://<host>/py/api/example/hello
 - `ROUTING_DUAL_MODE.md` for routing migration details.
 - `AUTHENTICATION.md` for auth endpoints, migration flow, and table usage.
 - `PROJECT_ANALYSIS.md` for historical analysis notes.
+
+## 19) SQL Gateway Endpoint
+
+New explicit endpoint:
+
+- `POST /api/query/gateway`
+
+Request requirements:
+
+- `Authorization: Bearer <access_token>`
+- JSON DSL with `operation` (`select|insert|update|delete`) and `table`
+- Server-side allowlist must be configured (`SQL_GATEWAY_ALLOWLIST_JSON`)
+
+Safety rules:
+
+- Single-table only
+- No raw SQL / no joins / no subqueries / no wildcard `*`
+- Identifier regex validation
+- Complexity caps (filters, columns, in-list, bulk rows, payload bytes)
+- Write pre-check cap for `update`/`delete` (best effort under concurrency)
+- `delete` is implemented as soft-delete (`park=1` by default), not physical row delete
+- Write ops stamp `created_by` / `updated_by` with token `sub` when those columns are allowlisted
+
+Unsupported in v1:
+
+- `distinct`
+- schema-qualified names
+- client-supplied SQL strings
+
+Policy source resolution order:
+
+1. `SQL_GATEWAY_ALLOWLIST_JSON` (env override)
+2. `SQL_GATEWAY_ALLOWLIST_PATH` (JSON file)
+3. active policy in CENTRAL DB (`sql_gateway_policy_versions`)
+4. if none found: fail closed (`503 SQLGW_CONFIG_INVALID`)
+
+## 20) Internal SQL Gateway Policy Manager
+
+Internal admin endpoints (RBAC required):
+
+- `GET /internal/sqlgw/schema/databases`
+- `GET /internal/sqlgw/schema/tables?db=STORE`
+- `GET /internal/sqlgw/schema/columns?db=STORE&table=venue`
+- `GET /internal/sqlgw/policies`
+- `GET /internal/sqlgw/policies/{policy_id}`
+- `POST /internal/sqlgw/policies`
+- `POST /internal/sqlgw/policies/{policy_id}/approve`
+- `POST /internal/sqlgw/policies/{policy_id}/activate`
+- `POST /internal/sqlgw/policies/{policy_id}/archive`

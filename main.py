@@ -19,7 +19,7 @@ from core.middleware import setup_middleware
 from core.response import error_response
 from core.exceptions import DynamicAPIException
 from core.database import init_database
-from loader.autodiscover import include_routers
+from api.v1.router import api_router
 
 
 class ConsecutiveDuplicateFilter(logging.Filter):
@@ -195,11 +195,7 @@ setup_middleware(app)
 
 # Include explicit APIRouter endpoints first.
 # Legacy dynamic routes remain enabled as fallback for old clients.
-# New endpoints must be implemented as APIRouter modules under controllers/.
-include_routers(app, "controllers")
-
-# Include legacy dynamic router after explicit routers.
-app.include_router(dynamic_router)
+app.include_router(api_router)
 
 
 # Root endpoint
@@ -208,6 +204,10 @@ async def root():
     """Root endpoint - redirects to health check"""
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/py/health")
+
+
+# Include legacy dynamic router after explicit routers.
+app.include_router(dynamic_router)
 
 
 # Development server runner

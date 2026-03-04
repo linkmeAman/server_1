@@ -1,5 +1,12 @@
 # Dual Routing Mode (Legacy + Standard FastAPI)
 
+## Current state reference
+
+For the live, code-synced route structure (registration order, explicit route inventory,
+dynamic fallback behavior, and shadowing notes), see:
+
+- `ROUTING_CURRENT_MAP.md`
+
 ## Why this change
 The app now supports two routing systems in parallel:
 
@@ -11,7 +18,7 @@ This allows gradual migration with no breaking changes.
 ## Routing order and precedence
 In `main.py`, router inclusion order is now:
 
-1. `include_routers(app, "controllers")` (new explicit routers)
+1. `app.include_router(api_router)` (central explicit router registry)
 2. `app.include_router(dynamic_router)` (legacy fallback)
 
 Because explicit routers are included first, if the same path exists in both systems, the explicit FastAPI route takes precedence.
@@ -35,16 +42,19 @@ New route modules should live under `controllers/` and expose:
 - `router = APIRouter(...)`
 - path operations via `@router.get`, `@router.post`, etc.
 
-These routers are discovered automatically by `loader/autodiscover.py`.
+These routers are now included through a central registry:
 
-## Auto-discovery behavior
-`include_routers(app: FastAPI, package: str = "controllers")`:
+- `api/v1/router.py`
 
-- Walks all modules and subpackages with `pkgutil.walk_packages`
-- Imports modules via `importlib.import_module`
-- Includes `module.router` when it is an `APIRouter` instance
-- Skips private modules (any name component starting with `_`)
-- Logs import errors and continues (startup does not crash)
+## Central registry behavior
+`api/v1/router.py` includes explicit routers in a fixed order:
+
+1. `controllers.api.auth` (root auth paths)
+2. `controllers.api.example`, `controllers.api.geosearch`, `controllers.api.llm`, `controllers.api.query_gateway`
+3. `controllers.internal.sqlgw_admin` (RBAC-protected internal policy/schema APIs)
+4. `controllers.orders`
+
+This makes route registration deterministic and avoids implicit startup scanning.
 
 ## Example new-style controller
 `controllers/orders.py` provides:
@@ -80,6 +90,22 @@ explicit routes now exist under `/api/...`:
   - `POST /api/llm/chat`
   - `POST /api/llm/complete`
   - `POST /api/llm/conversation`
+
+- Query gateway (`controllers/api/query_gateway.py`)
+  - `POST /api/query/gateway`
+  - Requires `Authorization: Bearer <access_token>`
+  - Uses structured JSON DSL (`select|insert|update|delete`) with allowlist enforcement
+
+- Internal SQL Gateway policy manager (`controllers/internal/sqlgw_admin.py`)
+  - `GET /internal/sqlgw/schema/databases`
+  - `GET /internal/sqlgw/schema/tables`
+  - `GET /internal/sqlgw/schema/columns`
+  - `GET /internal/sqlgw/policies`
+  - `GET /internal/sqlgw/policies/{policy_id}`
+  - `POST /internal/sqlgw/policies`
+  - `POST /internal/sqlgw/policies/{policy_id}/approve`
+  - `POST /internal/sqlgw/policies/{policy_id}/activate`
+  - `POST /internal/sqlgw/policies/{policy_id}/archive`
 
 ## Developer guidance
 - Keep legacy endpoints in their current function-based modules for backward compatibility.

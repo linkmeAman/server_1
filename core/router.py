@@ -4,18 +4,15 @@ Handles URL patterns like /py/{controller}/{function}/{id?} and dispatches to ap
 """
 import time
 import logging
-import sys
 from typing import Optional, Dict, Any
-from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
 
 from .loader import call_function, get_controller_functions
 from .response import success_response, error_response, APIResponse
 from .exceptions import (
     DynamicAPIException,
-    dynamic_api_exception_handler
 )
-from .settings import get_settings
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -80,38 +77,6 @@ async def get_request_data(request: Request) -> tuple[Optional[Dict], Optional[D
             logger.warning(f"Could not parse request body: {e}")
     
     return query_params, body_data
-
-
-@dynamic_router.api_route("/{controller}/{function}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
-async def dispatch_without_id(
-    controller: str,
-    function: str,
-    request: Request
-):
-    """
-    Handle requests without ID parameter
-    Examples: 
-    - GET /py/geosearch/cities
-    - POST /py/geosearch/search
-    """
-    return await _dispatch_request(controller, function, None, request)
-
-
-@dynamic_router.api_route("/{controller}/{function}/{item_id}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
-async def dispatch_with_id(
-    controller: str,
-    function: str, 
-    item_id: str,
-    request: Request
-):
-    """
-    Handle requests with ID parameter
-    Examples:
-    - GET /py/geosearch/venue/123
-    - PUT /py/geosearch/venue/123
-    - DELETE /py/geosearch/venue/123
-    """
-    return await _dispatch_request(controller, function, item_id, request)
 
 
 async def _dispatch_request(
@@ -257,6 +222,38 @@ async def list_controller_functions(controller_name: str):
             error="FunctionListError", 
             message=f"Could not list functions for controller {controller_name}"
         )
+
+
+@dynamic_router.api_route("/{controller}/{function}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def dispatch_without_id(
+    controller: str,
+    function: str,
+    request: Request
+):
+    """
+    Handle requests without ID parameter
+    Examples: 
+    - GET /py/geosearch/cities
+    - POST /py/geosearch/search
+    """
+    return await _dispatch_request(controller, function, None, request)
+
+
+@dynamic_router.api_route("/{controller}/{function}/{item_id}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def dispatch_with_id(
+    controller: str,
+    function: str, 
+    item_id: str,
+    request: Request
+):
+    """
+    Handle requests with ID parameter
+    Examples:
+    - GET /py/geosearch/venue/123
+    - PUT /py/geosearch/venue/123
+    - DELETE /py/geosearch/venue/123
+    """
+    return await _dispatch_request(controller, function, item_id, request)
 
 
 # Create alias for the main router export

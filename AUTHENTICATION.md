@@ -287,3 +287,24 @@ Typical responses:
 - Add token revocation history table if multi-device refresh is needed.
 - Add optional support for `mpin` during migration if required by business rules.
 
+## 14) SQL Gateway Route Protection
+
+The SQL gateway route is explicitly protected by access token validation:
+
+- `POST /api/query/gateway`
+- Required header: `Authorization: Bearer <access_token>`
+- Validation checks: token signature, expiry, and `typ=access`
+
+Notes:
+
+- This protection is route-specific in v1 (not a global auth rollout).
+- API key middleware behavior remains unchanged and still depends on `API_KEY_ENABLED`.
+
+## 15) Internal SQLGW Admin Endpoints
+
+Internal policy/schema routes under `/internal/sqlgw/*` also require access tokens.
+
+RBAC checks:
+
+- Admin endpoints: `is_admin=true` OR role `sqlgw_admin`
+- Approver actions (`approve` / `activate` / `archive`): admin OR role `sqlgw_approver`

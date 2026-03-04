@@ -175,7 +175,10 @@ def init_database() -> bool:
             _create_auth_sidecar_table(central_engine)
 
         engine = main_engine
-        engines = {"default": main_engine}
+        # Mutate the shared engines map in place so modules importing
+        # `engines` keep seeing the current connections.
+        engines.clear()
+        engines["default"] = main_engine
         if central_engine is not None:
             engines["central"] = central_engine
 
