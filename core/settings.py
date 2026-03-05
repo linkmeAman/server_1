@@ -88,6 +88,39 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 15))
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", 7))
     RESET_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("RESET_TOKEN_EXPIRE_MINUTES", 30))
+
+    # Google Calendar V1
+    GOOGLE_CALENDAR_API_BASE_URL: str = os.getenv(
+        "GOOGLE_CALENDAR_API_BASE_URL",
+        "https://www.googleapis.com/calendar/v3",
+    )
+    GOOGLE_CALENDAR_TIMEOUT_SECONDS: int = int(
+        os.getenv("GOOGLE_CALENDAR_TIMEOUT_SECONDS", 20)
+    )
+    GOOGLE_CALENDAR_COMPARE_TIMEZONE: str = os.getenv(
+        "GOOGLE_CALENDAR_COMPARE_TIMEZONE",
+        "Asia/Kolkata",
+    )
+    GOOGLE_CALENDAR_ID: str = os.getenv("GOOGLE_CALENDAR_ID", "")
+    GOOGLE_DRIVE_TOKEN_ID: int = int(os.getenv("GOOGLE_DRIVE_TOKEN_ID", 2))
+    GOOGLE_OAUTH_TOKEN_URL: str = os.getenv(
+        "GOOGLE_OAUTH_TOKEN_URL",
+        "https://oauth2.googleapis.com/token",
+    )
+    GOOGLE_TOKEN_REFRESH_SKEW_SECONDS: int = int(
+        os.getenv("GOOGLE_TOKEN_REFRESH_SKEW_SECONDS", 120)
+    )
+
+    # Employee Events V1
+    EMP_EVENT_APPROVED_STATUS: int = int(os.getenv("EMP_EVENT_APPROVED_STATUS", 1))
+    EMP_EVENT_PARKED_VALUE: int = int(os.getenv("EMP_EVENT_PARKED_VALUE", 1))
+    EMP_EVENT_TIMEZONE: str = os.getenv("EMP_EVENT_TIMEZONE", "Asia/Kolkata")
+    EMP_EVENT_ENABLE_GOOGLE_SYNC: bool = os.getenv("EMP_EVENT_ENABLE_GOOGLE_SYNC", "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     
     # Logging
     LOG_LEVEL: str = "INFO"

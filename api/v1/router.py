@@ -7,6 +7,8 @@ from controllers.api.example import router as example_router
 from controllers.api.geosearch import router as geosearch_router
 from controllers.api.llm import router as llm_router
 from controllers.api.query_gateway import router as query_gateway_router
+from controllers.employee_events_v1 import router as employee_events_v1_router
+from controllers.google_calendar_v1 import router as google_calendar_v1_router
 from controllers.internal.sqlgw_admin import router as sqlgw_admin_router
 from controllers.orders import router as orders_router
 
@@ -20,6 +22,8 @@ api_router.include_router(example_router)
 api_router.include_router(geosearch_router)
 api_router.include_router(llm_router)
 api_router.include_router(query_gateway_router)
+api_router.include_router(employee_events_v1_router)
+api_router.include_router(google_calendar_v1_router)
 api_router.include_router(sqlgw_admin_router)
 
 # 3) Orders explicit routes
