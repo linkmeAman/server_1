@@ -1,0 +1,45 @@
+resources:
+  - code: global
+    name: Global
+    parent: null
+    sort_order: 10
+  - code: boards
+    name: Boards
+    parent: null
+    sort_order: 20
+  - code: boards.lead_board
+    name: Lead Board
+    parent: boards
+    sort_order: 10
+  - code: reports
+    name: Reports
+    parent: null
+    sort_order: 30
+  - code: reports.top_summary
+    name: Top Summary
+    parent: reports
+    sort_order: 10
+  - code: reports.source_breakdown
+    name: Source Breakdown
+    parent: reports
+    sort_order: 20
+  - code: reports.center_performance
+    name: Center Performance
+    parent: reports
+    sort_order: 30
+  - code: reports.funnel_stage_tracking
+    name: Funnel Stage Tracking
+    parent: reports
+    sort_order: 40
+  - code: reports.campaign_performance
+    name: Campaign Performance
+    parent: reports
+    sort_order: 50
+  - code: reports.heard_from_performance
+    name: Heard From Performance
+    parent: reports
+    sort_order: 60
+  - code: reports.event_calendar
+    name: Event Calendar
+    parent: reports
+    sort_order: 70

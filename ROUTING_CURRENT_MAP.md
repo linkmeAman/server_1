@@ -1,6 +1,6 @@
 # Current Routing Map
 
-Last synced: March 4, 2026
+Last synced: March 9, 2026
 
 This document reflects the routing behavior currently implemented in code.
 
@@ -20,6 +20,7 @@ Explicit routes are registered centrally in `api/v1/router.py` using direct impo
 Current included explicit routers:
 
 - `controllers.api.auth`
+- `controllers.auth_v2` (conditional when `AUTH_V2_ENABLED=True`)
 - `controllers.api.example`
 - `controllers.api.geosearch`
 - `controllers.api.llm`
@@ -60,33 +61,36 @@ Route matching follows registration order. Current table:
 25. `POST /api/llm/conversation`
 26. `POST /api/query/gateway`
 27. `GET /api/employee-events/v1/employees/realtime-data`
-28. `GET /api/employee-events/v1/events`
-29. `POST /api/employee-events/v1/events/check-conflict`
-30. `POST /api/employee-events/v1/events`
-31. `PUT /api/employee-events/v1/events/{event_id}`
-32. `PATCH /api/employee-events/v1/events/{event_id}/park`
-33. `POST /api/employee-events/v1/events/{event_id}/approve`
-34. `POST /api/google-calendar/v1/events`
-35. `PUT /api/google-calendar/v1/events/{event_id}`
-36. `DELETE /api/google-calendar/v1/events/{event_id}`
-37. `GET /internal/sqlgw/schema/databases`
-38. `GET /internal/sqlgw/schema/tables`
-39. `GET /internal/sqlgw/schema/columns`
-40. `GET /internal/sqlgw/policies`
-41. `GET /internal/sqlgw/policies/{policy_id}`
-42. `POST /internal/sqlgw/policies`
-43. `POST /internal/sqlgw/policies/{policy_id}/approve`
-44. `POST /internal/sqlgw/policies/{policy_id}/activate`
-45. `POST /internal/sqlgw/policies/{policy_id}/archive`
-46. `GET /orders/list`
-47. `GET /orders/get/{id}`
-48. `POST /orders/create`
-49. `GET /`
-50. `GET /health`
-51. `GET /controllers`
-52. `GET /controllers/{controller_name}/functions`
-53. `GET|POST|PUT|PATCH|DELETE /{controller}/{function}`
-54. `GET|POST|PUT|PATCH|DELETE /{controller}/{function}/{item_id}`
+28. `GET /api/employee-events/v1/calendar/events`
+29. `POST /api/employee-events/v1/employees/workshift-calendar/query`
+30. `POST /api/employee-events/v1/employees/leave-calendar/query`
+31. `GET /api/employee-events/v1/events`
+32. `POST /api/employee-events/v1/events/check-conflict`
+33. `POST /api/employee-events/v1/events`
+34. `PUT /api/employee-events/v1/events/{event_id}`
+35. `PATCH /api/employee-events/v1/events/{event_id}/park`
+36. `POST /api/employee-events/v1/events/{event_id}/approve`
+37. `POST /api/google-calendar/v1/events`
+38. `PUT /api/google-calendar/v1/events/{event_id}`
+39. `DELETE /api/google-calendar/v1/events/{event_id}`
+40. `GET /internal/sqlgw/schema/databases`
+41. `GET /internal/sqlgw/schema/tables`
+42. `GET /internal/sqlgw/schema/columns`
+43. `GET /internal/sqlgw/policies`
+44. `GET /internal/sqlgw/policies/{policy_id}`
+45. `POST /internal/sqlgw/policies`
+46. `POST /internal/sqlgw/policies/{policy_id}/approve`
+47. `POST /internal/sqlgw/policies/{policy_id}/activate`
+48. `POST /internal/sqlgw/policies/{policy_id}/archive`
+49. `GET /orders/list`
+50. `GET /orders/get/{id}`
+51. `POST /orders/create`
+52. `GET /`
+53. `GET /health`
+54. `GET /controllers`
+55. `GET /controllers/{controller_name}/functions`
+56. `GET|POST|PUT|PATCH|DELETE /{controller}/{function}`
+57. `GET|POST|PUT|PATCH|DELETE /{controller}/{function}/{item_id}`
 
 ## 4) Explicit Routes by Source Module
 
@@ -130,6 +134,9 @@ Route matching follows registration order. Current table:
 ### `controllers/employee_events_v1/router.py`
 
 - `GET /api/employee-events/v1/employees/realtime-data`
+- `GET /api/employee-events/v1/calendar/events`
+- `POST /api/employee-events/v1/employees/workshift-calendar/query`
+- `POST /api/employee-events/v1/employees/leave-calendar/query`
 - `GET /api/employee-events/v1/events`
 - `POST /api/employee-events/v1/events/check-conflict`
 - `POST /api/employee-events/v1/events`

@@ -88,6 +88,40 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
         self.assertEqual(401, response.status_code)
         self.assertEqual("EMP_EVENT_UNAUTHORIZED", response.json()["error"])
 
+    def test_trainer_calendar_events_missing_app_token_returns_401(self):
+        response = self.client.get(
+            "/api/employee-events/v1/calendar/events?contact_id=10",
+            headers={**_middleware_headers()},
+        )
+        self.assertEqual(401, response.status_code)
+        self.assertEqual("EMP_EVENT_UNAUTHORIZED", response.json()["error"])
+
+    def test_workshift_calendar_query_missing_app_token_returns_401(self):
+        response = self.client.post(
+            "/api/employee-events/v1/employees/workshift-calendar/query",
+            headers={**_middleware_headers()},
+            json={
+                "employee_ids": [1, 2],
+                "from_date": "2026-03-01",
+                "to_date": "2026-03-31",
+            },
+        )
+        self.assertEqual(401, response.status_code)
+        self.assertEqual("EMP_EVENT_UNAUTHORIZED", response.json()["error"])
+
+    def test_leave_calendar_query_missing_app_token_returns_401(self):
+        response = self.client.post(
+            "/api/employee-events/v1/employees/leave-calendar/query",
+            headers={**_middleware_headers()},
+            json={
+                "employee_ids": [1, 2],
+                "from_date": "2026-03-01",
+                "to_date": "2026-03-31",
+            },
+        )
+        self.assertEqual(401, response.status_code)
+        self.assertEqual("EMP_EVENT_UNAUTHORIZED", response.json()["error"])
+
     def test_list_missing_app_token_returns_401(self):
         response = self.client.get(
             "/api/employee-events/v1/events",
@@ -96,10 +130,177 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
         self.assertEqual(401, response.status_code)
         self.assertEqual("EMP_EVENT_UNAUTHORIZED", response.json()["error"])
 
+    def test_workshift_calendar_query_invalid_json_returns_400(self):
+        with patch(
+            "controllers.employee_events_v1.dependencies.validate_token",
+            return_value={"sub": "100", "typ": "access"},
+        ):
+            response = self.client.post(
+                "/api/employee-events/v1/employees/workshift-calendar/query",
+                headers={
+                    **_middleware_headers(),
+                    "Authorization": "Bearer ok",
+                    "Content-Type": "application/json",
+                },
+                data="{not-json",
+            )
+
+        self.assertEqual(400, response.status_code)
+        body = response.json()
+        self.assertEqual("EMP_EVENT_INVALID_WORKSHIFT_QUERY", body["error"])
+
+    def test_workshift_calendar_query_invalid_payload_returns_400(self):
+        cases = [
+            [],
+            {"employee_ids": [], "from_date": "2026-03-01", "to_date": "2026-03-31"},
+            {"employee_ids": ["x"], "from_date": "2026-03-01", "to_date": "2026-03-31"},
+            {"employee_ids": [1], "from_date": "03-01-2026", "to_date": "2026-03-31"},
+            {"employee_ids": [1], "from_date": "2026-03-31", "to_date": "2026-03-01"},
+            {"employee_ids": [1], "from_date": "2026-01-01", "to_date": "2026-03-31"},
+            {
+                "employee_ids": list(range(1, 27)),
+                "from_date": "2026-03-01",
+                "to_date": "2026-03-31",
+            },
+        ]
+
+        with patch(
+            "controllers.employee_events_v1.dependencies.validate_token",
+            return_value={"sub": "100", "typ": "access"},
+        ):
+            for payload in cases:
+                with self.subTest(payload=payload):
+                    response = self.client.post(
+                        "/api/employee-events/v1/employees/workshift-calendar/query",
+                        headers={
+                            **_middleware_headers(),
+                            "Authorization": "Bearer ok",
+                        },
+                        json=payload,
+                    )
+                    self.assertEqual(400, response.status_code)
+                    self.assertEqual(
+                        "EMP_EVENT_INVALID_WORKSHIFT_QUERY",
+                        response.json()["error"],
+                    )
+
+    def test_leave_calendar_query_invalid_json_returns_400(self):
+        with patch(
+            "controllers.employee_events_v1.dependencies.validate_token",
+            return_value={"sub": "100", "typ": "access"},
+        ):
+            response = self.client.post(
+                "/api/employee-events/v1/employees/leave-calendar/query",
+                headers={
+                    **_middleware_headers(),
+                    "Authorization": "Bearer ok",
+                    "Content-Type": "application/json",
+                },
+                data="{not-json",
+            )
+
+        self.assertEqual(400, response.status_code)
+        body = response.json()
+        self.assertEqual("EMP_EVENT_INVALID_LEAVE_QUERY", body["error"])
+
+    def test_leave_calendar_query_invalid_payload_returns_400(self):
+        cases = [
+            [],
+            {"employee_ids": [1], "from_date": "2026-03-01"},
+            {
+                "employee_ids": [1],
+                "from_date": "2026-03-01",
+                "to_date": "2026-03-31",
+                "statuses": "0",
+            },
+        ]
+
+        with patch(
+            "controllers.employee_events_v1.dependencies.validate_token",
+            return_value={"sub": "100", "typ": "access"},
+        ):
+            for payload in cases:
+                with self.subTest(payload=payload):
+                    response = self.client.post(
+                        "/api/employee-events/v1/employees/leave-calendar/query",
+                        headers={
+                            **_middleware_headers(),
+                            "Authorization": "Bearer ok",
+                        },
+                        json=payload,
+                    )
+                    self.assertEqual(400, response.status_code)
+                    self.assertEqual(
+                        "EMP_EVENT_INVALID_LEAVE_QUERY",
+                        response.json()["error"],
+                    )
+
+    def test_leave_calendar_query_semantic_failures_return_400(self):
+        cases = [
+            {"employee_ids": [], "from_date": "2026-03-01", "to_date": "2026-03-31"},
+            {
+                "employee_ids": list(range(1, 27)),
+                "from_date": "2026-03-01",
+                "to_date": "2026-03-31",
+            },
+            {"employee_ids": [1], "from_date": "03-01-2026", "to_date": "2026-03-31"},
+            {"employee_ids": [1], "from_date": "2026-03-31", "to_date": "2026-03-01"},
+            {"employee_ids": [1], "from_date": "2026-01-01", "to_date": "2026-03-31"},
+            {
+                "employee_ids": [1],
+                "from_date": "2026-03-01",
+                "to_date": "2026-03-31",
+                "statuses": [-1],
+            },
+            {
+                "employee_ids": [1],
+                "from_date": "2026-03-01",
+                "to_date": "2026-03-31",
+                "request_types": [0],
+            },
+            {
+                "employee_ids": [1],
+                "from_date": "2026-03-01",
+                "to_date": "2026-03-31",
+                "department_ids": [0],
+            },
+        ]
+
+        def _semantic_error(**kwargs):
+            raise EmployeeEventsError(
+                code="EMP_EVENT_INVALID_WORKSHIFT_QUERY",
+                message="invalid query",
+                status_code=400,
+                data={"kwargs": kwargs},
+            )
+
+        with patch(
+            "controllers.employee_events_v1.dependencies.validate_token",
+            return_value={"sub": "100", "typ": "access"},
+        ), patch(
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_employee_leave_calendar_batch",
+            new=MagicMock(side_effect=_semantic_error),
+        ):
+            for payload in cases:
+                with self.subTest(payload=payload):
+                    response = self.client.post(
+                        "/api/employee-events/v1/employees/leave-calendar/query",
+                        headers={
+                            **_middleware_headers(),
+                            "Authorization": "Bearer ok",
+                        },
+                        json=payload,
+                    )
+                    self.assertEqual(400, response.status_code)
+                    self.assertEqual("EMP_EVENT_INVALID_LEAVE_QUERY", response.json()["error"])
+
     def test_invalid_app_token_returns_401(self):
         with patch(
             "controllers.employee_events_v1.dependencies.validate_token",
             side_effect=ValueError("expired"),
+        ), patch(
+            "controllers.employee_events_v1.dependencies.verify_v2_access_token",
+            side_effect=ValueError("invalid_v2"),
         ):
             response = self.client.post(
                 "/api/employee-events/v1/events/check-conflict",
@@ -115,14 +316,56 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
                 },
             )
         self.assertEqual(401, response.status_code)
-        self.assertEqual("EMP_EVENT_UNAUTHORIZED", response.json()["error"])
+        body = response.json()
+        self.assertEqual("EMP_EVENT_UNAUTHORIZED", body["error"])
+        self.assertIn("request_id", body["data"])
+        self.assertIn("details", body["data"])
+        self.assertEqual("expired", body["data"]["details"].get("legacy_reason"))
+        self.assertEqual("invalid_v2", body["data"]["details"].get("auth_v2_reason"))
+
+    def test_v2_access_token_is_accepted_when_legacy_validation_fails(self):
+        with patch(
+            "controllers.employee_events_v1.dependencies.validate_token",
+            side_effect=ValueError("legacy_rejected"),
+        ), patch(
+            "controllers.employee_events_v1.dependencies.verify_v2_access_token",
+            return_value={
+                "sub": "200",
+                "user_id": 200,
+                "contact_id": 10,
+                "employee_id": 99,
+                "roles": ["ops"],
+                "mobile": "9990001111",
+                "jti": "j",
+                "iat": 1,
+                "exp": 9999999999,
+                "iss": "issuer",
+                "aud": "aud",
+                "auth_ver": 2,
+                "typ": "access",
+            },
+        ), patch(
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.list_events",
+            new=MagicMock(return_value={"events": [], "count": 0}),
+        ) as mocked_list:
+            response = self.client.get(
+                "/api/employee-events/v1/events?from_date=2026-03-01&to_date=2026-03-31",
+                headers={
+                    **_middleware_headers(),
+                    "Authorization": "Bearer v2-token",
+                },
+            )
+
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(response.json()["success"])
+        mocked_list.assert_called_once()
 
     def test_conflict_check_success(self):
         with patch(
             "controllers.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.router.employee_events_service.check_conflict",
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.check_conflict",
             new=MagicMock(return_value={"conflict": False, "conflict_event_ids": []}),
         ) as mocked_check:
             response = self.client.post(
@@ -148,7 +391,7 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
             "controllers.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.router.employee_events_service.create_event",
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.create_event",
             new=MagicMock(return_value={"event_id": 55, "sync_status": "pending_approval"}),
         ) as mocked_create:
             response = self.client.post(
@@ -185,7 +428,7 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
             "controllers.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.router.employee_events_service.list_events",
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.list_events",
             new=MagicMock(
                 return_value={
                     "events": [
@@ -222,7 +465,7 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
             "controllers.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.router.employee_events_service.get_realtime_employee_data",
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_realtime_employee_data",
             new=MagicMock(
                 return_value={
                     "employees": [
@@ -256,12 +499,357 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
         self.assertEqual(1, body["data"]["branch_count"])
         mocked_realtime.assert_called_once()
 
+    def test_trainer_calendar_events_success(self):
+        response_data = {
+            "events": [
+                {
+                    "source": "employee_event",
+                    "source_event_id": "employee_55",
+                    "title": "Meeting",
+                    "start": "2026-03-10 10:00:00",
+                    "end": "2026-03-10 11:00:00",
+                    "is_read_only": False,
+                    "raw": {"id": 55, "category": "Meeting"},
+                },
+                {
+                    "source": "trainer_batch",
+                    "source_event_id": "trainer_123",
+                    "title": "Offline B87",
+                    "start": "2026-03-10 12:00:00",
+                    "end": "2026-03-10 13:30:00",
+                    "is_read_only": True,
+                    "raw": {"id": 123, "batch_name": "Offline B87"},
+                },
+            ],
+            "total_count": 2,
+        }
+
+        with patch(
+            "controllers.employee_events_v1.dependencies.validate_token",
+            return_value={"sub": "100", "typ": "access"},
+        ), patch(
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_trainer_calendar_events",
+            new=MagicMock(return_value=response_data),
+        ) as mocked_list:
+            response = self.client.get(
+                "/api/employee-events/v1/calendar/events"
+                "?contact_id=10&from_date=2026-03-01&to_date=2026-03-31",
+                headers={
+                    **_middleware_headers(),
+                    "Authorization": "Bearer ok",
+                },
+            )
+
+        self.assertEqual(200, response.status_code)
+        body = response.json()
+        self.assertTrue(body["success"])
+        self.assertEqual("Calendar events fetched successfully", body["message"])
+        self.assertEqual(2, body["data"]["total_count"])
+        self.assertEqual("employee_event", body["data"]["events"][0]["source"])
+        self.assertEqual("trainer_batch", body["data"]["events"][1]["source"])
+        mocked_list.assert_called_once_with(
+            contact_id=10,
+            from_date="2026-03-01",
+            to_date="2026-03-31",
+        )
+
+    def test_trainer_calendar_events_invalid_date_returns_400(self):
+        with patch(
+            "controllers.employee_events_v1.dependencies.validate_token",
+            return_value={"sub": "100", "typ": "access"},
+        ), patch(
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_trainer_calendar_events",
+            new=MagicMock(
+                side_effect=EmployeeEventsError(
+                    code="EMP_EVENT_INVALID_CALENDAR_QUERY",
+                    message="from_date must be in YYYY-MM-DD format",
+                    status_code=400,
+                )
+            ),
+        ):
+            response = self.client.get(
+                "/api/employee-events/v1/calendar/events?contact_id=10&from_date=03-01-2026",
+                headers={
+                    **_middleware_headers(),
+                    "Authorization": "Bearer ok",
+                },
+            )
+
+        self.assertEqual(400, response.status_code)
+        self.assertEqual("EMP_EVENT_INVALID_CALENDAR_QUERY", response.json()["error"])
+
+    def test_trainer_calendar_events_invalid_range_returns_400(self):
+        with patch(
+            "controllers.employee_events_v1.dependencies.validate_token",
+            return_value={"sub": "100", "typ": "access"},
+        ), patch(
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_trainer_calendar_events",
+            new=MagicMock(
+                side_effect=EmployeeEventsError(
+                    code="EMP_EVENT_INVALID_CALENDAR_QUERY",
+                    message="from_date must be less than or equal to to_date",
+                    status_code=400,
+                )
+            ),
+        ):
+            response = self.client.get(
+                "/api/employee-events/v1/calendar/events"
+                "?contact_id=10&from_date=2026-03-31&to_date=2026-03-01",
+                headers={
+                    **_middleware_headers(),
+                    "Authorization": "Bearer ok",
+                },
+            )
+
+        self.assertEqual(400, response.status_code)
+        self.assertEqual("EMP_EVENT_INVALID_CALENDAR_QUERY", response.json()["error"])
+
+    def test_trainer_calendar_events_service_error_passthrough(self):
+        with patch(
+            "controllers.employee_events_v1.dependencies.validate_token",
+            return_value={"sub": "100", "typ": "access"},
+        ), patch(
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_trainer_calendar_events",
+            new=MagicMock(
+                side_effect=EmployeeEventsError(
+                    code="EMP_EVENT_CALENDAR_QUERY_FAILED",
+                    message="Could not fetch trainer calendar events",
+                    status_code=500,
+                )
+            ),
+        ):
+            response = self.client.get(
+                "/api/employee-events/v1/calendar/events?contact_id=10",
+                headers={
+                    **_middleware_headers(),
+                    "Authorization": "Bearer ok",
+                },
+            )
+
+        self.assertEqual(500, response.status_code)
+        self.assertEqual("EMP_EVENT_CALENDAR_QUERY_FAILED", response.json()["error"])
+
+    def test_workshift_calendar_query_success(self):
+        response_data = {
+            "timezone": "Asia/Kolkata",
+            "from_date": "2026-03-01",
+            "to_date": "2026-03-31",
+            "range_day_count": 31,
+            "employee_count": 2,
+            "matched_count": 1,
+            "employees": [
+                {
+                    "employee_id": 1,
+                    "employee_name": "Sneha Trainer",
+                    "result_status": "configured",
+                    "warnings": [],
+                    "workshift": {
+                        "workshift_id": 9,
+                        "workshift_in_time": "10:00:00",
+                        "workshift_out_time": "19:00:00",
+                        "week_off_code": "0,6",
+                        "week_off_days": [0, 6],
+                        "is_configured": True,
+                        "configuration_issues": [],
+                    },
+                    "calendar_days": [],
+                    "day_count": 31,
+                },
+                {
+                    "employee_id": 2,
+                    "employee_name": None,
+                    "result_status": "not_found",
+                    "warnings": [],
+                    "workshift": None,
+                    "calendar_days": [],
+                    "day_count": 0,
+                },
+            ],
+        }
+
+        with patch(
+            "controllers.employee_events_v1.dependencies.validate_token",
+            return_value={"sub": "100", "typ": "access"},
+        ), patch(
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_employee_workshift_calendar_batch",
+            new=MagicMock(return_value=response_data),
+        ) as mocked_query:
+            response = self.client.post(
+                "/api/employee-events/v1/employees/workshift-calendar/query",
+                headers={
+                    **_middleware_headers(),
+                    "Authorization": "Bearer ok",
+                },
+                json={
+                    "employee_ids": [1, 2],
+                    "from_date": "2026-03-01",
+                    "to_date": "2026-03-31",
+                },
+            )
+
+        self.assertEqual(200, response.status_code)
+        body = response.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(2, body["data"]["employee_count"])
+        self.assertEqual("configured", body["data"]["employees"][0]["result_status"])
+        mocked_query.assert_called_once_with(
+            employee_ids=[1, 2],
+            from_date="2026-03-01",
+            to_date="2026-03-31",
+        )
+
+    def test_workshift_calendar_query_service_error_passthrough(self):
+        with patch(
+            "controllers.employee_events_v1.dependencies.validate_token",
+            return_value={"sub": "100", "typ": "access"},
+        ), patch(
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_employee_workshift_calendar_batch",
+            new=MagicMock(
+                side_effect=EmployeeEventsError(
+                    code="EMP_EVENT_SERVICE_MISCONFIGURED",
+                    message="EMP_EVENT_TIMEZONE is invalid",
+                    status_code=500,
+                )
+            ),
+        ):
+            response = self.client.post(
+                "/api/employee-events/v1/employees/workshift-calendar/query",
+                headers={
+                    **_middleware_headers(),
+                    "Authorization": "Bearer ok",
+                },
+                json={
+                    "employee_ids": [1],
+                    "from_date": "2026-03-01",
+                    "to_date": "2026-03-31",
+                },
+            )
+
+        self.assertEqual(500, response.status_code)
+        self.assertEqual("EMP_EVENT_SERVICE_MISCONFIGURED", response.json()["error"])
+
+    def test_leave_calendar_query_success(self):
+        response_data = {
+            "timezone": "Asia/Kolkata",
+            "from_date": "2026-03-01",
+            "to_date": "2026-03-03",
+            "range_day_count": 3,
+            "employee_count": 2,
+            "matched_count": 1,
+            "filters_applied": {
+                "statuses": [0, 1],
+                "request_types": [1, 3],
+                "department_ids": [9],
+            },
+            "employees": [
+                {
+                    "employee_id": 1,
+                    "employee_name": "Sneha Trainer",
+                    "result_status": "has_events",
+                    "warnings": [],
+                    "leave_events": [
+                        {
+                            "leave_request_id": 88,
+                            "employee_id": 1,
+                            "employee_name": "Sneha Trainer",
+                            "department_id": 9,
+                            "start": "2026-03-01T09:00:00+05:30",
+                            "end": "2026-03-01T17:00:00+05:30",
+                            "status": 1,
+                            "status_label": "Approved",
+                            "request_type": 1,
+                            "request_type_name": "Leave",
+                            "title": "Leave",
+                            "color": "#EF4865",
+                            "allDay": False,
+                            "module_id": 80,
+                        }
+                    ],
+                    "leave_event_count": 1,
+                },
+                {
+                    "employee_id": 2,
+                    "employee_name": None,
+                    "result_status": "not_found",
+                    "warnings": [],
+                    "leave_events": [],
+                    "leave_event_count": 0,
+                },
+            ],
+        }
+        with patch(
+            "controllers.employee_events_v1.dependencies.validate_token",
+            return_value={"sub": "100", "typ": "access"},
+        ), patch(
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_employee_leave_calendar_batch",
+            new=MagicMock(return_value=response_data),
+        ) as mocked_query:
+            response = self.client.post(
+                "/api/employee-events/v1/employees/leave-calendar/query",
+                headers={
+                    **_middleware_headers(),
+                    "Authorization": "Bearer ok",
+                },
+                json={
+                    "employee_ids": [1, 2],
+                    "from_date": "2026-03-01",
+                    "to_date": "2026-03-03",
+                    "statuses": [0, 1],
+                    "request_types": [1, 3],
+                    "department_ids": [9],
+                },
+            )
+
+        self.assertEqual(200, response.status_code)
+        body = response.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(2, body["data"]["employee_count"])
+        self.assertEqual(1, body["data"]["employees"][0]["leave_event_count"])
+        mocked_query.assert_called_once_with(
+            employee_ids=[1, 2],
+            from_date="2026-03-01",
+            to_date="2026-03-03",
+            statuses=[0, 1],
+            request_types=[1, 3],
+            department_ids=[9],
+        )
+
+    def test_leave_calendar_query_service_error_passthrough(self):
+        with patch(
+            "controllers.employee_events_v1.dependencies.validate_token",
+            return_value={"sub": "100", "typ": "access"},
+        ), patch(
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_employee_leave_calendar_batch",
+            new=MagicMock(
+                side_effect=EmployeeEventsError(
+                    code="EMP_EVENT_LEAVE_QUERY_FAILED",
+                    message="Could not fetch employee leave calendar",
+                    status_code=500,
+                )
+            ),
+        ):
+            response = self.client.post(
+                "/api/employee-events/v1/employees/leave-calendar/query",
+                headers={
+                    **_middleware_headers(),
+                    "Authorization": "Bearer ok",
+                },
+                json={
+                    "employee_ids": [1],
+                    "from_date": "2026-03-01",
+                    "to_date": "2026-03-31",
+                },
+            )
+
+        self.assertEqual(500, response.status_code)
+        self.assertEqual("EMP_EVENT_LEAVE_QUERY_FAILED", response.json()["error"])
+
     def test_approve_forwards_status(self):
         with patch(
             "controllers.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.router.employee_events_service.approve_event",
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.approve_event",
             new=AsyncMock(
                 return_value={
                     "event_id": 10,
@@ -291,7 +879,7 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
             "controllers.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.router.employee_events_service.park_event",
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.park_event",
             new=AsyncMock(
                 return_value={
                     "event_id": 10,
@@ -322,7 +910,7 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
             "controllers.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.router.employee_events_service.approve_event",
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.approve_event",
             new=AsyncMock(
                 side_effect=EmployeeEventsError(
                     code="EMP_EVENT_INVALID_STATE",

@@ -7,6 +7,12 @@ FastAPI service with dual routing support:
 
 This README is the current development skeleton for this repository.
 
+## Auth V2 Handover
+
+For current RBAC/auth v2 implementation status, migration impact, settings, troubleshooting, and resume checklist, see:
+
+- `AUTH_V2_HANDOVER.md`
+
 ## 1) Project Goals
 
 - Keep existing legacy clients fully compatible.

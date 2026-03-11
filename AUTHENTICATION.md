@@ -2,6 +2,14 @@
 
 This document explains the current authentication design, data flow, and API contracts for future development.
 
+## Auth V2 Note
+
+Parallel RBAC/auth v2 work is documented separately in:
+
+- `AUTH_V2_HANDOVER.md`
+
+This file remains focused on the legacy `/login` family behavior.
+
 ## 1) Core Intent
 
 - Keep legacy `user` table schema untouched.

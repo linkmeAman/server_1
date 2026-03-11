@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from controllers.auth_v2.services.token_service import verify_v2_access_token
 from core.security import validate_token
 
 
@@ -25,7 +26,12 @@ class EmployeeEventsError(Exception):
 
 
 def require_app_access_claims(authorization_header: Optional[str]) -> Dict[str, Any]:
-    """Validate app bearer access token and return claims."""
+    """Validate app bearer access token and return claims.
+
+    Supports both:
+    - legacy app access tokens from `/login`
+    - auth v2 access tokens from `/auth/v2/login-employee`
+    """
     if not authorization_header or not authorization_header.startswith("Bearer "):
         raise EmployeeEventsError(
             code="EMP_EVENT_UNAUTHORIZED",
@@ -41,11 +47,25 @@ def require_app_access_claims(authorization_header: Optional[str]) -> Dict[str, 
             status_code=401,
         )
 
+    legacy_error = None
     try:
-        return validate_token(token, expected_type="access")
+        claims = validate_token(token, expected_type="access")
+        claims["_auth_token_family"] = "legacy"
+        return claims
+    except Exception as exc:
+        legacy_error = str(exc)
+
+    try:
+        claims = verify_v2_access_token(token)
+        claims["_auth_token_family"] = "auth_v2"
+        return claims
     except Exception as exc:
         raise EmployeeEventsError(
             code="EMP_EVENT_UNAUTHORIZED",
             message="Invalid or expired app access token",
             status_code=401,
+            data={
+                "legacy_reason": legacy_error or "validation_failed",
+                "auth_v2_reason": str(exc),
+            },
         ) from exc

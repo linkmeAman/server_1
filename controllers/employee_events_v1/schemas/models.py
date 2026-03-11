@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -58,3 +58,18 @@ class ParkEmployeeEventRequest(BaseModel):
 
 class ApproveEmployeeEventRequest(BaseModel):
     status: Optional[int] = Field(default=None)
+
+
+class EmployeeWorkshiftCalendarBatchQueryRequest(BaseModel):
+    employee_ids: List[Any] = Field(...)
+    from_date: str = Field(..., min_length=8, max_length=20)
+    to_date: str = Field(..., min_length=8, max_length=20)
+
+
+class EmployeeLeaveCalendarBatchQueryRequest(BaseModel):
+    employee_ids: List[Any] = Field(...)
+    from_date: str = Field(..., min_length=8, max_length=20)
+    to_date: str = Field(..., min_length=8, max_length=20)
+    statuses: Optional[List[Any]] = Field(default=None)
+    request_types: Optional[List[Any]] = Field(default=None)
+    department_ids: Optional[List[Any]] = Field(default=None)

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 from core.database import engines
 
@@ -13,6 +14,62 @@ from ..dependencies import EmployeeEventsError
 
 class EmployeeEventsRepository:
     """DB operations for employee event and allowance tables."""
+
+    _SAFE_SQL_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+    @classmethod
+    def _safe_identifier(cls, value: str) -> str:
+        candidate = str(value or "").strip()
+        if not cls._SAFE_SQL_IDENTIFIER.match(candidate):
+            raise EmployeeEventsError(
+                code="EMP_EVENT_LEAVE_QUERY_FAILED",
+                message="Unsafe SQL identifier detected for leave query",
+                status_code=500,
+                data={"identifier": candidate},
+            )
+        return candidate
+
+    @staticmethod
+    def _first_matching_column(
+        available_columns: set[str],
+        candidates: List[str],
+    ) -> Optional[str]:
+        for name in candidates:
+            if name in available_columns:
+                return name
+        return None
+
+    def _get_table_columns(self, table_name: str) -> set[str]:
+        engine = self._get_main_engine()
+        normalized_table_name = self._safe_identifier(table_name)
+        columns: set[str] = set()
+
+        try:
+            inspector = inspect(engine)
+            for column in inspector.get_columns(normalized_table_name):
+                name = column.get("name")
+                if name:
+                    columns.add(str(name).strip())
+            if columns:
+                return columns
+        except Exception:
+            pass
+
+        with engine.connect() as conn:
+            try:
+                rows = conn.execute(
+                    text(
+                        f"SHOW COLUMNS FROM {normalized_table_name}"
+                    )
+                ).mappings().all()
+                for row in rows:
+                    name = row.get("Field")
+                    if name:
+                        columns.add(str(name).strip())
+            except Exception:
+                return set()
+
+        return columns
 
     @staticmethod
     def _get_main_engine():
@@ -377,6 +434,71 @@ class EmployeeEventsRepository:
             rows = conn.execute(text(sql), params).mappings().all()
         return [dict(row) for row in rows]
 
+    def list_trainer_calendar_events(
+        self,
+        contact_id: int,
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        engine = self._get_main_engine()
+        view_columns = self._get_table_columns("batch_employee_time_view")
+
+        sql = """
+        SELECT
+            b.id,
+            b.batch,
+            b.display_name,
+            b.parent_id,
+            b.date,
+            b.start_date,
+            b.end_date,
+            b.start_time,
+            b.end_time,
+            b.day_code,
+            b.title,
+            b.venue,
+            b.timezone_id,
+            b.contact_id,
+            b.code,
+            b.category,
+            b.branch,
+            b.bid,
+            b.employee_id,
+            b.associate_fullname,
+            b.modified_at,
+            p.batch AS parent_batch_name
+        FROM batch_employee_time_view b
+        LEFT JOIN batch_employee_time_view p
+            ON p.id = b.parent_id
+        WHERE b.contact_id = :contact_id
+          AND COALESCE(b.park, 0) = 0
+          AND COALESCE(b.inactive, 0) = 0
+          AND COALESCE(b.hide, 0) = 0
+          AND COALESCE(b.cont_park, 0) = 0
+        """
+        params: Dict[str, Any] = {
+            "contact_id": int(contact_id),
+        }
+
+        # Apply batch visibility flags when available in the view schema.
+        if "demo_class" in view_columns:
+            sql += " AND COALESCE(b.demo_class, 0) = 0"
+        if "training_assign" in view_columns:
+            sql += " AND COALESCE(b.training_assign, 0) = 0"
+
+        if from_date:
+            sql += " AND COALESCE(b.end_date, b.start_date, b.date) >= :from_date"
+            params["from_date"] = from_date
+        if to_date:
+            sql += " AND COALESCE(b.start_date, b.date, b.end_date) <= :to_date"
+            params["to_date"] = to_date
+
+        sql += " ORDER BY b.date ASC, b.start_time ASC, b.id ASC"
+
+        with engine.connect() as conn:
+            rows = conn.execute(text(sql), params).mappings().all()
+        return [dict(row) for row in rows]
+
     def get_allowances_for_event_ids(self, event_ids: List[int]) -> Dict[int, List[Dict[str, Any]]]:
         if not event_ids:
             return {}
@@ -441,6 +563,310 @@ class EmployeeEventsRepository:
                 sql,
                 {"park": "0", "status": "1", "empty_fullname": ""},
             ).mappings().all()
+        return [dict(row) for row in rows]
+
+    def get_employee_workshifts(self, employee_ids: List[int]) -> List[Dict[str, Any]]:
+        if not employee_ids:
+            return []
+
+        engine = self._get_main_engine()
+        placeholders = []
+        params: Dict[str, Any] = {"park": "0", "status": "1"}
+        for idx, employee_id in enumerate(employee_ids):
+            key = f"employee_id_{idx}"
+            placeholders.append(f":{key}")
+            params[key] = int(employee_id)
+
+        sql = text(
+            f"""
+            SELECT
+                e.id AS employee_id,
+                e.fullname AS employee_name,
+                e.workshift_id,
+                e.workshift_in_time,
+                e.workshift_out_time,
+                e.week_off_code
+            FROM emp_cont_view e
+            WHERE e.id IN ({", ".join(placeholders)})
+              AND e.park = :park
+              AND e.status = :status
+            ORDER BY e.id ASC
+            """
+        )
+
+        with engine.connect() as conn:
+            rows = conn.execute(sql, params).mappings().all()
+        return [dict(row) for row in rows]
+
+    def get_workshift_day_rows(self, workshift_ids: List[int]) -> List[Dict[str, Any]]:
+        if not workshift_ids:
+            return []
+
+        engine = self._get_main_engine()
+        placeholders = []
+        params: Dict[str, Any] = {}
+        for idx, workshift_id in enumerate(workshift_ids):
+            key = f"workshift_id_{idx}"
+            placeholders.append(f":{key}")
+            params[key] = int(workshift_id)
+
+        sql = text(
+            f"""
+            SELECT
+                workshift_id,
+                day_code,
+                start_time,
+                end_time
+            FROM workshift_day
+            WHERE workshift_id IN ({", ".join(placeholders)})
+            ORDER BY workshift_id ASC, day_code ASC
+            """
+        )
+
+        with engine.connect() as conn:
+            rows = conn.execute(sql, params).mappings().all()
+        return [dict(row) for row in rows]
+
+    def get_active_employees(self, employee_ids: List[int]) -> List[Dict[str, Any]]:
+        if not employee_ids:
+            return []
+
+        engine = self._get_main_engine()
+        placeholders = []
+        params: Dict[str, Any] = {"park": "0", "status": "1"}
+        for idx, employee_id in enumerate(employee_ids):
+            key = f"employee_id_{idx}"
+            placeholders.append(f":{key}")
+            params[key] = int(employee_id)
+
+        sql = text(
+            f"""
+            SELECT
+                e.id AS employee_id,
+                e.fullname AS employee_name,
+                e.department_id AS department_id
+            FROM emp_cont_view e
+            WHERE e.id IN ({", ".join(placeholders)})
+              AND e.park = :park
+              AND e.status = :status
+            ORDER BY e.id ASC
+            """
+        )
+
+        with engine.connect() as conn:
+            rows = conn.execute(sql, params).mappings().all()
+        return [dict(row) for row in rows]
+
+    def get_employee_leave_requests(
+        self,
+        employee_ids: List[int],
+        from_date: str,
+        to_date: str,
+        statuses: Optional[List[int]] = None,
+        request_types: Optional[List[int]] = None,
+        department_ids: Optional[List[int]] = None,
+    ) -> List[Dict[str, Any]]:
+        if not employee_ids:
+            return []
+
+        engine = self._get_main_engine()
+        leave_columns = self._get_table_columns("emp_att_request")
+        employee_view_columns = self._get_table_columns("emp_cont_view")
+
+        if not leave_columns:
+            raise EmployeeEventsError(
+                code="EMP_EVENT_LEAVE_QUERY_FAILED",
+                message="Table emp_att_request is missing or has no readable columns",
+                status_code=500,
+            )
+
+        leave_id_column = self._first_matching_column(
+            leave_columns,
+            ["id", "request_id", "att_request_id"],
+        )
+        leave_employee_ref_column = self._first_matching_column(
+            leave_columns,
+            ["employee_id", "emp_id", "contact_id"],
+        )
+        leave_start_column = self._first_matching_column(
+            leave_columns,
+            ["start_date", "from_date", "leave_from", "start_datetime", "start_time", "start"],
+        )
+        leave_end_column = self._first_matching_column(
+            leave_columns,
+            ["end_date", "to_date", "leave_to", "end_datetime", "end_time", "end"],
+        )
+        leave_status_column = self._first_matching_column(
+            leave_columns,
+            ["status", "request_status", "leave_status", "approval_status"],
+        )
+        leave_request_type_column = self._first_matching_column(
+            leave_columns,
+            ["request_type", "type", "req_type", "leave_type"],
+        )
+
+        missing_required = [
+            name
+            for name, value in (
+                ("id", leave_id_column),
+                ("employee_ref", leave_employee_ref_column),
+                ("start", leave_start_column),
+                ("end", leave_end_column),
+            )
+            if value is None
+        ]
+        if missing_required:
+            raise EmployeeEventsError(
+                code="EMP_EVENT_LEAVE_QUERY_FAILED",
+                message="emp_att_request does not have the required columns for leave query",
+                status_code=500,
+                data={"missing_columns": missing_required},
+            )
+
+        leave_id_column = self._safe_identifier(leave_id_column)
+        leave_employee_ref_column = self._safe_identifier(leave_employee_ref_column)
+        leave_start_column = self._safe_identifier(leave_start_column)
+        leave_end_column = self._safe_identifier(leave_end_column)
+        if leave_status_column is not None:
+            leave_status_column = self._safe_identifier(leave_status_column)
+        if leave_request_type_column is not None:
+            leave_request_type_column = self._safe_identifier(leave_request_type_column)
+
+        if leave_employee_ref_column == "contact_id":
+            if "contact_id" not in employee_view_columns:
+                raise EmployeeEventsError(
+                    code="EMP_EVENT_LEAVE_QUERY_FAILED",
+                    message="emp_cont_view.contact_id is required for leave query join",
+                    status_code=500,
+                )
+            join_condition = "e.contact_id = l.contact_id"
+        else:
+            join_condition = f"e.id = l.{leave_employee_ref_column}"
+
+        employee_placeholders = []
+        params: Dict[str, Any] = {
+            "park": "0",
+            "status": "1",
+            "from_date": from_date,
+            "to_date": to_date,
+        }
+        for idx, employee_id in enumerate(employee_ids):
+            key = f"employee_id_{idx}"
+            employee_placeholders.append(f":{key}")
+            params[key] = int(employee_id)
+
+        status_select = (
+            f"l.{leave_status_column} AS status"
+            if leave_status_column is not None
+            else "NULL AS status"
+        )
+        request_type_select = (
+            f"l.{leave_request_type_column} AS request_type"
+            if leave_request_type_column is not None
+            else "NULL AS request_type"
+        )
+
+        sql = f"""
+        SELECT
+            l.{leave_id_column} AS leave_request_id,
+            e.id AS employee_id,
+            e.fullname AS employee_name,
+            e.department_id AS department_id,
+            l.{leave_start_column} AS start_date,
+            l.{leave_end_column} AS end_date,
+            {status_select},
+            {request_type_select}
+        FROM emp_att_request l
+        INNER JOIN emp_cont_view e
+            ON {join_condition}
+        WHERE e.id IN ({", ".join(employee_placeholders)})
+          AND e.park = :park
+          AND e.status = :status
+          AND l.{leave_start_column} <= :to_date
+          AND l.{leave_end_column} >= :from_date
+        """
+
+        if statuses:
+            if leave_status_column is None:
+                return []
+            status_placeholders = []
+            for idx, status_value in enumerate(statuses):
+                key = f"status_{idx}"
+                status_placeholders.append(f":{key}")
+                params[key] = int(status_value)
+            sql += f" AND l.{leave_status_column} IN ({', '.join(status_placeholders)})"
+
+        if request_types:
+            if leave_request_type_column is None:
+                return []
+            request_type_placeholders = []
+            for idx, request_type in enumerate(request_types):
+                key = f"request_type_{idx}"
+                request_type_placeholders.append(f":{key}")
+                params[key] = int(request_type)
+            sql += f" AND l.{leave_request_type_column} IN ({', '.join(request_type_placeholders)})"
+
+        if department_ids:
+            department_placeholders = []
+            for idx, department_id in enumerate(department_ids):
+                key = f"department_id_{idx}"
+                department_placeholders.append(f":{key}")
+                params[key] = int(department_id)
+            sql += f" AND e.department_id IN ({', '.join(department_placeholders)})"
+
+        sql += f" ORDER BY l.{leave_start_column} ASC, l.{leave_id_column} ASC"
+
+        with engine.connect() as conn:
+            rows = conn.execute(text(sql), params).mappings().all()
+        return [dict(row) for row in rows]
+
+    def get_approved_leave_for_employee(
+        self,
+        employee_id: int,
+        from_date: str,
+        to_date: str,
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch approved leave requests for a single employee overlapping a date range.
+        
+        Used for availability calculations - returns only approved (status=1) leave requests
+        that overlap with the specified date range.
+        
+        Args:
+            employee_id: The employee ID (from emp_cont_view.id)
+            from_date: Start date (YYYY-MM-DD) - inclusive
+            to_date: End date (YYYY-MM-DD) - inclusive
+        
+        Returns:
+            List of leave request records with fields: id, employee_id, start_date, end_date,
+            status, request_type, and any other available columns from emp_att_request
+        """
+        engine = self._get_main_engine()
+        
+        sql = text("""
+            SELECT
+                l.id,
+                l.employee_id,
+                l.start_date,
+                l.end_date,
+                l.status,
+                l.request_type,
+                l.remarks
+            FROM emp_att_request l
+            WHERE l.employee_id = :employee_id
+              AND l.status = 1
+              AND l.start_date <= :to_date
+              AND l.end_date >= :from_date
+            ORDER BY l.start_date ASC, l.id ASC
+        """)
+        
+        with engine.connect() as conn:
+            rows = conn.execute(sql, {
+                "employee_id": int(employee_id),
+                "from_date": from_date,
+                "to_date": to_date,
+            }).mappings().all()
+        
         return [dict(row) for row in rows]
 
     def list_active_branches(self) -> List[Dict[str, Any]]:

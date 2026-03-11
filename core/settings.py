@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     DB_PASSWORD: str = os.getenv("DB_PASSWORD", os.getenv("DB_PASSWORD", ""))
     CENTRAL_DB_NAME: str = os.getenv("CENTRAL_DB_NAME", os.getenv("DB_CENTRAL", ""))
     DB_PORT: int = int(os.getenv("DB_PORT", os.getenv("DB_PORT", 3306)))
+    DATABASE_MAIN_URL: str = os.getenv("DATABASE_MAIN_URL", os.getenv("DATABASE_URL", ""))
+    DATABASE_CENTRAL_URL: str = os.getenv(
+        "DATABASE_CENTRAL_URL",
+        os.getenv("CENTRAL_DATABASE_URL", ""),
+    )
 
     # Authentication / Token Settings
     PASETO_SECRET_KEY: str = os.getenv("PASETO_SECRET_KEY", "change-this-paseto-secret-key")
@@ -121,6 +126,30 @@ class Settings(BaseSettings):
         "yes",
         "on",
     }
+
+    # Authentication v2
+    AUTH_V2_ENABLED: bool = os.getenv("AUTH_V2_ENABLED", "False").lower() == "true"
+    AUTH_V2_ISSUER: str = os.getenv("AUTH_V2_ISSUER", "dynamic-api-auth-v2")
+    AUTH_V2_AUDIENCE: str = os.getenv("AUTH_V2_AUDIENCE", "dynamic-api-clients")
+    AUTH_V2_ACCESS_TOKEN_MINUTES: int = int(os.getenv("AUTH_V2_ACCESS_TOKEN_MINUTES", 15))
+    AUTH_V2_REFRESH_TOKEN_DAYS: int = int(os.getenv("AUTH_V2_REFRESH_TOKEN_DAYS", 7))
+    AUTH_V2_TOKEN_VERSION: int = int(os.getenv("AUTH_V2_TOKEN_VERSION", 2))
+    AUTH_V2_CURRENT_KID: str = os.getenv("AUTH_V2_CURRENT_KID", "v2-kid-1")
+    AUTH_V2_SIGNING_KEYS_JSON: str = os.getenv("AUTH_V2_SIGNING_KEYS_JSON", "[]")
+    AUTH_V2_REFRESH_HASH_PEPPER: str = os.getenv("AUTH_V2_REFRESH_HASH_PEPPER", "")
+    AUTH_V2_TIMING_FLOOR_MS: int = int(os.getenv("AUTH_V2_TIMING_FLOOR_MS", 400))
+    AUTH_V2_TIMING_JITTER_MIN_MS: int = int(os.getenv("AUTH_V2_TIMING_JITTER_MIN_MS", 25))
+    AUTH_V2_TIMING_JITTER_MAX_MS: int = int(os.getenv("AUTH_V2_TIMING_JITTER_MAX_MS", 80))
+    AUTH_V2_RATE_LIMIT_IP_10M: int = int(os.getenv("AUTH_V2_RATE_LIMIT_IP_10M", 120))
+    AUTH_V2_RATE_LIMIT_IP_MOBILE_10M: int = int(os.getenv("AUTH_V2_RATE_LIMIT_IP_MOBILE_10M", 30))
+    AUTH_V2_RATE_LIMIT_MOBILE_GLOBAL_10M: int = int(
+        os.getenv("AUTH_V2_RATE_LIMIT_MOBILE_GLOBAL_10M", 40)
+    )
+    AUTH_V2_LOGIN_FAIL_THRESHOLD: int = int(os.getenv("AUTH_V2_LOGIN_FAIL_THRESHOLD", 5))
+    AUTH_V2_LOGIN_FAIL_WINDOW_MINUTES: int = int(
+        os.getenv("AUTH_V2_LOGIN_FAIL_WINDOW_MINUTES", 15)
+    )
+    AUTH_V2_LOGIN_COOLDOWN_MINUTES: int = int(os.getenv("AUTH_V2_LOGIN_COOLDOWN_MINUTES", 15))
     
     # Logging
     LOG_LEVEL: str = "INFO"

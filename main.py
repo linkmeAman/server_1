@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
+from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -20,6 +21,7 @@ from core.response import error_response
 from core.exceptions import DynamicAPIException
 from core.database import init_database
 from api.v1.router import api_router
+from controllers.auth_v2.services.common import AuthV2Error
 
 
 class ConsecutiveDuplicateFilter(logging.Filter):
@@ -125,6 +127,30 @@ async def dynamic_api_exception_handler(request: Request, exc: DynamicAPIExcepti
         status_code=exc.status_code,
         content=payload
     )
+
+
+@app.exception_handler(AuthV2Error)
+async def auth_v2_exception_handler(request: Request, exc: AuthV2Error):
+    """Handle auth v2 exceptions with required envelope + request_id/details."""
+    request_id = request.headers.get("X-Request-ID") or str(uuid4())
+    payload = error_response(
+        error=exc.code,
+        message=exc.message,
+        data={"request_id": request_id, "details": exc.details or {}},
+    ).model_dump(mode="json")
+    logger.error(
+        "ERROR_RESPONSE %s %s status=%s payload=%s",
+        request.method,
+        request.url.path,
+        exc.status_code,
+        payload,
+    )
+    response = JSONResponse(
+        status_code=exc.status_code,
+        content=payload,
+    )
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 
 @app.exception_handler(StarletteHTTPException)
