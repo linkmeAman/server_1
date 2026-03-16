@@ -24,3 +24,5 @@ __pycache__/
 #log files *.log # Ignore database files *.db
 *.db
 *.log
+
+.env.*
