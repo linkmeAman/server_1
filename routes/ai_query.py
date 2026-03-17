@@ -34,6 +34,24 @@ def _schema_text(schema: List[SchemaColumn]) -> str:
     return "\n".join(f"- {column.Field}: {column.Type}" for column in schema)
 
 
+def _normalize_generated_query(raw_query: str) -> str:
+    query = str(raw_query or "").strip()
+
+    # Some models wrap SQL in markdown fences.
+    if query.startswith("```"):
+        query = query.strip("`").strip()
+        if query.lower().startswith("sql"):
+            query = query[3:].strip()
+
+    # Accept a trailing semicolon from model formatting, while keeping
+    # multi-statement protection in validate_query().
+    query = query.rstrip()
+    while query.endswith(";"):
+        query = query[:-1].rstrip()
+
+    return query
+
+
 async def _generate_openai_query(payload: AIQueryRequest) -> str:
     api_key = (os.getenv("OPENAI_API_KEY") or os.getenv("ChatGPT_API_KEY") or "").strip()
     model = (os.getenv("OPENAI_MODEL") or "gpt-4o-mini").strip()
@@ -155,10 +173,7 @@ async def generate_ai_query(payload: AIQueryRequest) -> dict[str, Any]:
     else:
         generated_query = await _generate_openai_query(payload)
 
-    if generated_query.startswith("```"):
-        generated_query = generated_query.strip("`")
-        if generated_query.lower().startswith("sql"):
-            generated_query = generated_query[3:].strip()
+    generated_query = _normalize_generated_query(generated_query)
 
     try:
         safe_query = validate_query(generated_query)
