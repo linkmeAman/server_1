@@ -7,7 +7,7 @@ from typing import Any, List
 
 import httpx
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field as PydanticField
 
 from db.query_validator import QueryValidationError, apply_row_limit, validate_query
 
@@ -15,14 +15,14 @@ router = APIRouter(prefix="/api", tags=["db-explorer"])
 
 
 class SchemaColumn(BaseModel):
-    Field: str = Field(..., min_length=1)
-    Type: str = Field(default="")
+    Field: str = PydanticField(..., min_length=1)
+    Type: str = PydanticField(default="")
 
 
 class AIQueryRequest(BaseModel):
-    prompt: str = Field(..., min_length=1)
-    tableName: str = Field(..., min_length=1)
-    schema: List[SchemaColumn] = Field(default_factory=list)
+    prompt: str = PydanticField(..., min_length=1)
+    tableName: str = PydanticField(..., min_length=1)
+    schema: List[SchemaColumn] = PydanticField(default_factory=list)
 
 
 def _schema_text(schema: List[SchemaColumn]) -> str:
