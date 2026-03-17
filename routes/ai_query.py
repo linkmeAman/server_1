@@ -81,6 +81,8 @@ async def _generate_openai_query(payload: AIQueryRequest) -> str:
 
 
 async def _generate_local_llm_query(payload: AIQueryRequest) -> str:
+    llm_api_url = (os.getenv("LLM_API_URL") or "").strip().rstrip("/")
+    llm_api_key = (os.getenv("LLM_API_KEY") or "").strip()
     model = (os.getenv("LLM_DEFAULT_MODEL") or "phi-3").strip()
 
     system_prompt = (
@@ -91,6 +93,44 @@ async def _generate_local_llm_query(payload: AIQueryRequest) -> str:
         f"Target table: {payload.tableName}\n"
         f"Table schema:\n{_schema_text(payload.schema)}"
     )
+
+    if llm_api_url:
+        headers = {"Content-Type": "application/json"}
+        if llm_api_key:
+            headers["X-API-Key"] = llm_api_key
+
+        request_body = {
+            "message": payload.prompt,
+            "model": model,
+            "temperature": 0.1,
+            "max_tokens": 512,
+            "system_prompt": system_prompt,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{llm_api_url}/llm/chat",
+                    headers=headers,
+                    json=request_body,
+                )
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Local LLM request failed: {exc}") from exc
+
+        if response.status_code >= 400:
+            detail = response.text[:500] if response.text else "Local LLM provider returned an error"
+            raise HTTPException(status_code=502, detail=detail)
+
+        data = response.json()
+        response_text = str(data.get("response") or "").strip()
+        if not response_text:
+            response_text = str(data.get("data", {}).get("response") or "").strip()
+
+        if not response_text:
+            error_text = str(data.get("error") or data.get("data", {}).get("error") or "Local LLM returned empty response")
+            raise HTTPException(status_code=502, detail=error_text)
+
+        return response_text
 
     result = await asyncio.to_thread(
         local_llm.chat,
