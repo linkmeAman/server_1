@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from typing import Any, List, Literal
 
 import httpx
@@ -11,9 +12,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field as PydanticField
 
 from controllers import llm as local_llm
+from db.connection import db_cursor
 from db.query_validator import QueryValidationError, apply_row_limit, validate_query
 
 router = APIRouter(prefix="/api", tags=["db-explorer"])
+
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_SINGLE_QUOTED_TABLE_RE = re.compile(r"'([A-Za-z_][A-Za-z0-9_]*)'")
 
 
 class SchemaColumn(BaseModel):
@@ -32,6 +37,73 @@ def _schema_text(schema: List[SchemaColumn]) -> str:
     if not schema:
         return "(schema unavailable)"
     return "\n".join(f"- {column.Field}: {column.Type}" for column in schema)
+
+
+def _validate_identifier(name: str) -> str:
+    value = str(name or "").strip()
+    if not _IDENTIFIER_RE.match(value):
+        raise HTTPException(status_code=400, detail=f"Invalid table identifier: {name}")
+    return value
+
+
+def _quoted(name: str) -> str:
+    return f"`{name}`"
+
+
+def _extract_prompt_tables(prompt: str, primary_table: str) -> list[str]:
+    found = [match.strip() for match in _SINGLE_QUOTED_TABLE_RE.findall(prompt or "")]
+    merged = [primary_table, *found]
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for item in merged:
+        if not item:
+            continue
+        key = item.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
+
+
+def _load_table_schema_from_db(table_name: str) -> list[SchemaColumn]:
+    safe_table = _validate_identifier(table_name)
+    with db_cursor() as cursor:
+        cursor.execute(f"DESCRIBE {_quoted(safe_table)}")
+        rows = cursor.fetchall() or []
+
+    schema: list[SchemaColumn] = []
+    for row in rows:
+        field_name = str(row.get("Field") or "").strip()
+        field_type = str(row.get("Type") or "").strip()
+        if not field_name:
+            continue
+        schema.append(SchemaColumn(Field=field_name, Type=field_type))
+    return schema
+
+
+async def _build_schema_context(payload: AIQueryRequest) -> str:
+    primary = _validate_identifier(payload.tableName)
+    table_names = _extract_prompt_tables(payload.prompt, primary)
+
+    context_blocks: list[str] = []
+
+    for table_name in table_names:
+        safe_table = _validate_identifier(table_name)
+        schema_rows: list[SchemaColumn] = []
+
+        try:
+            schema_rows = await asyncio.to_thread(_load_table_schema_from_db, safe_table)
+        except Exception:
+            if safe_table == primary and payload.schema:
+                schema_rows = payload.schema
+            else:
+                schema_rows = []
+
+        block = f"Table: {safe_table}\n{_schema_text(schema_rows)}"
+        context_blocks.append(block)
+
+    return "\n\n".join(context_blocks) if context_blocks else "(schema unavailable)"
 
 
 def _normalize_generated_query(raw_query: str) -> str:
@@ -59,13 +131,16 @@ async def _generate_openai_query(payload: AIQueryRequest) -> str:
     if not api_key:
         raise HTTPException(status_code=500, detail="Missing OPENAI_API_KEY/ChatGPT_API_KEY")
 
+    schema_context = await _build_schema_context(payload)
+
     system_prompt = (
         "You generate SQL for a strict read-only MySQL explorer. "
         "Return exactly one SQL SELECT statement and no explanation. "
         "Do not include markdown code fences. "
         "Never use INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, CREATE, GRANT, or REVOKE. "
-        f"Target table: {payload.tableName}\n"
-        f"Table schema:\n{_schema_text(payload.schema)}"
+        "If prompt references multiple tables, generate a valid multi-table SELECT using JOINs as needed. "
+        f"Primary table: {payload.tableName}\n"
+        f"Schema context:\n{schema_context}"
     )
 
     request_body = {
@@ -103,13 +178,16 @@ async def _generate_local_llm_query(payload: AIQueryRequest) -> str:
     llm_api_key = (os.getenv("LLM_API_KEY") or "").strip()
     model = (os.getenv("LLM_DEFAULT_MODEL") or "phi-3").strip()
 
+    schema_context = await _build_schema_context(payload)
+
     system_prompt = (
         "You generate SQL for a strict read-only MySQL explorer. "
         "Return exactly one SQL SELECT statement and no explanation. "
         "Do not include markdown code fences. "
         "Never use INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, CREATE, GRANT, or REVOKE. "
-        f"Target table: {payload.tableName}\n"
-        f"Table schema:\n{_schema_text(payload.schema)}"
+        "If prompt references multiple tables, generate a valid multi-table SELECT using JOINs as needed. "
+        f"Primary table: {payload.tableName}\n"
+        f"Schema context:\n{schema_context}"
     )
 
     if llm_api_url:
