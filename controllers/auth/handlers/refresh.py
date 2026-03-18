@@ -15,7 +15,7 @@ from controllers.auth.constants import (
     AUTH_REFRESH_REPLAY_DETECTED,
     AUTH_SERVICE_UNAVAILABLE,
     AUTH_SESSION_BINDING_FAILED,
-    AUTH_BOOTSTRAP_USER_NOT_FOUND,
+    AUTH_SUPREME_USER_NOT_FOUND,
     EVENT_REFRESH,
     EVENT_REFRESH_SESSION_FAMILY_WIPE,
     OUTCOME_FAILURE,
@@ -64,12 +64,12 @@ async def _active_employee(main_db: AsyncSession, employee_id: int) -> bool:
     return result.fetchone() is not None
 
 
-async def _active_bootstrap_user(central_db: AsyncSession, user_id: int) -> bool:
+async def _active_supreme_user(central_db: AsyncSession, user_id: int) -> bool:
     result = await central_db.execute(
         text(
             """
             SELECT id
-            FROM auth_bootstrap_user
+            FROM auth_supreme_user
             WHERE id = :user_id
               AND is_active = 1
             LIMIT 1
@@ -103,7 +103,7 @@ async def refresh(
     user_id = int(claims.get("user_id"))
     contact_id = int(claims.get("contact_id"))
     employee_id = int(claims.get("employee_id"))
-    bootstrap_user = bool(claims.get("bootstrap_user", False))
+    supreme_user = bool(claims.get("supreme_user", False))
 
     pending_error: Optional[AuthError] = None
     token_pair = None
@@ -193,7 +193,7 @@ async def refresh(
                             "Session binding check failed",
                             401,
                         )
-                    elif bootstrap_user and not await _active_bootstrap_user(central_db, user_id):
+                    elif supreme_user and not await _active_supreme_user(central_db, user_id):
                         now = datetime.utcnow()
                         await central_db.execute(
                             text(
@@ -214,21 +214,21 @@ async def refresh(
                             central_db,
                             event_type=EVENT_REFRESH,
                             outcome=OUTCOME_FAILURE,
-                            reason_code=AUTH_BOOTSTRAP_USER_NOT_FOUND,
+                            reason_code=AUTH_SUPREME_USER_NOT_FOUND,
                             user_id=user_id,
                             employee_id=employee_id,
                             contact_id=contact_id,
                             ip=ip_value,
                             user_agent=ua_value,
                             request_id=rid,
-                            details_json={"token_id": int(token_row["id"]), "bootstrap_user": True},
+                            details_json={"token_id": int(token_row["id"]), "supreme_user": True},
                         )
                         pending_error = AuthError(
-                            AUTH_BOOTSTRAP_USER_NOT_FOUND,
+                            AUTH_SUPREME_USER_NOT_FOUND,
                             "Supreme user is inactive",
                             401,
                         )
-                    elif not bootstrap_user and not await _active_employee(main_db, employee_id):
+                    elif not supreme_user and not await _active_employee(main_db, employee_id):
                         now = datetime.utcnow()
                         await central_db.execute(
                             text(
@@ -260,7 +260,7 @@ async def refresh(
                         )
                         pending_error = AuthError(AUTH_EMPLOYEE_INACTIVE, "Employee is inactive", 403)
                     else:
-                        if bootstrap_user:
+                        if supreme_user:
                             authz = {
                                 "roles": [{"role_code": "SUPREME", "role_name": "Supreme User"}],
                                 "position_id": None,
@@ -283,7 +283,7 @@ async def refresh(
                             roles=authz["roles"],
                             mobile=str(claims.get("mobile", "")),
                             authorization=authz,
-                            extra_claims={"bootstrap_user": True} if bootstrap_user else None,
+                            extra_claims={"supreme_user": True} if supreme_user else None,
                         )
 
                         now = utcnow()

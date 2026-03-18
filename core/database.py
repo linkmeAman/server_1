@@ -4,7 +4,7 @@ import logging
 from typing import Dict, Generator, Optional
 from urllib.parse import quote_plus
 
-from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_engine, text
+from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_engine, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
@@ -110,6 +110,13 @@ def _create_auth_sidecar_table(central_engine: Optional[Engine]) -> None:
         return
 
     try:
+        inspector = inspect(central_engine)
+        if not inspector.has_table("user"):
+            logger.info(
+                "Skipping auth sidecar table creation in central DB because 'user' table is missing"
+            )
+            return
+
         from .models import AuthIdentity
 
         # Strict constraint: do not modify legacy `user` table schema.

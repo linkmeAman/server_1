@@ -1,4 +1,4 @@
-"""Auth v2 onboarding endpoints for first-time supreme user bootstrap."""
+"""Auth onboarding endpoints for first-time supreme user setup."""
 
 from __future__ import annotations
 
@@ -9,12 +9,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from controllers.auth.constants import (
-    AUTH_BOOTSTRAP_ALREADY_INITIALIZED,
-    AUTH_BOOTSTRAP_USER_NOT_FOUND,
+    AUTH_SUPREME_ALREADY_INITIALIZED,
+    AUTH_SUPREME_USER_NOT_FOUND,
     AUTH_INVALID_CREDENTIALS,
     AUTH_SERVICE_UNAVAILABLE,
 )
-from controllers.auth.schemas.models import BootstrapLoginRequest, BootstrapSupremeRequest
+from controllers.auth.schemas.models import SupremeCreateRequest, SupremeLoginRequest
 from controllers.auth.services.common import (
     client_ip,
     error_json_response,
@@ -33,11 +33,11 @@ from core.settings import get_settings
 router = APIRouter(prefix="/auth/onboarding", tags=["auth-onboarding"])
 
 
-async def _ensure_bootstrap_tables(central_db: AsyncSession) -> None:
+async def _ensure_supreme_tables(central_db: AsyncSession) -> None:
     await central_db.execute(
         text(
             """
-            CREATE TABLE IF NOT EXISTS auth_bootstrap_user (
+            CREATE TABLE IF NOT EXISTS auth_supreme_user (
                 id BIGINT PRIMARY KEY AUTO_INCREMENT,
                 country_code VARCHAR(8) NOT NULL,
                 mobile VARCHAR(20) NOT NULL,
@@ -47,7 +47,7 @@ async def _ensure_bootstrap_tables(central_db: AsyncSession) -> None:
                 is_active TINYINT(1) NOT NULL DEFAULT 1,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 modified_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                UNIQUE KEY uq_auth_bootstrap_user_mobile (country_code, mobile)
+                UNIQUE KEY uq_auth_supreme_user_mobile (country_code, mobile)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """
         )
@@ -88,12 +88,12 @@ async def _ensure_bootstrap_tables(central_db: AsyncSession) -> None:
     )
 
 
-async def _active_bootstrap_user_count(central_db: AsyncSession) -> int:
+async def _active_supreme_user_count(central_db: AsyncSession) -> int:
     result = await central_db.execute(
         text(
             """
             SELECT COUNT(*) AS total
-            FROM auth_bootstrap_user
+            FROM auth_supreme_user
             WHERE is_active = 1
             """
         )
@@ -113,7 +113,7 @@ def _normalize_mobile(mobile: str) -> str:
     return "".join(ch for ch in mobile.strip() if ch.isdigit())
 
 
-def _bootstrap_authz() -> dict:
+def _supreme_authz() -> dict:
     return {
         "position_id": None,
         "position": None,
@@ -126,7 +126,7 @@ def _bootstrap_authz() -> dict:
     }
 
 
-async def _issue_bootstrap_tokens(
+async def _issue_supreme_tokens(
     *,
     central_db: AsyncSession,
     request: Request,
@@ -140,8 +140,8 @@ async def _issue_bootstrap_tokens(
         employee_id=0,
         roles=[{"role_code": "SUPREME", "role_name": "Supreme User"}],
         mobile=f"{country_code}{mobile}",
-        authorization=_bootstrap_authz(),
-        extra_claims={"bootstrap_user": True},
+        authorization=_supreme_authz(),
+        extra_claims={"supreme_user": True},
     )
 
     now_utc = utcnow()
@@ -192,12 +192,12 @@ async def onboarding_status(
 ):
     rid = request_id(request)
     try:
-        await _ensure_bootstrap_tables(central_db)
-        total_users = await _active_bootstrap_user_count(central_db)
+        await _ensure_supreme_tables(central_db)
+        total_users = await _active_supreme_user_count(central_db)
         await central_db.commit()
         return success_json_response(
             {
-                "bootstrap_required": total_users == 0,
+                "supreme_required": total_users == 0,
                 "total_users": total_users,
             },
             request_id_value=rid,
@@ -216,7 +216,7 @@ async def onboarding_status(
 
 @router.post("/supreme")
 async def create_supreme_user(
-    payload: BootstrapSupremeRequest,
+    payload: SupremeCreateRequest,
     request: Request,
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
@@ -235,12 +235,12 @@ async def create_supreme_user(
 
     try:
         async with central_db.begin():
-            await _ensure_bootstrap_tables(central_db)
+            await _ensure_supreme_tables(central_db)
 
-            total_users = await _active_bootstrap_user_count(central_db)
+            total_users = await _active_supreme_user_count(central_db)
             if total_users > 0:
                 return error_json_response(
-                    AUTH_BOOTSTRAP_ALREADY_INITIALIZED,
+                    AUTH_SUPREME_ALREADY_INITIALIZED,
                     "Supreme user already initialized",
                     409,
                     rid,
@@ -250,7 +250,7 @@ async def create_supreme_user(
             await central_db.execute(
                 text(
                     """
-                    INSERT INTO auth_bootstrap_user (
+                    INSERT INTO auth_supreme_user (
                         country_code,
                         mobile,
                         password_hash,
@@ -285,7 +285,7 @@ async def create_supreme_user(
                 text(
                     """
                     SELECT id, display_name
-                    FROM auth_bootstrap_user
+                    FROM auth_supreme_user
                     WHERE country_code = :country_code
                       AND mobile = :mobile
                       AND is_active = 1
@@ -308,7 +308,7 @@ async def create_supreme_user(
                 )
 
             user_id = int(user_row._mapping["id"])
-            token_pair = await _issue_bootstrap_tokens(
+            token_pair = await _issue_supreme_tokens(
                 central_db=central_db,
                 request=request,
                 user_id=user_id,
@@ -347,7 +347,7 @@ async def create_supreme_user(
 
 @router.post("/login")
 async def login_supreme_user(
-    payload: BootstrapLoginRequest,
+    payload: SupremeLoginRequest,
     request: Request,
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
@@ -357,13 +357,13 @@ async def login_supreme_user(
 
     try:
         async with central_db.begin():
-            await _ensure_bootstrap_tables(central_db)
+            await _ensure_supreme_tables(central_db)
 
             row_result = await central_db.execute(
                 text(
                     """
                     SELECT id, password_hash, display_name
-                    FROM auth_bootstrap_user
+                    FROM auth_supreme_user
                     WHERE country_code = :country_code
                       AND mobile = :mobile
                       AND is_active = 1
@@ -378,7 +378,7 @@ async def login_supreme_user(
             user_row = row_result.fetchone()
             if user_row is None:
                 return error_json_response(
-                    AUTH_BOOTSTRAP_USER_NOT_FOUND,
+                    AUTH_SUPREME_USER_NOT_FOUND,
                     "Supreme user not found",
                     404,
                     rid,
@@ -396,7 +396,7 @@ async def login_supreme_user(
                     details={},
                 )
 
-            token_pair = await _issue_bootstrap_tokens(
+            token_pair = await _issue_supreme_tokens(
                 central_db=central_db,
                 request=request,
                 user_id=user_id,

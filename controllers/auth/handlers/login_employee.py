@@ -363,7 +363,7 @@ async def login_employee(
         rid = request_id(request)
         return error_json_response(
             AUTH_FLOW_DISABLED,
-            "Bootstrap-only auth mode is enabled. Use /auth/onboarding endpoints.",
+            "Supreme-setup-only auth mode is enabled. Use /auth/onboarding endpoints.",
             403,
             rid,
             details={},

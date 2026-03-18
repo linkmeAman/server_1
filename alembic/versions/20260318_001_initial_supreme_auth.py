@@ -1,4 +1,4 @@
-"""initial bootstrap auth schema
+"""initial supreme auth schema
 
 Revision ID: 20260318_001
 Revises:
@@ -19,7 +19,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.create_table(
-        "auth_bootstrap_user",
+        "auth_supreme_user",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
         sa.Column("country_code", sa.String(length=8), nullable=False),
         sa.Column("mobile", sa.String(length=20), nullable=False),
@@ -42,7 +42,7 @@ def upgrade() -> None:
         sa.UniqueConstraint(
             "country_code",
             "mobile",
-            name="uq_auth_bootstrap_user_mobile",
+            name="uq_auth_supreme_user_mobile",
         ),
         mysql_engine="InnoDB",
         mysql_charset="utf8mb4",
@@ -99,4 +99,4 @@ def downgrade() -> None:
     op.drop_index("ix_auth_refresh_token_expires_at", table_name="auth_refresh_token")
     op.drop_index("ix_auth_refresh_token_user_employee_revoked", table_name="auth_refresh_token")
     op.drop_table("auth_refresh_token")
-    op.drop_table("auth_bootstrap_user")
+    op.drop_table("auth_supreme_user")

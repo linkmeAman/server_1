@@ -34,19 +34,19 @@ class LoginEmployeeRequest(BaseModel):
     password: str = Field(..., min_length=1)
 
 
-class BootstrapStatusData(BaseModel):
-    bootstrap_required: bool
+class SupremeStatusData(BaseModel):
+    supreme_required: bool
     total_users: int
 
 
-class BootstrapSupremeRequest(BaseModel):
+class SupremeCreateRequest(BaseModel):
     country_code: str = Field(..., min_length=1, max_length=8)
     mobile: str = Field(..., min_length=6, max_length=20)
     password: str = Field(..., min_length=8, max_length=128)
     display_name: Optional[str] = Field(default=None, max_length=120)
 
 
-class BootstrapLoginRequest(BaseModel):
+class SupremeLoginRequest(BaseModel):
     country_code: str = Field(..., min_length=1, max_length=8)
     mobile: str = Field(..., min_length=6, max_length=20)
     password: str = Field(..., min_length=1, max_length=128)
