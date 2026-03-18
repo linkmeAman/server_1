@@ -126,6 +126,30 @@ class EmployeeEventsService:
         )
 
     @staticmethod
+    def _invalid_demo_query(
+        message: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> EmployeeEventsError:
+        return EmployeeEventsError(
+            code="EMP_EVENT_INVALID_DEMO_QUERY",
+            message=message,
+            status_code=400,
+            data=data,
+        )
+
+    @staticmethod
+    def _demo_query_failed(
+        message: str = "Could not fetch demo events",
+        data: Optional[Dict[str, Any]] = None,
+    ) -> EmployeeEventsError:
+        return EmployeeEventsError(
+            code="EMP_EVENT_DEMO_QUERY_FAILED",
+            message=message,
+            status_code=500,
+            data=data,
+        )
+
+    @staticmethod
     def _leave_query_failed(
         message: str = "Could not fetch employee leave calendar",
         data: Optional[Dict[str, Any]] = None,
@@ -247,6 +271,49 @@ class EmployeeEventsService:
 
         return normalized
 
+    @staticmethod
+    def _normalize_demo_employee_ids(employee_ids: List[Any]) -> List[int]:
+        seen: set[int] = set()
+        normalized: List[int] = []
+
+        for raw_value in employee_ids:
+            if isinstance(raw_value, bool):
+                raise EmployeeEventsService._invalid_demo_query(
+                    "employee_ids must contain positive integers",
+                    data={"invalid_employee_id": raw_value},
+                )
+
+            try:
+                employee_id = int(raw_value)
+            except Exception as exc:
+                raise EmployeeEventsService._invalid_demo_query(
+                    "employee_ids must contain positive integers",
+                    data={"invalid_employee_id": raw_value},
+                ) from exc
+
+            if employee_id <= 0:
+                raise EmployeeEventsService._invalid_demo_query(
+                    "employee_ids must contain positive integers",
+                    data={"invalid_employee_id": raw_value},
+                )
+
+            if employee_id not in seen:
+                seen.add(employee_id)
+                normalized.append(employee_id)
+
+        if not normalized:
+            raise EmployeeEventsService._invalid_demo_query(
+                "employee_ids must contain at least one unique employee id",
+            )
+
+        if len(normalized) > 25:
+            raise EmployeeEventsService._invalid_demo_query(
+                "employee_ids may contain at most 25 unique employee ids",
+                data={"employee_count": len(normalized)},
+            )
+
+        return normalized
+
     @classmethod
     def _parse_workshift_query_date(cls, raw_value: Any, field_name: str) -> date_value:
         text_value = str(raw_value or "").strip()
@@ -265,6 +332,17 @@ class EmployeeEventsService:
             return datetime.strptime(text_value, "%Y-%m-%d").date()
         except Exception as exc:
             raise cls._invalid_leave_query(
+                f"{field_name} must be in YYYY-MM-DD format",
+                data={"field": field_name, "value": raw_value},
+            ) from exc
+
+    @classmethod
+    def _parse_demo_query_date(cls, raw_value: Any, field_name: str) -> date_value:
+        text_value = str(raw_value or "").strip()
+        try:
+            return datetime.strptime(text_value, "%Y-%m-%d").date()
+        except Exception as exc:
+            raise cls._invalid_demo_query(
                 f"{field_name} must be in YYYY-MM-DD format",
                 data={"field": field_name, "value": raw_value},
             ) from exc
@@ -481,6 +559,51 @@ class EmployeeEventsService:
 
             if normalized_value < min_value:
                 raise cls._invalid_leave_query(
+                    f"{field_name} must contain integers >= {min_value}",
+                    data={"field": field_name, "invalid_value": raw_value},
+                )
+
+            if normalized_value not in seen:
+                seen.add(normalized_value)
+                normalized.append(normalized_value)
+
+        return normalized
+
+    @classmethod
+    def _normalize_demo_filter_values(
+        cls,
+        raw_values: Optional[List[Any]],
+        *,
+        field_name: str,
+        min_value: int,
+    ) -> List[int]:
+        if raw_values is None:
+            return []
+        if not isinstance(raw_values, list):
+            raise cls._invalid_demo_query(
+                f"{field_name} must be an array of integers",
+                data={"field": field_name},
+            )
+
+        seen: set[int] = set()
+        normalized: List[int] = []
+        for raw_value in raw_values:
+            if isinstance(raw_value, bool):
+                raise cls._invalid_demo_query(
+                    f"{field_name} must contain integers >= {min_value}",
+                    data={"field": field_name, "invalid_value": raw_value},
+                )
+
+            try:
+                normalized_value = int(raw_value)
+            except Exception as exc:
+                raise cls._invalid_demo_query(
+                    f"{field_name} must contain integers >= {min_value}",
+                    data={"field": field_name, "invalid_value": raw_value},
+                ) from exc
+
+            if normalized_value < min_value:
+                raise cls._invalid_demo_query(
                     f"{field_name} must contain integers >= {min_value}",
                     data={"field": field_name, "invalid_value": raw_value},
                 )
@@ -2380,3 +2503,101 @@ class EmployeeEventsService:
             "google_event_id": google_event_id,
             "google_event": google_event,
         }
+
+    def get_demo_events_batch(
+        self,
+        employee_ids: List[Any],
+        from_date: str,
+        to_date: str,
+        statuses: Optional[List[Any]] = None,
+        types: Optional[List[Any]] = None,
+        venue_ids: Optional[List[Any]] = None,
+        batch_ids: Optional[List[Any]] = None,
+    ) -> Dict[str, Any]:
+        try:
+            normalized_employee_ids = self._normalize_demo_employee_ids(employee_ids)
+            from_date_value = self._parse_demo_query_date(from_date, "from_date")
+            to_date_value = self._parse_demo_query_date(to_date, "to_date")
+
+            if from_date_value > to_date_value:
+                raise self._invalid_demo_query(
+                    "from_date must be less than or equal to to_date",
+                )
+
+            range_day_count = (to_date_value - from_date_value).days + 1
+            if range_day_count > 62:
+                raise self._invalid_demo_query(
+                    "Date range may not exceed 62 days",
+                    data={"range_day_count": range_day_count},
+                )
+
+            normalized_statuses = self._normalize_demo_filter_values(
+                statuses,
+                field_name="statuses",
+                min_value=0,
+            )
+            normalized_types = self._normalize_demo_filter_values(
+                types,
+                field_name="types",
+                min_value=0,
+            )
+            normalized_venue_ids = self._normalize_demo_filter_values(
+                venue_ids,
+                field_name="venue_ids",
+                min_value=1,
+            )
+            normalized_batch_ids = self._normalize_demo_filter_values(
+                batch_ids,
+                field_name="batch_ids",
+                min_value=1,
+            )
+
+            rows = self.event_repository.get_demo_events(
+                employee_ids=normalized_employee_ids,
+                from_date=from_date_value.isoformat(),
+                to_date=to_date_value.isoformat(),
+                statuses=normalized_statuses or None,
+                types=normalized_types or None,
+                venue_ids=normalized_venue_ids or None,
+                batch_ids=normalized_batch_ids or None,
+            )
+
+            demos_by_employee: Dict[int, List[Dict[str, Any]]] = {
+                eid: [] for eid in normalized_employee_ids
+            }
+            employee_id_set = set(normalized_employee_ids)
+            for row in rows:
+                matched_ids: set[int] = set()
+                for col in ("host_contact_id", "sc_contact_id", "so_contact_id", "owner_contact_id"):
+                    val = self._as_int(row.get(col))
+                    if val in employee_id_set:
+                        matched_ids.add(val)
+                for eid in matched_ids:
+                    demos_by_employee[eid].append(row)
+
+            employees = []
+            for employee_id in normalized_employee_ids:
+                employees.append({
+                    "employee_id": employee_id,
+                    "demos": demos_by_employee.get(employee_id, []),
+                    "demo_count": len(demos_by_employee.get(employee_id, [])),
+                })
+
+            return {
+                "from_date": from_date_value.isoformat(),
+                "to_date": to_date_value.isoformat(),
+                "range_day_count": range_day_count,
+                "employee_count": len(normalized_employee_ids),
+                "matched_count": sum(
+                    1 for eid in normalized_employee_ids
+                    if demos_by_employee.get(eid)
+                ),
+                "total_demos": len(rows),
+                "employees": employees,
+            }
+        except EmployeeEventsError:
+            raise
+        except Exception as exc:
+            raise self._demo_query_failed(
+                message=f"Unexpected error fetching demo events: {exc}",
+            ) from exc
