@@ -1,4 +1,4 @@
-"""Auth v2 FastAPI dependencies."""
+"""Auth FastAPI dependencies."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from controllers.auth_v2.constants import (
 )
 from controllers.auth_v2.schemas.models import CurrentV2User
 from controllers.auth_v2.services.common import AuthV2Error
-from controllers.auth_v2.services.token_service import verify_v2_access_token
+from controllers.auth_v2.services.token_service import verify_access_token
 from core.settings import get_settings
 
 
@@ -35,7 +35,7 @@ def _normalize_roles(raw_roles: object) -> list[dict]:
     return roles
 
 
-async def require_v2_auth(authorization: str | None = Header(default=None, alias=HEADER_AUTHORIZATION)) -> CurrentV2User:
+async def require_auth(authorization: str | None = Header(default=None, alias=HEADER_AUTHORIZATION)) -> CurrentV2User:
     if not authorization or not authorization.startswith("Bearer "):
         raise AuthV2Error(AUTH_UNAUTHORIZED, "Missing or invalid Authorization header", 401)
 
@@ -43,7 +43,7 @@ async def require_v2_auth(authorization: str | None = Header(default=None, alias
     if not token:
         raise AuthV2Error(AUTH_UNAUTHORIZED, "Missing bearer token", 401)
 
-    claims = verify_v2_access_token(token)
+    claims = verify_access_token(token)
     if int(claims.get("auth_ver", -1)) != int(get_settings().AUTH_V2_TOKEN_VERSION):
         raise AuthV2Error(AUTH_TOKEN_VERSION_MISMATCH, "Token version mismatch", 401)
 
@@ -85,10 +85,20 @@ async def require_v2_auth(authorization: str | None = Header(default=None, alias
     return CurrentV2User(**claims, extra=extra)
 
 
-async def require_v2_super_auth(
+async def require_super_auth(
     authorization: str | None = Header(default=None, alias=HEADER_AUTHORIZATION),
 ) -> CurrentV2User:
-    current_user = await require_v2_auth(authorization=authorization)
+    current_user = await require_auth(authorization=authorization)
     if not bool(current_user.is_super):
         raise AuthV2Error(AUTH_FORBIDDEN, "Super admin permission required", 403)
     return current_user
+
+
+async def require_v2_auth(authorization: str | None = Header(default=None, alias=HEADER_AUTHORIZATION)) -> CurrentV2User:
+    return await require_auth(authorization=authorization)
+
+
+async def require_v2_super_auth(
+    authorization: str | None = Header(default=None, alias=HEADER_AUTHORIZATION),
+) -> CurrentV2User:
+    return await require_super_auth(authorization=authorization)

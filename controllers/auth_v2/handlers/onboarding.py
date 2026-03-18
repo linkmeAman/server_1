@@ -25,12 +25,12 @@ from controllers.auth_v2.services.common import (
     utcnow,
 )
 from controllers.auth_v2.services.device_fingerprint import compute_device_fingerprint
-from controllers.auth_v2.services.token_service import issue_v2_token_pair
+from controllers.auth_v2.services.token_service import issue_token_pair
 from core.database_v2 import get_central_db_session
 from core.security import hash_password, verify_password
 from core.settings import get_settings
 
-router = APIRouter(prefix="/auth/v2/onboarding", tags=["auth-v2-onboarding"])
+router = APIRouter(prefix="/auth/onboarding", tags=["auth-onboarding"])
 
 
 async def _ensure_bootstrap_tables(central_db: AsyncSession) -> None:
@@ -134,7 +134,7 @@ async def _issue_bootstrap_tokens(
     country_code: str,
     mobile: str,
 ) -> dict:
-    token_pair = issue_v2_token_pair(
+    token_pair = issue_token_pair(
         user_id=int(user_id),
         contact_id=int(user_id),
         employee_id=0,

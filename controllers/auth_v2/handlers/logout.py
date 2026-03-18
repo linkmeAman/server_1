@@ -1,4 +1,4 @@
-"""POST /auth/v2/logout handler."""
+"""POST /auth/logout handler."""
 
 from __future__ import annotations
 
@@ -24,14 +24,14 @@ from controllers.auth_v2.services.common import (
     user_agent,
 )
 from controllers.auth_v2.services.session_revocation import revoke_session_family
-from controllers.auth_v2.services.token_service import verify_v2_refresh_token
+from controllers.auth_v2.services.token_service import verify_refresh_token
 from core.database_v2 import get_central_db_session
 
-router = APIRouter(prefix="/auth/v2", tags=["auth-v2"])
+router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/logout")
-async def logout_v2(
+async def logout(
     payload: LogoutRequest,
     request: Request,
     central_db: AsyncSession = Depends(get_central_db_session),
@@ -45,7 +45,7 @@ async def logout_v2(
     employee_id = None
 
     try:
-        claims = verify_v2_refresh_token(payload.refresh_token)
+        claims = verify_refresh_token(payload.refresh_token)
         user_id = int(claims.get("user_id"))
         contact_id = int(claims.get("contact_id"))
         employee_id = int(claims.get("employee_id"))

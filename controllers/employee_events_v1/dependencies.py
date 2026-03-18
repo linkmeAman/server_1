@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from controllers.auth_v2.services.token_service import verify_v2_access_token
+from controllers.auth_v2.services.token_service import verify_access_token
 from core.security import validate_token
 
 
@@ -30,7 +30,7 @@ def require_app_access_claims(authorization_header: Optional[str]) -> Dict[str, 
 
     Supports both:
     - legacy app access tokens from `/login`
-    - auth v2 access tokens from `/auth/v2/login-employee`
+    - auth access tokens from `/auth/login-employee`
     """
     if not authorization_header or not authorization_header.startswith("Bearer "):
         raise EmployeeEventsError(
@@ -56,7 +56,7 @@ def require_app_access_claims(authorization_header: Optional[str]) -> Dict[str, 
         legacy_error = str(exc)
 
     try:
-        claims = verify_v2_access_token(token)
+        claims = verify_access_token(token)
         claims["_auth_token_family"] = "auth_v2"
         return claims
     except Exception as exc:

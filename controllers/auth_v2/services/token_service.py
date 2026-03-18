@@ -149,7 +149,7 @@ def _validate_claims(payload: Dict[str, Any], expected_type: Optional[str] = Non
     return payload
 
 
-def issue_v2_token_pair(
+def issue_token_pair(
     user_id: int,
     contact_id: int,
     employee_id: int,
@@ -221,11 +221,39 @@ def issue_v2_token_pair(
     }
 
 
-def verify_v2_access_token(token: str) -> Dict[str, Any]:
+def verify_access_token(token: str) -> Dict[str, Any]:
     payload = _decode(token)
     return _validate_claims(payload, expected_type=TOKEN_TYPE_ACCESS)
 
 
-def verify_v2_refresh_token(token: str) -> Dict[str, Any]:
+def verify_refresh_token(token: str) -> Dict[str, Any]:
     payload = _decode(token)
     return _validate_claims(payload, expected_type=TOKEN_TYPE_REFRESH)
+
+
+def issue_v2_token_pair(
+    user_id: int,
+    contact_id: int,
+    employee_id: int,
+    roles: List[Any],
+    mobile: str,
+    authorization: Optional[Dict[str, Any]] = None,
+    extra_claims: Optional[Dict[str, Any]] = None,
+) -> Dict[str, str]:
+    return issue_token_pair(
+        user_id=user_id,
+        contact_id=contact_id,
+        employee_id=employee_id,
+        roles=roles,
+        mobile=mobile,
+        authorization=authorization,
+        extra_claims=extra_claims,
+    )
+
+
+def verify_v2_access_token(token: str) -> Dict[str, Any]:
+    return verify_access_token(token)
+
+
+def verify_v2_refresh_token(token: str) -> Dict[str, Any]:
+    return verify_refresh_token(token)

@@ -1,4 +1,4 @@
-"""POST /auth/v2/check-contact handler."""
+"""POST /auth/check-contact handler."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ from controllers.auth_v2.services.common import (
 from core.database_v2 import get_central_db_session, get_main_db_session
 from core.settings import get_settings
 
-router = APIRouter(prefix="/auth/v2", tags=["auth-v2"])
+router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
 
 
@@ -188,7 +188,7 @@ async def check_contact(
         rid = request_id(request)
         return error_json_response(
             AUTH_FLOW_DISABLED,
-            "Bootstrap-only auth mode is enabled. Use /auth/v2/onboarding endpoints.",
+            "Bootstrap-only auth mode is enabled. Use /auth/onboarding endpoints.",
             403,
             rid,
             details={},

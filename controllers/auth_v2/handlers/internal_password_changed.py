@@ -1,4 +1,4 @@
-"""POST /internal/auth/v2/events/password-changed.
+"""POST /internal/auth/events/password-changed.
 
 Deployment note: this endpoint must be exposed only on internal network paths.
 """
@@ -30,7 +30,7 @@ from controllers.auth_v2.services.session_revocation import revoke_all_sessions_
 from core.database_v2 import get_central_db_session
 from core.settings import get_settings
 
-router = APIRouter(prefix="/internal/auth/v2/events", tags=["auth-v2-internal"])
+router = APIRouter(prefix="/internal/auth/events", tags=["auth-internal"])
 
 
 @router.post("/password-changed")

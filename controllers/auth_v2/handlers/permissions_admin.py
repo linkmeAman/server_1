@@ -1,4 +1,4 @@
-"""Internal admin APIs for auth v2 permissions management."""
+"""Internal admin APIs for auth permissions management."""
 
 from __future__ import annotations
 
@@ -14,13 +14,13 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from controllers.auth_v2.constants import AUTH_BAD_REQUEST, AUTH_SERVICE_UNAVAILABLE
-from controllers.auth_v2.dependencies import require_v2_super_auth
+from controllers.auth_v2.dependencies import require_super_auth
 from controllers.auth_v2.schemas.models import CurrentV2User
 from controllers.auth_v2.services.authorization import AuthorizationResolver
 from controllers.auth_v2.services.common import AuthV2Error, request_id, success_json_response
 from core.database_v2 import get_central_db_session, get_main_db_session
 
-router = APIRouter(prefix="/internal/auth/v2/permissions", tags=["auth-v2-permissions-admin"])
+router = APIRouter(prefix="/internal/auth/permissions", tags=["auth-permissions-admin"])
 logger = logging.getLogger(__name__)
 
 RESOURCE_CODE_RE = re.compile(r"^[a-z0-9_.-]+$")
@@ -276,7 +276,7 @@ async def _master_id_exists(central_db: AsyncSession, *, table: str, row_id: int
 async def list_resources(
     request: Request,
     include_inactive: bool = Query(True),
-    current_user: CurrentV2User = Depends(require_v2_super_auth),
+    current_user: CurrentV2User = Depends(require_super_auth),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
     rid = request_id(request)
@@ -324,7 +324,7 @@ async def list_resources(
 async def create_resource(
     payload: ResourceCreateRequest,
     request: Request,
-    current_user: CurrentV2User = Depends(require_v2_super_auth),
+    current_user: CurrentV2User = Depends(require_super_auth),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
     rid = request_id(request)
@@ -406,7 +406,7 @@ async def patch_resource(
     resource_id: int,
     payload: ResourcePatchRequest,
     request: Request,
-    current_user: CurrentV2User = Depends(require_v2_super_auth),
+    current_user: CurrentV2User = Depends(require_super_auth),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
     rid = request_id(request)
@@ -477,7 +477,7 @@ async def patch_resource(
 async def list_roles(
     request: Request,
     include_inactive: bool = Query(True),
-    current_user: CurrentV2User = Depends(require_v2_super_auth),
+    current_user: CurrentV2User = Depends(require_super_auth),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
     rid = request_id(request)
@@ -523,7 +523,7 @@ async def list_role_permissions(
     request: Request,
     role_id: Optional[int] = Query(None),
     resource_id: Optional[int] = Query(None),
-    current_user: CurrentV2User = Depends(require_v2_super_auth),
+    current_user: CurrentV2User = Depends(require_super_auth),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
     rid = request_id(request)
@@ -600,7 +600,7 @@ async def list_role_permissions(
 async def put_role_permissions(
     payload: RolePermissionPutRequest,
     request: Request,
-    current_user: CurrentV2User = Depends(require_v2_super_auth),
+    current_user: CurrentV2User = Depends(require_super_auth),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
     rid = request_id(request)
@@ -763,7 +763,7 @@ async def put_role_permissions(
 async def delete_role_permissions(
     payload: RolePermissionDeleteRequest,
     request: Request,
-    current_user: CurrentV2User = Depends(require_v2_super_auth),
+    current_user: CurrentV2User = Depends(require_super_auth),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
     rid = request_id(request)
@@ -841,7 +841,7 @@ async def delete_role_permissions(
 async def list_position_department_roles(
     request: Request,
     include_inactive: bool = Query(True),
-    current_user: CurrentV2User = Depends(require_v2_super_auth),
+    current_user: CurrentV2User = Depends(require_super_auth),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
     rid = request_id(request)
@@ -906,7 +906,7 @@ async def list_position_department_roles(
 async def put_position_department_roles(
     payload: PairRolePutRequest,
     request: Request,
-    current_user: CurrentV2User = Depends(require_v2_super_auth),
+    current_user: CurrentV2User = Depends(require_super_auth),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
     rid = request_id(request)
@@ -1051,7 +1051,7 @@ async def delete_position_department_role(
     mapping_id: int,
     request: Request,
     expected_modified_at: Optional[int] = Query(None),
-    current_user: CurrentV2User = Depends(require_v2_super_auth),
+    current_user: CurrentV2User = Depends(require_super_auth),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
     rid = request_id(request)
@@ -1121,7 +1121,7 @@ async def delete_position_department_role(
 async def get_effective_authorization(
     employee_id: int,
     request: Request,
-    current_user: CurrentV2User = Depends(require_v2_super_auth),
+    current_user: CurrentV2User = Depends(require_super_auth),
     main_db: AsyncSession = Depends(get_main_db_session),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):

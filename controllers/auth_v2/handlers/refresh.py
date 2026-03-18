@@ -1,4 +1,4 @@
-"""POST /auth/v2/refresh handler."""
+"""POST /auth/refresh handler."""
 
 from __future__ import annotations
 
@@ -40,11 +40,11 @@ from controllers.auth_v2.services.common import (
 )
 from controllers.auth_v2.services.device_fingerprint import compute_device_fingerprint
 from controllers.auth_v2.services.session_revocation import revoke_session_family
-from controllers.auth_v2.services.token_service import issue_v2_token_pair, verify_v2_refresh_token
+from controllers.auth_v2.services.token_service import issue_token_pair, verify_refresh_token
 from core.database_v2 import get_central_db_session, get_main_db_session
 from core.settings import get_settings
 
-router = APIRouter(prefix="/auth/v2", tags=["auth-v2"])
+router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 async def _active_employee(main_db: AsyncSession, employee_id: int) -> bool:
@@ -81,7 +81,7 @@ async def _active_bootstrap_user(central_db: AsyncSession, user_id: int) -> bool
 
 
 @router.post("/refresh")
-async def refresh_v2(
+async def refresh(
     payload: RefreshRequest,
     request: Request,
     main_db: AsyncSession = Depends(get_main_db_session),
@@ -92,7 +92,7 @@ async def refresh_v2(
     ua_value = user_agent(request)
 
     try:
-        claims = verify_v2_refresh_token(payload.refresh_token)
+        claims = verify_refresh_token(payload.refresh_token)
     except AuthV2Error as exc:
         return error_json_response(exc.code, exc.message, exc.status_code, rid, details=exc.details)
     except Exception:
@@ -276,7 +276,7 @@ async def refresh_v2(
                             authz = await AuthorizationResolver(main_db, central_db).resolve_employee_authorization(
                                 employee_id
                             )
-                        token_pair = issue_v2_token_pair(
+                        token_pair = issue_token_pair(
                             user_id=user_id,
                             contact_id=contact_id,
                             employee_id=employee_id,

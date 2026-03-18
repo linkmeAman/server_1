@@ -1,4 +1,4 @@
-"""POST /auth/v2/login-employee handler."""
+"""POST /auth/login-employee handler."""
 
 from __future__ import annotations
 
@@ -42,12 +42,12 @@ from controllers.auth_v2.services.common import (
     utcnow,
 )
 from controllers.auth_v2.services.device_fingerprint import compute_device_fingerprint
-from controllers.auth_v2.services.token_service import issue_v2_token_pair
+from controllers.auth_v2.services.token_service import issue_token_pair
 from core.database_v2 import get_central_db_session, get_main_db_session
 from core.security import hash_password, verify_password
 from core.settings import get_settings
 
-router = APIRouter(prefix="/auth/v2", tags=["auth-v2"])
+router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def _lock_key_hash(country_code: str, mobile: str, employee_id: int) -> str:
@@ -363,7 +363,7 @@ async def login_employee(
         rid = request_id(request)
         return error_json_response(
             AUTH_FLOW_DISABLED,
-            "Bootstrap-only auth mode is enabled. Use /auth/v2/onboarding endpoints.",
+            "Bootstrap-only auth mode is enabled. Use /auth/onboarding endpoints.",
             403,
             rid,
             details={},
@@ -468,7 +468,7 @@ async def login_employee(
         await _reset_lock_state(central_db, key_hash)
 
         authz = await AuthorizationResolver(main_db, central_db).resolve_employee_authorization(employee_id)
-        token_pair = issue_v2_token_pair(
+        token_pair = issue_token_pair(
             user_id=int(user["id"]),
             contact_id=int(contact["id"]),
             employee_id=employee_id,
