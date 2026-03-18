@@ -249,7 +249,7 @@ async def _resolve_central_identity(
     user_result = await central_db.execute(
         text(
             """
-            SELECT id, contact_id, country_code, password, inactive
+                        SELECT id, contact_id, country_code, password, password_hash, inactive
             FROM user
             WHERE id = :user_id
               AND (park IS NULL OR park = 0)
@@ -281,11 +281,18 @@ async def _validate_password_and_maybe_migrate(
     *,
     user_id: int,
     legacy_plain_password: str,
+    current_password_hash: str,
     provided_password: str,
     request_id_value: str,
     ip_value: str,
     ua_value: str,
 ) -> bool:
+    """Validate password against hash only (no plaintext fallback)."""
+    existing_user_hash = (current_password_hash or "").strip()
+    if existing_user_hash:
+        return verify_password(provided_password, existing_user_hash)
+
+    # Fallback: check auth_identity table for hash
     identity_result = await central_db.execute(
         text(
             """
@@ -299,56 +306,34 @@ async def _validate_password_and_maybe_migrate(
     )
     identity_row = identity_result.fetchone()
 
-    if identity_row is not None and identity_row._mapping.get("password_hash"):
-        return bool(verify_password(provided_password, str(identity_row._mapping.get("password_hash"))))
+    if identity_row is not None:
+        identity_hash = str(identity_row._mapping.get("password_hash") or "")
+        if identity_hash and verify_password(provided_password, identity_hash):
+            # Sync identity hash to user table for long-term convergence
+            try:
+                now = datetime.utcnow()
+                await central_db.execute(
+                    text(
+                        """
+                        UPDATE user
+                        SET password_hash = :password_hash,
+                            password_hash_algo = :password_hash_algo,
+                            password_hash_updated_at = :password_hash_updated_at
+                        WHERE id = :user_id
+                        """
+                    ),
+                    {
+                        "user_id": int(user_id),
+                        "password_hash": identity_hash,
+                        "password_hash_algo": "bcrypt",
+                        "password_hash_updated_at": now,
+                    },
+                )
+            except Exception:
+                pass
+            return True
 
-    if legacy_plain_password != provided_password:
-        return False
-
-    try:
-        new_hash = hash_password(provided_password)
-        if identity_row is None:
-            await central_db.execute(
-                text(
-                    """
-                    INSERT INTO auth_identity (user_id, password_hash, created_at)
-                    VALUES (:user_id, :password_hash, :created_at)
-                    """
-                ),
-                {
-                    "user_id": int(user_id),
-                    "password_hash": new_hash,
-                    "created_at": datetime.utcnow(),
-                },
-            )
-        else:
-            await central_db.execute(
-                text(
-                    """
-                    UPDATE auth_identity
-                    SET password_hash = :password_hash
-                    WHERE user_id = :user_id
-                    """
-                ),
-                {
-                    "user_id": int(user_id),
-                    "password_hash": new_hash,
-                },
-            )
-    except Exception:
-        await write_audit_event(
-            central_db,
-            event_type=EVENT_LOGIN_PASSWORD_MIGRATION,
-            outcome=OUTCOME_SECURITY,
-            reason_code=AUTH_PASSWORD_MIGRATION_DEFERRED,
-            user_id=int(user_id),
-            ip=ip_value,
-            user_agent=ua_value,
-            request_id=request_id_value,
-            details_json={"deferred": True},
-        )
-
-    return True
+    return False
 
 
 @router.post("/login-employee")
@@ -419,6 +404,7 @@ async def login_employee(
             central_db,
             user_id=int(user["id"]),
             legacy_plain_password=str(user.get("password") or ""),
+            current_password_hash=str(user.get("password_hash") or ""),
             provided_password=payload.password,
             request_id_value=rid,
             ip_value=ip_value,
