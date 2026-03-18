@@ -28,7 +28,7 @@ from controllers.users.schemas.models import CreateUserRequest
 from core.database_v2 import get_central_db_session
 from core.security import hash_password
 
-router = APIRouter(prefix="/users", tags=["users"])
+router = APIRouter(prefix="/auth/users", tags=["users"])
 
 
 # ── Table bootstrap ────────────────────────────────────────────────────────────

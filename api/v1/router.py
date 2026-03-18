@@ -22,7 +22,7 @@ settings = get_settings()
 api_router.include_router(auth_router)
 if settings.AUTH_V2_ENABLED:
     api_router.include_router(auth_v2_router)
-    api_router.include_router(users_router)
+api_router.include_router(users_router)
 
 # 2) Legacy-standardized wrapper routes
 api_router.include_router(example_router)
