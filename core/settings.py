@@ -151,6 +151,7 @@ class Settings(BaseSettings):
     )
     AUTH_V2_LOGIN_COOLDOWN_MINUTES: int = int(os.getenv("AUTH_V2_LOGIN_COOLDOWN_MINUTES", 15))
     AUTH_V2_BOOTSTRAP_ONLY: bool = os.getenv("AUTH_V2_BOOTSTRAP_ONLY", "True").lower() == "true"
+    AUTH_SUPREME_CREATE_ENABLED: bool = os.getenv("AUTH_SUPREME_CREATE_ENABLED", "False").lower() == "true"
     
     # Logging
     LOG_LEVEL: str = "INFO"

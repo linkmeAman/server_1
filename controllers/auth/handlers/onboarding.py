@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from controllers.auth.constants import (
+    AUTH_SUPREME_CREATE_DISABLED,
     AUTH_SUPREME_ALREADY_INITIALIZED,
     AUTH_SUPREME_USER_NOT_FOUND,
     AUTH_INVALID_CREDENTIALS,
@@ -238,6 +239,16 @@ async def create_supreme_user(
             await _ensure_supreme_tables(central_db)
 
             total_users = await _active_supreme_user_count(central_db)
+            settings = get_settings()
+            if total_users > 0 and not bool(settings.AUTH_SUPREME_CREATE_ENABLED):
+                return error_json_response(
+                    AUTH_SUPREME_CREATE_DISABLED,
+                    "Supreme user create route is disabled",
+                    403,
+                    rid,
+                    details={"enable_with": "AUTH_SUPREME_CREATE_ENABLED=True"},
+                )
+
             if total_users > 0:
                 return error_json_response(
                     AUTH_SUPREME_ALREADY_INITIALIZED,
