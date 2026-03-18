@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
@@ -48,6 +49,7 @@ from core.security import hash_password, verify_password
 from core.settings import get_settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
 
 def _lock_key_hash(country_code: str, mobile: str, employee_id: int) -> str:
