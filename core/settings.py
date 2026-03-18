@@ -128,7 +128,6 @@ class Settings(BaseSettings):
     }
 
     # Authentication v2
-    AUTH_V2_ENABLED: bool = os.getenv("AUTH_V2_ENABLED", "False").lower() == "true"
     AUTH_V2_ISSUER: str = os.getenv("AUTH_V2_ISSUER", "dynamic-api-auth-v2")
     AUTH_V2_AUDIENCE: str = os.getenv("AUTH_V2_AUDIENCE", "dynamic-api-clients")
     AUTH_V2_ACCESS_TOKEN_MINUTES: int = int(os.getenv("AUTH_V2_ACCESS_TOKEN_MINUTES", 15))

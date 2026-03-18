@@ -13,15 +13,12 @@ from controllers.employee_events_v1 import router as employee_events_v1_router
 from controllers.google_calendar_v1 import router as google_calendar_v1_router
 from controllers.internal.sqlgw_admin import router as sqlgw_admin_router
 from controllers.orders import router as orders_router
-from core.settings import get_settings
 
 api_router = APIRouter()
-settings = get_settings()
 
 # 1) Auth routes (root paths)
 api_router.include_router(auth_router)
-if settings.AUTH_V2_ENABLED:
-    api_router.include_router(auth_v2_router)
+api_router.include_router(auth_v2_router)
 api_router.include_router(users_router)
 
 # 2) Legacy-standardized wrapper routes
