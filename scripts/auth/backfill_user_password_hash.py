@@ -35,6 +35,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--dry-run", action="store_true", help="Do not write updates")
     parser.add_argument("--batch-size", type=int, default=500, help="Rows per batch")
+    parser.add_argument("--limit", type=int, default=0, help="Stop after processing this many rows total (0 = no limit)")
     parser.add_argument("--sleep-ms", type=int, default=0, help="Delay between batches")
     parser.add_argument(
         "--include-inactive",
@@ -65,16 +66,23 @@ async def _fetch_batch(central_db, *, offset: int, limit: int, include_inactive:
     return [dict(row._mapping) for row in result.fetchall()]
 
 
-async def run(*, dry_run: bool, batch_size: int, sleep_ms: int, include_inactive: bool) -> Stats:
+async def run(*, dry_run: bool, batch_size: int, limit: int, sleep_ms: int, include_inactive: bool) -> Stats:
     stats = Stats()
     offset = 0
 
     async with central_session_context() as central_db:
         while True:
+            fetch_size = batch_size
+            if limit > 0:
+                remaining = limit - stats.scanned
+                if remaining <= 0:
+                    break
+                fetch_size = min(batch_size, remaining)
+
             rows = await _fetch_batch(
                 central_db,
                 offset=offset,
-                limit=batch_size,
+                limit=fetch_size,
                 include_inactive=include_inactive,
             )
             if not rows:
@@ -147,6 +155,7 @@ async def amain() -> int:
     stats = await run(
         dry_run=bool(args.dry_run),
         batch_size=max(1, int(args.batch_size)),
+        limit=max(0, int(args.limit)),
         sleep_ms=max(0, int(args.sleep_ms)),
         include_inactive=bool(args.include_inactive),
     )
