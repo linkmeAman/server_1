@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from controllers.api.auth import router as auth_router
 from controllers.auth.router import router as auth_v2_router
+from controllers.users.router import router as users_router
 from controllers.api.example import router as example_router
 from controllers.api.geosearch import router as geosearch_router
 from controllers.api.llm import router as llm_router
@@ -21,6 +22,7 @@ settings = get_settings()
 api_router.include_router(auth_router)
 if settings.AUTH_V2_ENABLED:
     api_router.include_router(auth_v2_router)
+    api_router.include_router(users_router)
 
 # 2) Legacy-standardized wrapper routes
 api_router.include_router(example_router)
