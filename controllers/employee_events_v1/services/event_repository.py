@@ -893,3 +893,170 @@ class EmployeeEventsRepository:
                 {"park": "0"},
             ).mappings().all()
         return [dict(row) for row in rows]
+
+    def get_demo_events(
+        self,
+        employee_ids: List[int],
+        from_date: str,
+        to_date: str,
+        statuses: Optional[List[int]] = None,
+        types: Optional[List[int]] = None,
+        venue_ids: Optional[List[int]] = None,
+        batch_ids: Optional[List[int]] = None,
+    ) -> List[Dict[str, Any]]:
+        if not employee_ids:
+            return []
+
+        engine = self._get_main_engine()
+
+        employee_placeholders = []
+        params: Dict[str, Any] = {
+            "from_date": from_date,
+            "to_date": to_date,
+        }
+        for idx, employee_id in enumerate(employee_ids):
+            key = f"employee_id_{idx}"
+            employee_placeholders.append(f":{key}")
+            params[key] = int(employee_id)
+
+        sql = f"""
+        SELECT
+            id,
+            demo_type,
+            otp,
+            hashed_otp,
+            demo_link,
+            demo_venue_link,
+            name,
+            demoApproval,
+            date,
+            start_date,
+            end_date,
+            demo_status,
+            start_time,
+            start_time_hour,
+            end_time,
+            end_time_hour,
+            include_time,
+            existing_batch,
+            batch_id,
+            venue_id,
+            amount,
+            currency,
+            infant,
+            ad_hoc,
+            upi_id,
+            venue,
+            storytelling_location,
+            workshop_location,
+            demo_information,
+            select_paid_demo,
+            paid_demo,
+            select_free_demo,
+            free_demo,
+            city,
+            venue_display_name,
+            venue_address,
+            venue_short_address,
+            venue_addr_for_post,
+            venue_address_link,
+            timezone_abbr_offset,
+            timezone_gmt_offset_name,
+            timezone_zone_name,
+            host_employee_id,
+            host_contact_id,
+            zone_time_str,
+            zone_time_details,
+            host_name,
+            sc_employee_id,
+            sc_contact_id,
+            sc_host_name,
+            sc_host_fullname,
+            sc_host_email,
+            so_employee_id,
+            so_host_name,
+            so_contact_id,
+            so_host_fullname,
+            so_host_email,
+            comment,
+            stop_response,
+            response_count,
+            response_limit_flag,
+            response_limit,
+            seats_left,
+            ads,
+            ads_comment,
+            all_fields_filled,
+            demo_ad_status,
+            bid,
+            branch,
+            type,
+            owner_id,
+            owner_name,
+            owner_contact_id,
+            owner_email,
+            mobile_country_code,
+            mobile_number,
+            optional_mobile_country_code,
+            optional_mobile_number,
+            park,
+            demo_date_string,
+            day_code,
+            demo_day,
+            day,
+            created_at,
+            created_by,
+            modified_at,
+            modified_by,
+            modified_by_fname,
+            hybrid
+        FROM demo_link_view
+        WHERE (
+              host_contact_id IN ({", ".join(employee_placeholders)})
+              OR sc_contact_id IN ({", ".join(employee_placeholders)})
+              OR so_contact_id IN ({", ".join(employee_placeholders)})
+              OR owner_contact_id IN ({", ".join(employee_placeholders)})
+          )
+          AND start_date >= :from_date
+          AND start_date <= :to_date
+          AND park = 0
+          AND demoApproval = 1
+        """
+
+        if statuses:
+            status_placeholders = []
+            for idx, status_value in enumerate(statuses):
+                key = f"status_{idx}"
+                status_placeholders.append(f":{key}")
+                params[key] = int(status_value)
+            sql += f" AND demo_status IN ({', '.join(status_placeholders)})"
+
+        if types:
+            type_placeholders = []
+            for idx, type_value in enumerate(types):
+                key = f"type_{idx}"
+                type_placeholders.append(f":{key}")
+                params[key] = int(type_value)
+            sql += f" AND demo_type IN ({', '.join(type_placeholders)})"
+
+        if venue_ids:
+            venue_placeholders = []
+            for idx, venue_id in enumerate(venue_ids):
+                key = f"venue_id_{idx}"
+                venue_placeholders.append(f":{key}")
+                params[key] = int(venue_id)
+            sql += f" AND venue_id IN ({', '.join(venue_placeholders)})"
+
+        if batch_ids:
+            batch_placeholders = []
+            for idx, batch_id in enumerate(batch_ids):
+                key = f"batch_id_{idx}"
+                batch_placeholders.append(f":{key}")
+                params[key] = int(batch_id)
+            sql += f" AND batch_id IN ({', '.join(batch_placeholders)})"
+
+        sql += " ORDER BY start_date ASC, id ASC"
+
+        with engine.connect() as conn:
+            rows = conn.execute(text(sql), params).mappings().all()
+        return [dict(row) for row in rows]

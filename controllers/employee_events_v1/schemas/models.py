@@ -73,3 +73,13 @@ class EmployeeLeaveCalendarBatchQueryRequest(BaseModel):
     statuses: Optional[List[Any]] = Field(default=None)
     request_types: Optional[List[Any]] = Field(default=None)
     department_ids: Optional[List[Any]] = Field(default=None)
+
+
+class DemoEventsBatchQueryRequest(BaseModel):
+    employee_ids: List[Any] = Field(...)
+    from_date: str = Field(..., min_length=8, max_length=20)
+    to_date: str = Field(..., min_length=8, max_length=20)
+    statuses: Optional[List[Any]] = Field(default=None)
+    types: Optional[List[Any]] = Field(default=None)
+    venue_ids: Optional[List[Any]] = Field(default=None)
+    batch_ids: Optional[List[Any]] = Field(default=None)
