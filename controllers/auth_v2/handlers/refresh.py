@@ -69,7 +69,7 @@ async def _active_bootstrap_user(central_db: AsyncSession, user_id: int) -> bool
         text(
             """
             SELECT id
-            FROM auth_bootstrap_user_v2
+            FROM auth_bootstrap_user
             WHERE id = :user_id
               AND is_active = 1
             LIMIT 1
@@ -116,7 +116,7 @@ async def refresh_v2(
                     """
                     SELECT id, user_id, contact_id, employee_id, token_jti, token_hash,
                            used_at, revoked_at, issued_device_fingerprint_hash
-                    FROM auth_refresh_token_v2
+                    FROM auth_refresh_token
                     WHERE token_hash = :token_hash
                       AND token_jti = :token_jti
                     LIMIT 1
@@ -135,7 +135,7 @@ async def refresh_v2(
                     await central_db.execute(
                         text(
                             """
-                            UPDATE auth_refresh_token_v2
+                            UPDATE auth_refresh_token
                             SET revoked_at = COALESCE(revoked_at, :revoked_at),
                                 revoke_reason = :revoke_reason
                             WHERE id = :id
@@ -198,7 +198,7 @@ async def refresh_v2(
                         await central_db.execute(
                             text(
                                 """
-                                UPDATE auth_refresh_token_v2
+                                UPDATE auth_refresh_token
                                 SET revoked_at = :now,
                                     revoke_reason = :reason
                                 WHERE id = :id
@@ -233,7 +233,7 @@ async def refresh_v2(
                         await central_db.execute(
                             text(
                                 """
-                                UPDATE auth_refresh_token_v2
+                                UPDATE auth_refresh_token
                                 SET revoked_at = :now,
                                     revoke_reason = :reason
                                 WHERE id = :id
@@ -290,7 +290,7 @@ async def refresh_v2(
                         await central_db.execute(
                             text(
                                 """
-                                UPDATE auth_refresh_token_v2
+                                UPDATE auth_refresh_token
                                 SET used_at = :used_at,
                                     last_ip = :last_ip,
                                     last_user_agent = :last_user_agent,
@@ -311,7 +311,7 @@ async def refresh_v2(
                         await central_db.execute(
                             text(
                                 """
-                                INSERT INTO auth_refresh_token_v2 (
+                                INSERT INTO auth_refresh_token (
                                     user_id, contact_id, employee_id, token_jti, token_hash,
                                     issued_at, expires_at, used_at, revoked_at,
                                     rotated_from_id, revoke_reason,

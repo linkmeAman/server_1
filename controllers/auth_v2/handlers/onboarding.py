@@ -37,7 +37,7 @@ async def _ensure_bootstrap_tables(central_db: AsyncSession) -> None:
     await central_db.execute(
         text(
             """
-            CREATE TABLE IF NOT EXISTS auth_bootstrap_user_v2 (
+            CREATE TABLE IF NOT EXISTS auth_bootstrap_user (
                 id BIGINT PRIMARY KEY AUTO_INCREMENT,
                 country_code VARCHAR(8) NOT NULL,
                 mobile VARCHAR(20) NOT NULL,
@@ -47,7 +47,7 @@ async def _ensure_bootstrap_tables(central_db: AsyncSession) -> None:
                 is_active TINYINT(1) NOT NULL DEFAULT 1,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 modified_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                UNIQUE KEY uq_auth_bootstrap_user_v2_mobile (country_code, mobile)
+                UNIQUE KEY uq_auth_bootstrap_user_mobile (country_code, mobile)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """
         )
@@ -56,7 +56,7 @@ async def _ensure_bootstrap_tables(central_db: AsyncSession) -> None:
     await central_db.execute(
         text(
             """
-            CREATE TABLE IF NOT EXISTS auth_refresh_token_v2 (
+            CREATE TABLE IF NOT EXISTS auth_refresh_token (
                 id BIGINT PRIMARY KEY AUTO_INCREMENT,
                 user_id BIGINT NOT NULL,
                 contact_id BIGINT NOT NULL,
@@ -76,12 +76,12 @@ async def _ensure_bootstrap_tables(central_db: AsyncSession) -> None:
                 last_user_agent TEXT NULL,
                 last_used_at DATETIME NULL,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE KEY uq_auth_refresh_token_v2_token_hash (token_hash),
-                UNIQUE KEY uq_auth_refresh_token_v2_token_jti (token_jti),
-                KEY ix_auth_refresh_token_v2_user_employee_revoked (user_id, employee_id, revoked_at),
-                KEY ix_auth_refresh_token_v2_expires_at (expires_at),
-                CONSTRAINT fk_auth_refresh_token_v2_rotated
-                    FOREIGN KEY (rotated_from_id) REFERENCES auth_refresh_token_v2 (id)
+                UNIQUE KEY uq_auth_refresh_token_token_hash (token_hash),
+                UNIQUE KEY uq_auth_refresh_token_token_jti (token_jti),
+                KEY ix_auth_refresh_token_user_employee_revoked (user_id, employee_id, revoked_at),
+                KEY ix_auth_refresh_token_expires_at (expires_at),
+                CONSTRAINT fk_auth_refresh_token_rotated
+                    FOREIGN KEY (rotated_from_id) REFERENCES auth_refresh_token (id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """
         )
@@ -93,7 +93,7 @@ async def _active_bootstrap_user_count(central_db: AsyncSession) -> int:
         text(
             """
             SELECT COUNT(*) AS total
-            FROM auth_bootstrap_user_v2
+            FROM auth_bootstrap_user
             WHERE is_active = 1
             """
         )
@@ -150,7 +150,7 @@ async def _issue_bootstrap_tokens(
     await central_db.execute(
         text(
             """
-            INSERT INTO auth_refresh_token_v2 (
+            INSERT INTO auth_refresh_token (
                 user_id, contact_id, employee_id, token_jti, token_hash,
                 issued_at, expires_at, used_at, revoked_at, rotated_from_id,
                 revoke_reason, issued_ip, issued_user_agent,
@@ -250,7 +250,7 @@ async def create_supreme_user(
             await central_db.execute(
                 text(
                     """
-                    INSERT INTO auth_bootstrap_user_v2 (
+                    INSERT INTO auth_bootstrap_user (
                         country_code,
                         mobile,
                         password_hash,
@@ -285,7 +285,7 @@ async def create_supreme_user(
                 text(
                     """
                     SELECT id, display_name
-                    FROM auth_bootstrap_user_v2
+                    FROM auth_bootstrap_user
                     WHERE country_code = :country_code
                       AND mobile = :mobile
                       AND is_active = 1
@@ -363,7 +363,7 @@ async def login_supreme_user(
                 text(
                     """
                     SELECT id, password_hash, display_name
-                    FROM auth_bootstrap_user_v2
+                    FROM auth_bootstrap_user
                     WHERE country_code = :country_code
                       AND mobile = :mobile
                       AND is_active = 1

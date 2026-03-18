@@ -24,7 +24,7 @@ async def revoke_all_sessions_for_user(user_id: int, reason: str, db: AsyncSessi
     result = await db.execute(
         text(
             """
-            UPDATE auth_refresh_token_v2
+            UPDATE auth_refresh_token
             SET revoked_at = :now,
                 revoke_reason = :reason
             WHERE user_id = :user_id
@@ -60,7 +60,7 @@ async def revoke_session_family(
     result = await db.execute(
         text(
             """
-            UPDATE auth_refresh_token_v2
+            UPDATE auth_refresh_token
             SET revoked_at = :now,
                 revoke_reason = :reason
             WHERE user_id = :user_id

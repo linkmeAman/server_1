@@ -52,7 +52,7 @@ class _FakeCentralSession:
         sql = str(statement)
         self.queries.append(sql)
 
-        if "FROM auth_refresh_token_v2" in sql and "FOR UPDATE" in sql:
+        if "FROM auth_refresh_token" in sql and "FOR UPDATE" in sql:
             row = {
                 "id": 100,
                 "user_id": self.shared_state["user_id"],
@@ -66,11 +66,11 @@ class _FakeCentralSession:
             }
             return _FakeResult([row])
 
-        if "SET used_at" in sql and "UPDATE auth_refresh_token_v2" in sql:
+        if "SET used_at" in sql and "UPDATE auth_refresh_token" in sql:
             self.shared_state["used_at"] = datetime.utcnow()
             return _FakeResult([])
 
-        if "SET revoked_at" in sql and "UPDATE auth_refresh_token_v2" in sql:
+        if "SET revoked_at" in sql and "UPDATE auth_refresh_token" in sql:
             self.shared_state["revoked_at"] = datetime.utcnow()
             return _FakeResult([])
 

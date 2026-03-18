@@ -72,7 +72,7 @@ async def logout_v2(
                     text(
                         """
                         SELECT id
-                        FROM auth_refresh_token_v2
+                        FROM auth_refresh_token
                         WHERE user_id = :user_id
                           AND employee_id = :employee_id
                           AND token_hash = :token_hash
@@ -91,7 +91,7 @@ async def logout_v2(
                     await central_db.execute(
                         text(
                             """
-                            UPDATE auth_refresh_token_v2
+                            UPDATE auth_refresh_token
                             SET revoked_at = :revoked_at,
                                 revoke_reason = :revoke_reason
                             WHERE id = :id

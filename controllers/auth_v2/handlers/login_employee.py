@@ -483,7 +483,7 @@ async def login_employee(
         await central_db.execute(
             text(
                 """
-                INSERT INTO auth_refresh_token_v2 (
+                INSERT INTO auth_refresh_token (
                     user_id, contact_id, employee_id, token_jti, token_hash,
                     issued_at, expires_at, used_at, revoked_at, rotated_from_id,
                     revoke_reason, issued_ip, issued_user_agent,

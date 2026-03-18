@@ -53,7 +53,7 @@ class _FakeCentralSession:
 
     async def execute(self, statement, params=None):
         sql = str(statement)
-        if "FROM auth_refresh_token_v2" in sql and "FOR UPDATE" in sql:
+        if "FROM auth_refresh_token" in sql and "FOR UPDATE" in sql:
             return _FakeResult(
                 [
                     {
