@@ -59,7 +59,7 @@ async def _load_lock_state(db: AsyncSession, key_hash: str) -> Optional[Dict[str
         text(
             """
             SELECT id, fail_count, first_fail_at, last_fail_at, locked_until
-            FROM auth_lock_state_v2
+            FROM auth_lock_state
             WHERE key_type = :key_type AND key_hash = :key_hash
             LIMIT 1
             """
@@ -89,7 +89,7 @@ async def _record_failed_attempt(
         await db.execute(
             text(
                 """
-                INSERT INTO auth_lock_state_v2 (
+                INSERT INTO auth_lock_state (
                     key_type, country_code, mobile, employee_id, key_hash,
                     fail_count, first_fail_at, last_fail_at, locked_until, created_at, modified_at
                 ) VALUES (
@@ -129,7 +129,7 @@ async def _record_failed_attempt(
     await db.execute(
         text(
             """
-            UPDATE auth_lock_state_v2
+            UPDATE auth_lock_state
             SET fail_count = :fail_count,
                 first_fail_at = :first_fail_at,
                 last_fail_at = :last_fail_at,
@@ -155,7 +155,7 @@ async def _reset_lock_state(db: AsyncSession, key_hash: str) -> None:
     await db.execute(
         text(
             """
-            UPDATE auth_lock_state_v2
+            UPDATE auth_lock_state
             SET fail_count = 0,
                 first_fail_at = NULL,
                 last_fail_at = NULL,

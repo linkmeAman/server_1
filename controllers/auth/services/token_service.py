@@ -11,6 +11,7 @@ from controllers.auth.constants import (
     AUTH_INVALID_TOKEN,
     AUTH_TOKEN_VERSION_MISMATCH,
     TOKEN_TYPE_ACCESS,
+    TOKEN_TYPE_IDENTITY,
     TOKEN_TYPE_REFRESH,
 )
 from controllers.auth.services.common import AuthError, random_jti, utcnow
@@ -257,3 +258,69 @@ def verify_v2_access_token(token: str) -> Dict[str, Any]:
 
 def verify_v2_refresh_token(token: str) -> Dict[str, Any]:
     return verify_refresh_token(token)
+
+
+# ── Identity token (verify-identity → select-role) ──────────────────────────
+
+_IDENTITY_TOKEN_EXPIRE_MINUTES = 5
+
+
+def issue_identity_token(
+    user_id: int,
+    contact_id: int,
+    mobile: str,
+    country_code: str,
+) -> str:
+    """Issue a short-lived (5 min) proof-of-identity token.
+
+    Does NOT grant a session.  Frontend holds this between verify-identity
+    and select-role calls to carry the confirmed identity across the role-
+    selection screen without re-entering the password.
+    """
+    settings = get_settings()
+    record = get_current_key()
+    jti = random_jti()
+
+    claims: Dict[str, Any] = {
+        "user_id": int(user_id),
+        "contact_id": int(contact_id),
+        "mobile": str(mobile),
+        "country_code": str(country_code),
+        "jti": jti,
+    }
+    payload = _payload(
+        subject=str(user_id),
+        token_type=TOKEN_TYPE_IDENTITY,
+        expires_delta=timedelta(minutes=_IDENTITY_TOKEN_EXPIRE_MINUTES),
+        claims=claims,
+    )
+    return _encode(payload, record.kid, record.key_bytes)
+
+
+def verify_identity_token(token: str) -> Dict[str, Any]:
+    """Decode and validate a proof-of-identity token."""
+    payload = _decode(token)
+
+    settings = get_settings()
+    required = {"sub", "user_id", "contact_id", "mobile", "country_code", "jti", "iat", "exp", "iss", "aud", "auth_ver"}
+    missing = [c for c in required if c not in payload]
+    if missing:
+        raise AuthError(AUTH_INVALID_TOKEN, f"Missing claims: {', '.join(missing)}", 401)
+
+    if int(payload.get("auth_ver", -1)) != int(settings.AUTH_V2_TOKEN_VERSION):
+        raise AuthError(AUTH_TOKEN_VERSION_MISMATCH, "Token version mismatch", 401)
+
+    if payload.get("typ") != TOKEN_TYPE_IDENTITY:
+        raise AuthError(AUTH_INVALID_TOKEN, "Invalid token type", 401)
+
+    now_ts = int(utcnow().timestamp())
+    if int(payload.get("exp", 0)) <= now_ts:
+        raise AuthError(AUTH_INVALID_TOKEN, "Identity token expired", 401)
+
+    if payload.get("iss") != settings.AUTH_V2_ISSUER:
+        raise AuthError(AUTH_INVALID_TOKEN, "Invalid token issuer", 401)
+
+    if payload.get("aud") != settings.AUTH_V2_AUDIENCE:
+        raise AuthError(AUTH_INVALID_TOKEN, "Invalid token audience", 401)
+
+    return payload
