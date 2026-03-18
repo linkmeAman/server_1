@@ -8,7 +8,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 import main
-from tests.auth_v2_test_utils import build_headers, testclient_requests_work
+from tests.auth_test_utils import build_headers, testclient_requests_work
 
 
 class _FakeUser:

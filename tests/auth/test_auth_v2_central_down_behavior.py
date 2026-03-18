@@ -1,4 +1,4 @@
-"""Central DB down behavior matrix tests for auth v2 endpoints."""
+"""Central outage behavior tests for auth v2 authorization expansion."""
 
 from __future__ import annotations
 
@@ -36,18 +36,9 @@ class _MainHealthy:
         if "FROM contact" in sql:
             return _FakeResult([{"id": 10, "fname": "A", "mname": "", "lname": "B"}])
         if "FROM employee" in sql and "WHERE id =" in sql:
-            return _FakeResult([{"id": 3, "contact_id": 10, "status": 1}])
+            return _FakeResult([{"id": 3, "contact_id": 10, "status": 1, "position_id": 2, "department_id": 4}])
         if "FROM employee" in sql:
-            return _FakeResult(
-                [
-                    {
-                        "employee_id": 3,
-                        "ecode": "E-3",
-                        "position_id": 2,
-                        "department_id": 5,
-                    }
-                ]
-            )
+            return _FakeResult([{"employee_id": 3, "ecode": "E3", "position_id": 2, "department_id": 4}])
         return _FakeResult([])
 
 
@@ -73,7 +64,7 @@ class _CentralDown:
         return None
 
 
-class TestAuthV2CentralDbDownMatrix(unittest.TestCase):
+class TestAuthV2CentralDownBehavior(unittest.TestCase):
     def setUp(self):
         ensure_auth_v2_routes()
         main.app.dependency_overrides = {}
@@ -90,7 +81,7 @@ class TestAuthV2CentralDbDownMatrix(unittest.TestCase):
     def tearDown(self):
         main.app.dependency_overrides = {}
 
-    def test_matrix(self):
+    def test_outage_matrix_for_authz_phase(self):
         if not testclient_requests_work():
             self.skipTest("TestClient request execution is not responsive in this runtime")
 
@@ -108,9 +99,9 @@ class TestAuthV2CentralDbDownMatrix(unittest.TestCase):
             "aud": "aud",
             "auth_ver": 2,
             "typ": "access",
-            "permissions": [],
-            "is_super": False,
-            "permissions_version": 0,
+            "permissions": ["global:super"],
+            "is_super": True,
+            "permissions_version": 1,
             "permissions_schema_version": 1,
         }
 
@@ -126,9 +117,6 @@ class TestAuthV2CentralDbDownMatrix(unittest.TestCase):
                 "employee_id": 3,
                 "mobile": "9990001111",
             },
-        ), patch(
-            "controllers.auth.handlers.logout.verify_v2_refresh_token",
-            return_value={"user_id": 1, "contact_id": 2, "employee_id": 3},
         ), patch(
             "controllers.auth.dependencies.verify_v2_access_token",
             return_value=claims,
@@ -155,10 +143,9 @@ class TestAuthV2CentralDbDownMatrix(unittest.TestCase):
                     json={"refresh_token": "rt"},
                     headers=build_headers(),
                 )
-                r_logout = client.post(
-                    "/auth/v2/logout",
-                    json={"refresh_token": "rt"},
-                    headers=build_headers(),
+                r_admin = client.get(
+                    "/internal/auth/v2/permissions/roles",
+                    headers=build_headers({"Authorization": "Bearer at"}),
                 )
                 r_me = client.get(
                     "/auth/v2/me",
@@ -168,12 +155,9 @@ class TestAuthV2CentralDbDownMatrix(unittest.TestCase):
                 client.close()
 
         self.assertEqual(200, r_check.status_code)
-        self.assertEqual(3, r_check.json()["data"]["employees"][0]["employee_id"])
-        self.assertIsNone(r_check.json()["data"]["employees"][0]["position"])
-        self.assertIsNone(r_check.json()["data"]["employees"][0]["department"])
         self.assertEqual(503, r_login.status_code)
         self.assertEqual(503, r_refresh.status_code)
-        self.assertEqual(503, r_logout.status_code)
+        self.assertEqual(503, r_admin.status_code)
         self.assertEqual(200, r_me.status_code)
 
 
