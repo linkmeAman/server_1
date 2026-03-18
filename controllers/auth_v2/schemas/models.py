@@ -34,6 +34,24 @@ class LoginEmployeeRequest(BaseModel):
     password: str = Field(..., min_length=1)
 
 
+class BootstrapStatusData(BaseModel):
+    bootstrap_required: bool
+    total_users: int
+
+
+class BootstrapSupremeRequest(BaseModel):
+    country_code: str = Field(..., min_length=1, max_length=8)
+    mobile: str = Field(..., min_length=6, max_length=20)
+    password: str = Field(..., min_length=8, max_length=128)
+    display_name: Optional[str] = Field(default=None, max_length=120)
+
+
+class BootstrapLoginRequest(BaseModel):
+    country_code: str = Field(..., min_length=1, max_length=8)
+    mobile: str = Field(..., min_length=6, max_length=20)
+    password: str = Field(..., min_length=1, max_length=128)
+
+
 class RefreshRequest(BaseModel):
     refresh_token: str = Field(..., min_length=1)
 

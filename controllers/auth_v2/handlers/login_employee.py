@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from controllers.auth_v2.constants import (
     AUTH_EMPLOYEE_INACTIVE,
     AUTH_EMPLOYEE_USER_MAPPING_MISSING,
+    AUTH_FLOW_DISABLED,
     AUTH_IDENTITY_MISMATCH,
     AUTH_INVALID_CREDENTIALS,
     AUTH_LOGIN_COOLDOWN,
@@ -357,6 +358,17 @@ async def login_employee(
     main_db: AsyncSession = Depends(get_main_db_session),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
+    settings = get_settings()
+    if bool(settings.AUTH_V2_BOOTSTRAP_ONLY):
+        rid = request_id(request)
+        return error_json_response(
+            AUTH_FLOW_DISABLED,
+            "Bootstrap-only auth mode is enabled. Use /auth/v2/onboarding endpoints.",
+            403,
+            rid,
+            details={},
+        )
+
     rid = request_id(request)
     ip_value = client_ip(request)
     ua_value = user_agent(request)

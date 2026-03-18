@@ -150,6 +150,7 @@ class Settings(BaseSettings):
         os.getenv("AUTH_V2_LOGIN_FAIL_WINDOW_MINUTES", 15)
     )
     AUTH_V2_LOGIN_COOLDOWN_MINUTES: int = int(os.getenv("AUTH_V2_LOGIN_COOLDOWN_MINUTES", 15))
+    AUTH_V2_BOOTSTRAP_ONLY: bool = os.getenv("AUTH_V2_BOOTSTRAP_ONLY", "True").lower() == "true"
     
     # Logging
     LOG_LEVEL: str = "INFO"

@@ -156,6 +156,7 @@ def issue_v2_token_pair(
     roles: List[Any],
     mobile: str,
     authorization: Optional[Dict[str, Any]] = None,
+    extra_claims: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, str]:
     settings = get_settings()
     record = get_current_key()
@@ -195,6 +196,8 @@ def issue_v2_token_pair(
         "permissions_version": int(authz.get("permissions_version", 0) or 0),
         "permissions_schema_version": int(authz.get("permissions_schema_version", 1) or 1),
     }
+    if extra_claims:
+        base_claims.update(extra_claims)
 
     access_payload = _payload(
         subject=str(user_id),

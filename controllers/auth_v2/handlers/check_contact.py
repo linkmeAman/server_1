@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from controllers.auth_v2.constants import (
     AUTH_CONTACT_NOT_FOUND,
+    AUTH_FLOW_DISABLED,
     AUTH_RATE_LIMITED,
     AUTH_SERVICE_UNAVAILABLE,
     EVENT_CHECK_CONTACT,
@@ -182,6 +183,17 @@ async def check_contact(
     main_db: AsyncSession = Depends(get_main_db_session),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
+    settings = get_settings()
+    if bool(settings.AUTH_V2_BOOTSTRAP_ONLY):
+        rid = request_id(request)
+        return error_json_response(
+            AUTH_FLOW_DISABLED,
+            "Bootstrap-only auth mode is enabled. Use /auth/v2/onboarding endpoints.",
+            403,
+            rid,
+            details={},
+        )
+
     started = utcnow()
     rid = request_id(request)
     response: JSONResponse | None = None

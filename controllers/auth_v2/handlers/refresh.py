@@ -15,6 +15,7 @@ from controllers.auth_v2.constants import (
     AUTH_REFRESH_REPLAY_DETECTED,
     AUTH_SERVICE_UNAVAILABLE,
     AUTH_SESSION_BINDING_FAILED,
+    AUTH_BOOTSTRAP_USER_NOT_FOUND,
     EVENT_REFRESH,
     EVENT_REFRESH_SESSION_FAMILY_WIPE,
     OUTCOME_FAILURE,
@@ -63,6 +64,22 @@ async def _active_employee(main_db: AsyncSession, employee_id: int) -> bool:
     return result.fetchone() is not None
 
 
+async def _active_bootstrap_user(central_db: AsyncSession, user_id: int) -> bool:
+    result = await central_db.execute(
+        text(
+            """
+            SELECT id
+            FROM auth_bootstrap_user_v2
+            WHERE id = :user_id
+              AND is_active = 1
+            LIMIT 1
+            """
+        ),
+        {"user_id": int(user_id)},
+    )
+    return result.fetchone() is not None
+
+
 @router.post("/refresh")
 async def refresh_v2(
     payload: RefreshRequest,
@@ -86,6 +103,7 @@ async def refresh_v2(
     user_id = int(claims.get("user_id"))
     contact_id = int(claims.get("contact_id"))
     employee_id = int(claims.get("employee_id"))
+    bootstrap_user = bool(claims.get("bootstrap_user", False))
 
     pending_error: Optional[AuthV2Error] = None
     token_pair = None
@@ -175,7 +193,42 @@ async def refresh_v2(
                             "Session binding check failed",
                             401,
                         )
-                    elif not await _active_employee(main_db, employee_id):
+                    elif bootstrap_user and not await _active_bootstrap_user(central_db, user_id):
+                        now = datetime.utcnow()
+                        await central_db.execute(
+                            text(
+                                """
+                                UPDATE auth_refresh_token_v2
+                                SET revoked_at = :now,
+                                    revoke_reason = :reason
+                                WHERE id = :id
+                                """
+                            ),
+                            {
+                                "now": now,
+                                "reason": REVOKE_REASON_EMPLOYEE_INACTIVE,
+                                "id": int(token_row["id"]),
+                            },
+                        )
+                        await write_audit_event(
+                            central_db,
+                            event_type=EVENT_REFRESH,
+                            outcome=OUTCOME_FAILURE,
+                            reason_code=AUTH_BOOTSTRAP_USER_NOT_FOUND,
+                            user_id=user_id,
+                            employee_id=employee_id,
+                            contact_id=contact_id,
+                            ip=ip_value,
+                            user_agent=ua_value,
+                            request_id=rid,
+                            details_json={"token_id": int(token_row["id"]), "bootstrap_user": True},
+                        )
+                        pending_error = AuthV2Error(
+                            AUTH_BOOTSTRAP_USER_NOT_FOUND,
+                            "Supreme user is inactive",
+                            401,
+                        )
+                    elif not bootstrap_user and not await _active_employee(main_db, employee_id):
                         now = datetime.utcnow()
                         await central_db.execute(
                             text(
@@ -207,9 +260,22 @@ async def refresh_v2(
                         )
                         pending_error = AuthV2Error(AUTH_EMPLOYEE_INACTIVE, "Employee is inactive", 403)
                     else:
-                        authz = await AuthorizationResolver(main_db, central_db).resolve_employee_authorization(
-                            employee_id
-                        )
+                        if bootstrap_user:
+                            authz = {
+                                "roles": [{"role_code": "SUPREME", "role_name": "Supreme User"}],
+                                "position_id": None,
+                                "position": None,
+                                "department_id": None,
+                                "department": None,
+                                "permissions": ["global:super"],
+                                "is_super": True,
+                                "permissions_version": 1,
+                                "permissions_schema_version": 1,
+                            }
+                        else:
+                            authz = await AuthorizationResolver(main_db, central_db).resolve_employee_authorization(
+                                employee_id
+                            )
                         token_pair = issue_v2_token_pair(
                             user_id=user_id,
                             contact_id=contact_id,
@@ -217,6 +283,7 @@ async def refresh_v2(
                             roles=authz["roles"],
                             mobile=str(claims.get("mobile", "")),
                             authorization=authz,
+                            extra_claims={"bootstrap_user": True} if bootstrap_user else None,
                         )
 
                         now = utcnow()
