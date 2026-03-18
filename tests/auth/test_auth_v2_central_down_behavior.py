@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 import main
 from core.database_v2 import get_central_db_session, get_main_db_session
-from tests.auth_v2_test_utils import build_headers, ensure_auth_v2_routes, testclient_requests_work
+from tests.auth_test_utils import build_headers, ensure_auth_v2_routes, testclient_requests_work
 
 
 class _FakeRow:
@@ -106,10 +106,10 @@ class TestAuthV2CentralDownBehavior(unittest.TestCase):
         }
 
         with patch(
-            "controllers.auth_v2.handlers.check_contact.apply_timing_floor",
+            "controllers.auth.handlers.check_contact.apply_timing_floor",
             new=AsyncMock(),
         ), patch(
-            "controllers.auth_v2.handlers.refresh.verify_v2_refresh_token",
+            "controllers.auth.handlers.refresh.verify_v2_refresh_token",
             return_value={
                 "jti": "rj",
                 "user_id": 1,
@@ -118,7 +118,7 @@ class TestAuthV2CentralDownBehavior(unittest.TestCase):
                 "mobile": "9990001111",
             },
         ), patch(
-            "controllers.auth_v2.dependencies.verify_v2_access_token",
+            "controllers.auth.dependencies.verify_v2_access_token",
             return_value=claims,
         ):
             client = TestClient(main.app)

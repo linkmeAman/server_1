@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from fastapi import Header
 
-from controllers.auth_v2.constants import (
+from controllers.auth.constants import (
     AUTH_FORBIDDEN,
     AUTH_TOKEN_VERSION_MISMATCH,
     AUTH_UNAUTHORIZED,
     HEADER_AUTHORIZATION,
 )
-from controllers.auth_v2.schemas.models import CurrentV2User
-from controllers.auth_v2.services.common import AuthV2Error
-from controllers.auth_v2.services.token_service import verify_access_token
+from controllers.auth.schemas.models import CurrentV2User
+from controllers.auth.services.common import AuthError
+from controllers.auth.services.token_service import verify_access_token
 from core.settings import get_settings
 
 
@@ -37,15 +37,15 @@ def _normalize_roles(raw_roles: object) -> list[dict]:
 
 async def require_auth(authorization: str | None = Header(default=None, alias=HEADER_AUTHORIZATION)) -> CurrentV2User:
     if not authorization or not authorization.startswith("Bearer "):
-        raise AuthV2Error(AUTH_UNAUTHORIZED, "Missing or invalid Authorization header", 401)
+        raise AuthError(AUTH_UNAUTHORIZED, "Missing or invalid Authorization header", 401)
 
     token = authorization.split(" ", 1)[1].strip()
     if not token:
-        raise AuthV2Error(AUTH_UNAUTHORIZED, "Missing bearer token", 401)
+        raise AuthError(AUTH_UNAUTHORIZED, "Missing bearer token", 401)
 
     claims = verify_access_token(token)
     if int(claims.get("auth_ver", -1)) != int(get_settings().AUTH_V2_TOKEN_VERSION):
-        raise AuthV2Error(AUTH_TOKEN_VERSION_MISMATCH, "Token version mismatch", 401)
+        raise AuthError(AUTH_TOKEN_VERSION_MISMATCH, "Token version mismatch", 401)
 
     claims = dict(claims)
     claims["roles"] = _normalize_roles(claims.get("roles"))
@@ -90,7 +90,7 @@ async def require_super_auth(
 ) -> CurrentV2User:
     current_user = await require_auth(authorization=authorization)
     if not bool(current_user.is_super):
-        raise AuthV2Error(AUTH_FORBIDDEN, "Super admin permission required", 403)
+        raise AuthError(AUTH_FORBIDDEN, "Super admin permission required", 403)
     return current_user
 
 

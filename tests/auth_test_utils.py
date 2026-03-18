@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import main
-from controllers.auth_v2.router import router as auth_v2_router
+from controllers.auth.router import router as auth_v2_router
 from core.settings import get_settings
 
 

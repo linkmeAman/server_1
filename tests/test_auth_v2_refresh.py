@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 import main
 from core.database_v2 import get_central_db_session, get_main_db_session
-from tests.auth_v2_test_utils import build_headers, ensure_auth_v2_routes, testclient_requests_work
+from tests.auth_test_utils import build_headers, ensure_auth_v2_routes, testclient_requests_work
 
 
 class _FakeRow:
@@ -144,10 +144,10 @@ class TestAuthV2Refresh(unittest.TestCase):
         self._override_sessions(_FakeMainSession(True), central)
 
         with patch(
-            "controllers.auth_v2.handlers.refresh.verify_v2_refresh_token",
+            "controllers.auth.handlers.refresh.verify_v2_refresh_token",
             return_value=self._base_claims(),
         ), patch(
-            "controllers.auth_v2.handlers.refresh.AuthorizationResolver.resolve_employee_authorization",
+            "controllers.auth.handlers.refresh.AuthorizationResolver.resolve_employee_authorization",
             new=AsyncMock(
                 return_value={
                     "position_id": 9,
@@ -162,13 +162,13 @@ class TestAuthV2Refresh(unittest.TestCase):
                 }
             ),
         ), patch(
-            "controllers.auth_v2.handlers.refresh.refresh_token_hash",
+            "controllers.auth.handlers.refresh.refresh_token_hash",
             side_effect=lambda token: "hashed-token" if token == "old-r" else "new-hash",
         ), patch(
-            "controllers.auth_v2.handlers.refresh.compute_device_fingerprint",
+            "controllers.auth.handlers.refresh.compute_device_fingerprint",
             return_value="fp-1",
         ), patch(
-            "controllers.auth_v2.handlers.refresh.issue_v2_token_pair",
+            "controllers.auth.handlers.refresh.issue_v2_token_pair",
             return_value={"access_token": "new-a", "refresh_token": "new-r", "jti": "new-jti"},
         ):
             client = TestClient(main.app)
@@ -196,13 +196,13 @@ class TestAuthV2Refresh(unittest.TestCase):
         self._override_sessions(_FakeMainSession(True), central)
 
         with patch(
-            "controllers.auth_v2.handlers.refresh.verify_v2_refresh_token",
+            "controllers.auth.handlers.refresh.verify_v2_refresh_token",
             return_value=self._base_claims(),
         ), patch(
-            "controllers.auth_v2.handlers.refresh.refresh_token_hash",
+            "controllers.auth.handlers.refresh.refresh_token_hash",
             return_value="hashed-token",
         ), patch(
-            "controllers.auth_v2.handlers.refresh.revoke_session_family",
+            "controllers.auth.handlers.refresh.revoke_session_family",
             new=AsyncMock(return_value=3),
         ) as revoke_mock:
             client = TestClient(main.app)
@@ -228,10 +228,10 @@ class TestAuthV2Refresh(unittest.TestCase):
         self._override_sessions(_FakeMainSession(True), central)
 
         with patch(
-            "controllers.auth_v2.handlers.refresh.verify_v2_refresh_token",
+            "controllers.auth.handlers.refresh.verify_v2_refresh_token",
             return_value=self._base_claims(),
         ), patch(
-            "controllers.auth_v2.handlers.refresh.AuthorizationResolver.resolve_employee_authorization",
+            "controllers.auth.handlers.refresh.AuthorizationResolver.resolve_employee_authorization",
             new=AsyncMock(
                 return_value={
                     "position_id": 9,
@@ -246,16 +246,16 @@ class TestAuthV2Refresh(unittest.TestCase):
                 }
             ),
         ), patch(
-            "controllers.auth_v2.handlers.refresh.refresh_token_hash",
+            "controllers.auth.handlers.refresh.refresh_token_hash",
             side_effect=lambda token: "hashed-token" if token == "old-r" else "new-hash",
         ), patch(
-            "controllers.auth_v2.handlers.refresh.compute_device_fingerprint",
+            "controllers.auth.handlers.refresh.compute_device_fingerprint",
             return_value="fp-1",
         ), patch(
-            "controllers.auth_v2.handlers.refresh.issue_v2_token_pair",
+            "controllers.auth.handlers.refresh.issue_v2_token_pair",
             return_value={"access_token": "new-a", "refresh_token": "new-r", "jti": "new-jti"},
         ), patch(
-            "controllers.auth_v2.handlers.refresh.revoke_session_family",
+            "controllers.auth.handlers.refresh.revoke_session_family",
             new=AsyncMock(return_value=2),
         ):
             client = TestClient(main.app)
@@ -278,13 +278,13 @@ class TestAuthV2Refresh(unittest.TestCase):
         self._override_sessions(_FakeMainSession(True), central)
 
         with patch(
-            "controllers.auth_v2.handlers.refresh.verify_v2_refresh_token",
+            "controllers.auth.handlers.refresh.verify_v2_refresh_token",
             return_value=self._base_claims(),
         ), patch(
-            "controllers.auth_v2.handlers.refresh.refresh_token_hash",
+            "controllers.auth.handlers.refresh.refresh_token_hash",
             return_value="hashed-token",
         ), patch(
-            "controllers.auth_v2.handlers.refresh.compute_device_fingerprint",
+            "controllers.auth.handlers.refresh.compute_device_fingerprint",
             return_value="different-fp",
         ):
             client = TestClient(main.app)
@@ -305,13 +305,13 @@ class TestAuthV2Refresh(unittest.TestCase):
         self._override_sessions(_FakeMainSession(False), central)
 
         with patch(
-            "controllers.auth_v2.handlers.refresh.verify_v2_refresh_token",
+            "controllers.auth.handlers.refresh.verify_v2_refresh_token",
             return_value=self._base_claims(),
         ), patch(
-            "controllers.auth_v2.handlers.refresh.refresh_token_hash",
+            "controllers.auth.handlers.refresh.refresh_token_hash",
             return_value="hashed-token",
         ), patch(
-            "controllers.auth_v2.handlers.refresh.compute_device_fingerprint",
+            "controllers.auth.handlers.refresh.compute_device_fingerprint",
             return_value="fp-1",
         ):
             client = TestClient(main.app)
@@ -332,10 +332,10 @@ class TestAuthV2Refresh(unittest.TestCase):
         self._override_sessions(_FakeMainSession(True), central)
 
         with patch(
-            "controllers.auth_v2.handlers.refresh.verify_v2_refresh_token",
+            "controllers.auth.handlers.refresh.verify_v2_refresh_token",
             return_value=self._base_claims(),
         ), patch(
-            "controllers.auth_v2.handlers.refresh.AuthorizationResolver.resolve_employee_authorization",
+            "controllers.auth.handlers.refresh.AuthorizationResolver.resolve_employee_authorization",
             new=AsyncMock(
                 return_value={
                     "position_id": 9,
@@ -350,13 +350,13 @@ class TestAuthV2Refresh(unittest.TestCase):
                 }
             ),
         ), patch(
-            "controllers.auth_v2.handlers.refresh.refresh_token_hash",
+            "controllers.auth.handlers.refresh.refresh_token_hash",
             side_effect=lambda token: "hashed-token" if token == "old-r" else "new-hash",
         ), patch(
-            "controllers.auth_v2.handlers.refresh.compute_device_fingerprint",
+            "controllers.auth.handlers.refresh.compute_device_fingerprint",
             return_value="fp-1",
         ), patch(
-            "controllers.auth_v2.handlers.refresh.issue_v2_token_pair",
+            "controllers.auth.handlers.refresh.issue_v2_token_pair",
             return_value={"access_token": "new-a", "refresh_token": "new-r", "jti": "new-jti"},
         ):
             client = TestClient(main.app)

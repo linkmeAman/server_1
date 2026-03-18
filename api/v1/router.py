@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 
 from controllers.api.auth import router as auth_router
-from controllers.auth_v2.router import router as auth_v2_router
+from controllers.auth.router import router as auth_v2_router
 from controllers.api.example import router as example_router
 from controllers.api.geosearch import router as geosearch_router
 from controllers.api.llm import router as llm_router

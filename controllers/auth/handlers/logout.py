@@ -8,23 +8,23 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from controllers.auth_v2.constants import (
+from controllers.auth.constants import (
     AUTH_SERVICE_UNAVAILABLE,
     EVENT_LOGOUT,
     OUTCOME_SUCCESS,
     REVOKE_REASON_LOGOUT,
 )
-from controllers.auth_v2.schemas.models import LogoutRequest
-from controllers.auth_v2.services.audit import write_audit_event
-from controllers.auth_v2.services.common import (
+from controllers.auth.schemas.models import LogoutRequest
+from controllers.auth.services.audit import write_audit_event
+from controllers.auth.services.common import (
     client_ip,
     error_json_response,
     request_id,
     success_json_response,
     user_agent,
 )
-from controllers.auth_v2.services.session_revocation import revoke_session_family
-from controllers.auth_v2.services.token_service import verify_refresh_token
+from controllers.auth.services.session_revocation import revoke_session_family
+from controllers.auth.services.token_service import verify_refresh_token
 from core.database_v2 import get_central_db_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -61,7 +61,7 @@ async def logout(
         async with central_db.begin():
             token_hash = None
             try:
-                from controllers.auth_v2.services.common import refresh_token_hash
+                from controllers.auth.services.common import refresh_token_hash
 
                 token_hash = refresh_token_hash(payload.refresh_token)
             except Exception:

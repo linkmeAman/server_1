@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from controllers.auth_v2.services.token_service import verify_access_token
+from controllers.auth.services.token_service import verify_access_token
 from core.security import validate_token
 
 

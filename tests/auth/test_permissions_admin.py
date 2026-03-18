@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 import main
 from core.database_v2 import get_central_db_session, get_main_db_session
-from tests.auth_v2_test_utils import build_headers, ensure_auth_v2_routes, testclient_requests_work
+from tests.auth_test_utils import build_headers, ensure_auth_v2_routes, testclient_requests_work
 
 
 class _FakeRow:
@@ -135,7 +135,7 @@ class TestPermissionsAdmin(unittest.TestCase):
             self.skipTest("TestClient request execution is not responsive in this runtime")
 
         with patch(
-            "controllers.auth_v2.dependencies.verify_v2_access_token",
+            "controllers.auth.dependencies.verify_v2_access_token",
             return_value=self._claims(auth_ver=1, is_super=True),
         ):
             client = TestClient(main.app)
@@ -155,7 +155,7 @@ class TestPermissionsAdmin(unittest.TestCase):
             self.skipTest("TestClient request execution is not responsive in this runtime")
 
         with patch(
-            "controllers.auth_v2.dependencies.verify_v2_access_token",
+            "controllers.auth.dependencies.verify_v2_access_token",
             return_value=self._claims(is_super=False),
         ):
             client = TestClient(main.app)
@@ -175,7 +175,7 @@ class TestPermissionsAdmin(unittest.TestCase):
             self.skipTest("TestClient request execution is not responsive in this runtime")
 
         with patch(
-            "controllers.auth_v2.dependencies.verify_v2_access_token",
+            "controllers.auth.dependencies.verify_v2_access_token",
             return_value=self._claims(is_super=True),
         ):
             client = TestClient(main.app)
@@ -195,7 +195,7 @@ class TestPermissionsAdmin(unittest.TestCase):
             self.skipTest("TestClient request execution is not responsive in this runtime")
 
         with patch(
-            "controllers.auth_v2.dependencies.verify_v2_access_token",
+            "controllers.auth.dependencies.verify_v2_access_token",
             return_value=self._claims(is_super=True),
         ):
             client = TestClient(main.app)
@@ -226,7 +226,7 @@ class TestPermissionsAdmin(unittest.TestCase):
             self.skipTest("TestClient request execution is not responsive in this runtime")
 
         with patch(
-            "controllers.auth_v2.dependencies.verify_v2_access_token",
+            "controllers.auth.dependencies.verify_v2_access_token",
             return_value=self._claims(is_super=True),
         ):
             client = TestClient(main.app)
@@ -252,7 +252,7 @@ class TestPermissionsAdmin(unittest.TestCase):
             self.skipTest("TestClient request execution is not responsive in this runtime")
 
         with patch(
-            "controllers.auth_v2.dependencies.verify_v2_access_token",
+            "controllers.auth.dependencies.verify_v2_access_token",
             return_value=self._claims(is_super=True),
         ):
             client = TestClient(main.app)

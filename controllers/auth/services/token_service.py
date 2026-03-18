@@ -7,14 +7,14 @@ import json
 from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
-from controllers.auth_v2.constants import (
+from controllers.auth.constants import (
     AUTH_INVALID_TOKEN,
     AUTH_TOKEN_VERSION_MISMATCH,
     TOKEN_TYPE_ACCESS,
     TOKEN_TYPE_REFRESH,
 )
-from controllers.auth_v2.services.common import AuthV2Error, random_jti, utcnow
-from controllers.auth_v2.services.keyring import get_current_key, get_key_for_kid
+from controllers.auth.services.common import AuthError, random_jti, utcnow
+from controllers.auth.services.keyring import get_current_key, get_key_for_kid
 from core.settings import get_settings
 
 
@@ -39,20 +39,20 @@ def _build_footer(kid: str) -> bytes:
 def _parse_footer_kid(token: str) -> str:
     parts = token.split(".")
     if len(parts) < 3:
-        raise AuthV2Error(AUTH_INVALID_TOKEN, "Malformed token", 401)
+        raise AuthError(AUTH_INVALID_TOKEN, "Malformed token", 401)
 
     footer_segment = parts[3] if len(parts) >= 4 else ""
     if not footer_segment:
-        raise AuthV2Error(AUTH_INVALID_TOKEN, "Missing token kid footer", 401)
+        raise AuthError(AUTH_INVALID_TOKEN, "Missing token kid footer", 401)
 
     try:
         footer = json.loads(_b64url_decode(footer_segment).decode("utf-8"))
     except Exception as exc:
-        raise AuthV2Error(AUTH_INVALID_TOKEN, "Invalid token footer", 401) from exc
+        raise AuthError(AUTH_INVALID_TOKEN, "Invalid token footer", 401) from exc
 
     kid = str(footer.get("kid", "")).strip()
     if not kid:
-        raise AuthV2Error(AUTH_INVALID_TOKEN, "Missing token kid", 401)
+        raise AuthError(AUTH_INVALID_TOKEN, "Missing token kid", 401)
     return kid
 
 
@@ -92,7 +92,7 @@ def _decode(token: str) -> Dict[str, Any]:
     try:
         decoded = pyseto.decode(key, token)
     except Exception as exc:
-        raise AuthV2Error(AUTH_INVALID_TOKEN, "Invalid or expired token", 401) from exc
+        raise AuthError(AUTH_INVALID_TOKEN, "Invalid or expired token", 401) from exc
 
     payload = decoded.payload if hasattr(decoded, "payload") else decoded
     if isinstance(payload, bytes):
@@ -101,13 +101,13 @@ def _decode(token: str) -> Dict[str, Any]:
         try:
             parsed = json.loads(payload)
         except Exception as exc:
-            raise AuthV2Error(AUTH_INVALID_TOKEN, "Invalid token payload", 401) from exc
+            raise AuthError(AUTH_INVALID_TOKEN, "Invalid token payload", 401) from exc
         if not isinstance(parsed, dict):
-            raise AuthV2Error(AUTH_INVALID_TOKEN, "Invalid token payload", 401)
+            raise AuthError(AUTH_INVALID_TOKEN, "Invalid token payload", 401)
         return parsed
     if isinstance(payload, dict):
         return payload
-    raise AuthV2Error(AUTH_INVALID_TOKEN, "Invalid token payload", 401)
+    raise AuthError(AUTH_INVALID_TOKEN, "Invalid token payload", 401)
 
 
 def _validate_claims(payload: Dict[str, Any], expected_type: Optional[str] = None) -> Dict[str, Any]:
@@ -128,23 +128,23 @@ def _validate_claims(payload: Dict[str, Any], expected_type: Optional[str] = Non
     }
     missing = [claim for claim in required if claim not in payload]
     if missing:
-        raise AuthV2Error(AUTH_INVALID_TOKEN, f"Missing required claims: {', '.join(missing)}", 401)
+        raise AuthError(AUTH_INVALID_TOKEN, f"Missing required claims: {', '.join(missing)}", 401)
 
     if int(payload.get("auth_ver", -1)) != int(settings.AUTH_V2_TOKEN_VERSION):
-        raise AuthV2Error(AUTH_TOKEN_VERSION_MISMATCH, "Token version mismatch", 401)
+        raise AuthError(AUTH_TOKEN_VERSION_MISMATCH, "Token version mismatch", 401)
 
     if expected_type and payload.get("typ") != expected_type:
-        raise AuthV2Error(AUTH_INVALID_TOKEN, "Invalid token type", 401)
+        raise AuthError(AUTH_INVALID_TOKEN, "Invalid token type", 401)
 
     now_ts = int(utcnow().timestamp())
     if int(payload.get("exp", 0)) <= now_ts:
-        raise AuthV2Error(AUTH_INVALID_TOKEN, "Token expired", 401)
+        raise AuthError(AUTH_INVALID_TOKEN, "Token expired", 401)
 
     if payload.get("iss") != settings.AUTH_V2_ISSUER:
-        raise AuthV2Error(AUTH_INVALID_TOKEN, "Invalid token issuer", 401)
+        raise AuthError(AUTH_INVALID_TOKEN, "Invalid token issuer", 401)
 
     if payload.get("aud") != settings.AUTH_V2_AUDIENCE:
-        raise AuthV2Error(AUTH_INVALID_TOKEN, "Invalid token audience", 401)
+        raise AuthError(AUTH_INVALID_TOKEN, "Invalid token audience", 401)
 
     return payload
 

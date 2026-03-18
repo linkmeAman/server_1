@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from controllers.auth_v2.constants import (
+from controllers.auth.constants import (
     AUTH_CONTACT_NOT_FOUND,
     AUTH_FLOW_DISABLED,
     AUTH_RATE_LIMITED,
@@ -21,10 +21,10 @@ from controllers.auth_v2.constants import (
     OUTCOME_FAILURE,
     OUTCOME_SUCCESS,
 )
-from controllers.auth_v2.schemas.models import CheckContactRequest, EmployeeSummary
-from controllers.auth_v2.services.audit import count_events, write_audit_event
-from controllers.auth_v2.services.authorization import AuthorizationResolver
-from controllers.auth_v2.services.common import (
+from controllers.auth.schemas.models import CheckContactRequest, EmployeeSummary
+from controllers.auth.services.audit import count_events, write_audit_event
+from controllers.auth.services.authorization import AuthorizationResolver
+from controllers.auth.services.common import (
     apply_timing_floor,
     attach_rate_limit_headers,
     client_ip,

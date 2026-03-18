@@ -8,7 +8,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from controllers.auth_v2.constants import (
+from controllers.auth.constants import (
     AUTH_FORBIDDEN,
     AUTH_SERVICE_UNAVAILABLE,
     EVENT_PASSWORD_CHANGED_WEBHOOK,
@@ -16,17 +16,17 @@ from controllers.auth_v2.constants import (
     OUTCOME_SUCCESS,
     REVOKE_REASON_PASSWORD_CHANGE,
 )
-from controllers.auth_v2.schemas.models import PasswordChangedRequest
-from controllers.auth_v2.services.audit import write_audit_event
-from controllers.auth_v2.services.common import (
-    AuthV2Error,
+from controllers.auth.schemas.models import PasswordChangedRequest
+from controllers.auth.services.audit import write_audit_event
+from controllers.auth.services.common import (
+    AuthError,
     client_ip,
     error_json_response,
     request_id,
     success_json_response,
     user_agent,
 )
-from controllers.auth_v2.services.session_revocation import revoke_all_sessions_for_user
+from controllers.auth.services.session_revocation import revoke_all_sessions_for_user
 from core.database_v2 import get_central_db_session
 from core.settings import get_settings
 
@@ -48,7 +48,7 @@ async def internal_password_changed(
         settings = get_settings()
         # Additional explicit guard for internal callers, even if global middleware is disabled.
         if not api_key or api_key not in settings.API_KEYS:
-            raise AuthV2Error(AUTH_FORBIDDEN, "Forbidden", 403)
+            raise AuthError(AUTH_FORBIDDEN, "Forbidden", 403)
 
         async with central_db.begin():
             revoked_count = await revoke_all_sessions_for_user(
@@ -82,7 +82,7 @@ async def internal_password_changed(
             request_id_value=rid,
             message="Password change processed",
         )
-    except AuthV2Error as exc:
+    except AuthError as exc:
         try:
             await write_audit_event(
                 central_db,

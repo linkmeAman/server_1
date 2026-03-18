@@ -11,8 +11,8 @@ from typing import Any, Dict, List, Sequence, Set
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from controllers.auth_v2.constants import AUTH_EMPLOYEE_INACTIVE
-from controllers.auth_v2.services.common import AuthV2Error
+from controllers.auth.constants import AUTH_EMPLOYEE_INACTIVE
+from controllers.auth.services.common import AuthError
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ class AuthorizationResolver:
         )
         row = result.fetchone()
         if row is None:
-            raise AuthV2Error(AUTH_EMPLOYEE_INACTIVE, "Employee is inactive", 403)
+            raise AuthError(AUTH_EMPLOYEE_INACTIVE, "Employee is inactive", 403)
         return dict(row._mapping)
 
     async def _safe_master_name_lookup(

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from controllers.auth_v2.constants import (
+from controllers.auth.constants import (
     AUTH_EMPLOYEE_INACTIVE,
     AUTH_INVALID_TOKEN,
     AUTH_REFRESH_REPLAY_DETECTED,
@@ -25,11 +25,11 @@ from controllers.auth_v2.constants import (
     REVOKE_REASON_REPLAY,
     REVOKE_REASON_SESSION_FAMILY_WIPE,
 )
-from controllers.auth_v2.schemas.models import RefreshRequest
-from controllers.auth_v2.services.audit import write_audit_event
-from controllers.auth_v2.services.authorization import AuthorizationResolver
-from controllers.auth_v2.services.common import (
-    AuthV2Error,
+from controllers.auth.schemas.models import RefreshRequest
+from controllers.auth.services.audit import write_audit_event
+from controllers.auth.services.authorization import AuthorizationResolver
+from controllers.auth.services.common import (
+    AuthError,
     client_ip,
     error_json_response,
     refresh_token_hash,
@@ -38,9 +38,9 @@ from controllers.auth_v2.services.common import (
     user_agent,
     utcnow,
 )
-from controllers.auth_v2.services.device_fingerprint import compute_device_fingerprint
-from controllers.auth_v2.services.session_revocation import revoke_session_family
-from controllers.auth_v2.services.token_service import issue_token_pair, verify_refresh_token
+from controllers.auth.services.device_fingerprint import compute_device_fingerprint
+from controllers.auth.services.session_revocation import revoke_session_family
+from controllers.auth.services.token_service import issue_token_pair, verify_refresh_token
 from core.database_v2 import get_central_db_session, get_main_db_session
 from core.settings import get_settings
 
@@ -93,7 +93,7 @@ async def refresh(
 
     try:
         claims = verify_refresh_token(payload.refresh_token)
-    except AuthV2Error as exc:
+    except AuthError as exc:
         return error_json_response(exc.code, exc.message, exc.status_code, rid, details=exc.details)
     except Exception:
         return error_json_response(AUTH_INVALID_TOKEN, "Invalid refresh token", 401, rid, details={})
@@ -105,7 +105,7 @@ async def refresh(
     employee_id = int(claims.get("employee_id"))
     bootstrap_user = bool(claims.get("bootstrap_user", False))
 
-    pending_error: Optional[AuthV2Error] = None
+    pending_error: Optional[AuthError] = None
     token_pair = None
     authz = None
 
@@ -127,7 +127,7 @@ async def refresh(
             )
             row = result.fetchone()
             if row is None:
-                pending_error = AuthV2Error(AUTH_INVALID_TOKEN, "Invalid refresh token", 401)
+                pending_error = AuthError(AUTH_INVALID_TOKEN, "Invalid refresh token", 401)
             else:
                 token_row = dict(row._mapping)
                 if token_row.get("used_at") is not None or token_row.get("revoked_at") is not None:
@@ -166,7 +166,7 @@ async def refresh(
                         request_id=rid,
                         details_json={"token_id": int(token_row["id"])},
                     )
-                    pending_error = AuthV2Error(
+                    pending_error = AuthError(
                         AUTH_REFRESH_REPLAY_DETECTED,
                         "Refresh replay detected",
                         401,
@@ -188,7 +188,7 @@ async def refresh(
                             request_id=rid,
                             details_json={"token_id": int(token_row["id"])},
                         )
-                        pending_error = AuthV2Error(
+                        pending_error = AuthError(
                             AUTH_SESSION_BINDING_FAILED,
                             "Session binding check failed",
                             401,
@@ -223,7 +223,7 @@ async def refresh(
                             request_id=rid,
                             details_json={"token_id": int(token_row["id"]), "bootstrap_user": True},
                         )
-                        pending_error = AuthV2Error(
+                        pending_error = AuthError(
                             AUTH_BOOTSTRAP_USER_NOT_FOUND,
                             "Supreme user is inactive",
                             401,
@@ -258,7 +258,7 @@ async def refresh(
                             request_id=rid,
                             details_json={"token_id": int(token_row["id"])},
                         )
-                        pending_error = AuthV2Error(AUTH_EMPLOYEE_INACTIVE, "Employee is inactive", 403)
+                        pending_error = AuthError(AUTH_EMPLOYEE_INACTIVE, "Employee is inactive", 403)
                     else:
                         if bootstrap_user:
                             authz = {
@@ -416,7 +416,7 @@ async def refresh(
             request_id_value=rid,
             message="Token refreshed",
         )
-    except AuthV2Error as exc:
+    except AuthError as exc:
         return error_json_response(exc.code, exc.message, exc.status_code, rid, details=exc.details)
     except Exception:
         try:

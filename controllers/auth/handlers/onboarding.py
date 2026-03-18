@@ -8,14 +8,14 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from controllers.auth_v2.constants import (
+from controllers.auth.constants import (
     AUTH_BOOTSTRAP_ALREADY_INITIALIZED,
     AUTH_BOOTSTRAP_USER_NOT_FOUND,
     AUTH_INVALID_CREDENTIALS,
     AUTH_SERVICE_UNAVAILABLE,
 )
-from controllers.auth_v2.schemas.models import BootstrapLoginRequest, BootstrapSupremeRequest
-from controllers.auth_v2.services.common import (
+from controllers.auth.schemas.models import BootstrapLoginRequest, BootstrapSupremeRequest
+from controllers.auth.services.common import (
     client_ip,
     error_json_response,
     refresh_token_hash,
@@ -24,8 +24,8 @@ from controllers.auth_v2.services.common import (
     user_agent,
     utcnow,
 )
-from controllers.auth_v2.services.device_fingerprint import compute_device_fingerprint
-from controllers.auth_v2.services.token_service import issue_token_pair
+from controllers.auth.services.device_fingerprint import compute_device_fingerprint
+from controllers.auth.services.token_service import issue_token_pair
 from core.database_v2 import get_central_db_session
 from core.security import hash_password, verify_password
 from core.settings import get_settings

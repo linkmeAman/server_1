@@ -7,7 +7,7 @@ import re
 
 from fastapi import Request
 
-from controllers.auth_v2.constants import HEADER_APP_VERSION
+from controllers.auth.constants import HEADER_APP_VERSION
 
 
 def _ua_family(ua: str) -> str:

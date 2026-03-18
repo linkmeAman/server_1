@@ -7,12 +7,12 @@ from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from controllers.auth_v2.constants import (
+from controllers.auth.constants import (
     ALLOWED_REVOKE_REASONS,
     EVENT_SESSION_REVOKED,
     OUTCOME_SECURITY,
 )
-from controllers.auth_v2.services.audit import write_audit_event
+from controllers.auth.services.audit import write_audit_event
 
 
 async def revoke_all_sessions_for_user(user_id: int, reason: str, db: AsyncSession) -> int:

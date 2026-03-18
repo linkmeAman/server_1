@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 from core.response import error_response, success_response
 from core.settings import get_settings
 
-from controllers.auth_v2.constants import (
+from controllers.auth.constants import (
     HEADER_RATE_LIMIT_LIMIT,
     HEADER_RATE_LIMIT_REMAINING,
     HEADER_RATE_LIMIT_RESET,
@@ -25,7 +25,7 @@ from controllers.auth_v2.constants import (
 )
 
 
-class AuthV2Error(Exception):
+class AuthError(Exception):
     def __init__(
         self,
         code: str,

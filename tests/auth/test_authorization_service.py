@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from controllers.auth_v2.services.authorization import AuthorizationResolver
+from controllers.auth.services.authorization import AuthorizationResolver
 
 
 class _FakeRow:

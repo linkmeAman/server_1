@@ -13,11 +13,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from controllers.auth_v2.constants import AUTH_BAD_REQUEST, AUTH_SERVICE_UNAVAILABLE
-from controllers.auth_v2.dependencies import require_super_auth
-from controllers.auth_v2.schemas.models import CurrentV2User
-from controllers.auth_v2.services.authorization import AuthorizationResolver
-from controllers.auth_v2.services.common import AuthV2Error, request_id, success_json_response
+from controllers.auth.constants import AUTH_BAD_REQUEST, AUTH_SERVICE_UNAVAILABLE
+from controllers.auth.dependencies import require_super_auth
+from controllers.auth.schemas.models import CurrentV2User
+from controllers.auth.services.authorization import AuthorizationResolver
+from controllers.auth.services.common import AuthError, request_id, success_json_response
 from core.database_v2 import get_central_db_session, get_main_db_session
 
 router = APIRouter(prefix="/internal/auth/permissions", tags=["auth-permissions-admin"])
@@ -111,13 +111,13 @@ def _normalize_meta(meta: Optional[Dict[str, Any]]) -> str | None:
 def _validate_resource_code(code: str) -> str:
     value = code.strip().lower()
     if not value:
-        raise AuthV2Error(AUTH_BAD_REQUEST, "Resource code is required", 400)
+        raise AuthError(AUTH_BAD_REQUEST, "Resource code is required", 400)
     if not RESOURCE_CODE_RE.match(value):
-        raise AuthV2Error(AUTH_BAD_REQUEST, "Invalid resource code format", 400)
+        raise AuthError(AUTH_BAD_REQUEST, "Invalid resource code format", 400)
     if value.startswith(".") or value.endswith("."):
-        raise AuthV2Error(AUTH_BAD_REQUEST, "Resource code cannot start or end with '.'", 400)
+        raise AuthError(AUTH_BAD_REQUEST, "Resource code cannot start or end with '.'", 400)
     if ".." in value:
-        raise AuthV2Error(AUTH_BAD_REQUEST, "Resource code cannot contain consecutive dots", 400)
+        raise AuthError(AUTH_BAD_REQUEST, "Resource code cannot contain consecutive dots", 400)
     return value
 
 
@@ -162,7 +162,7 @@ def _admin_log(
 async def _require_expected_match(expected_modified_at: int, row: Dict[str, Any], field_name: str = "modified_at") -> None:
     actual = _epoch_seconds(row.get(field_name))
     if int(expected_modified_at) != int(actual):
-        raise AuthV2Error(AUTH_BAD_REQUEST, "Version conflict", 409, details={"actual_modified_at": actual})
+        raise AuthError(AUTH_BAD_REQUEST, "Version conflict", 409, details={"actual_modified_at": actual})
 
 
 async def _resource_by_id_for_update(central_db: AsyncSession, resource_id: int) -> Optional[Dict[str, Any]]:
@@ -207,19 +207,19 @@ async def _validate_no_cycle(
     if parent_id is None:
         return
     if int(parent_id) == int(resource_id):
-        raise AuthV2Error(AUTH_BAD_REQUEST, "Resource parent cannot be itself", 400)
+        raise AuthError(AUTH_BAD_REQUEST, "Resource parent cannot be itself", 400)
 
     seen: set[int] = set()
     cursor: Optional[int] = int(parent_id)
     while cursor is not None:
         if cursor in seen:
-            raise AuthV2Error(AUTH_BAD_REQUEST, "Resource parent cycle detected", 400)
+            raise AuthError(AUTH_BAD_REQUEST, "Resource parent cycle detected", 400)
         seen.add(cursor)
         if cursor == int(resource_id):
-            raise AuthV2Error(AUTH_BAD_REQUEST, "Resource parent cycle detected", 400)
+            raise AuthError(AUTH_BAD_REQUEST, "Resource parent cycle detected", 400)
         row = await _resource_exists(central_db, cursor)
         if row is None:
-            raise AuthV2Error(AUTH_BAD_REQUEST, "Parent resource not found", 400)
+            raise AuthError(AUTH_BAD_REQUEST, "Parent resource not found", 400)
         next_parent = row.get("parent_id")
         cursor = int(next_parent) if next_parent is not None else None
 
@@ -314,10 +314,10 @@ async def list_resources(
             result="success",
         )
         return success_json_response(data, request_id_value=rid, message="Resources fetched")
-    except AuthV2Error:
+    except AuthError:
         raise
     except Exception:
-        raise AuthV2Error(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
+        raise AuthError(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
 
 
 @router.post("/resources")
@@ -331,7 +331,7 @@ async def create_resource(
     code = _validate_resource_code(payload.code)
     parent_id = int(payload.parent_id) if payload.parent_id is not None else None
     if parent_id is not None and await _resource_exists(central_db, parent_id) is None:
-        raise AuthV2Error(AUTH_BAD_REQUEST, "Parent resource not found", 400)
+        raise AuthError(AUTH_BAD_REQUEST, "Parent resource not found", 400)
 
     actor = _actor_fields(current_user)
     try:
@@ -379,7 +379,7 @@ async def create_resource(
             )
             row = row_result.fetchone()
             if row is None:
-                raise AuthV2Error(AUTH_BAD_REQUEST, "Failed to create resource", 500)
+                raise AuthError(AUTH_BAD_REQUEST, "Failed to create resource", 500)
             created = _serialize_resource_row(dict(row._mapping))
 
         _admin_log(
@@ -393,12 +393,12 @@ async def create_resource(
             result="success",
         )
         return success_json_response({"resource": created}, request_id_value=rid, message="Resource created")
-    except AuthV2Error:
+    except AuthError:
         raise
     except Exception as exc:
         if "Duplicate entry" in str(exc):
-            raise AuthV2Error(AUTH_BAD_REQUEST, "Resource code already exists", 400)
-        raise AuthV2Error(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
+            raise AuthError(AUTH_BAD_REQUEST, "Resource code already exists", 400)
+        raise AuthError(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
 
 
 @router.patch("/resources/{resource_id}")
@@ -411,7 +411,7 @@ async def patch_resource(
 ):
     rid = request_id(request)
     if payload.expected_modified_at is None:
-        raise AuthV2Error(AUTH_BAD_REQUEST, "expected_modified_at is required", 400)
+        raise AuthError(AUTH_BAD_REQUEST, "expected_modified_at is required", 400)
 
     updates: Dict[str, Any] = {}
     if payload.name is not None:
@@ -429,7 +429,7 @@ async def patch_resource(
         async with central_db.begin():
             existing = await _resource_by_id_for_update(central_db, resource_id)
             if existing is None:
-                raise AuthV2Error(AUTH_BAD_REQUEST, "Resource not found", 404)
+                raise AuthError(AUTH_BAD_REQUEST, "Resource not found", 404)
             before = _serialize_resource_row(existing)
             await _require_expected_match(payload.expected_modified_at, existing)
 
@@ -453,7 +453,7 @@ async def patch_resource(
 
             refreshed = await _resource_by_id_for_update(central_db, resource_id)
             if refreshed is None:
-                raise AuthV2Error(AUTH_BAD_REQUEST, "Resource not found", 404)
+                raise AuthError(AUTH_BAD_REQUEST, "Resource not found", 404)
             after = _serialize_resource_row(refreshed)
 
         _admin_log(
@@ -467,10 +467,10 @@ async def patch_resource(
             result="success",
         )
         return success_json_response({"resource": after}, request_id_value=rid, message="Resource updated")
-    except AuthV2Error:
+    except AuthError:
         raise
     except Exception:
-        raise AuthV2Error(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
+        raise AuthError(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
 
 
 @router.get("/roles")
@@ -515,7 +515,7 @@ async def list_roles(
         )
         return success_json_response({"roles": rows}, request_id_value=rid, message="Roles fetched")
     except Exception:
-        raise AuthV2Error(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
+        raise AuthError(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
 
 
 @router.get("/role-permissions")
@@ -593,7 +593,7 @@ async def list_role_permissions(
         )
         return success_json_response({"items": rows}, request_id_value=rid, message="Role permissions fetched")
     except Exception:
-        raise AuthV2Error(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
+        raise AuthError(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
 
 
 @router.put("/role-permissions")
@@ -605,16 +605,16 @@ async def put_role_permissions(
 ):
     rid = request_id(request)
     if payload.expected_modified_at is None:
-        raise AuthV2Error(AUTH_BAD_REQUEST, "expected_modified_at is required", 400)
+        raise AuthError(AUTH_BAD_REQUEST, "expected_modified_at is required", 400)
 
     try:
         if not await _role_exists(central_db, payload.role_id):
-            raise AuthV2Error(AUTH_BAD_REQUEST, "Role not found", 400)
+            raise AuthError(AUTH_BAD_REQUEST, "Role not found", 400)
         resource_code = await _resource_code_for_id(central_db, payload.resource_id)
         if not resource_code:
-            raise AuthV2Error(AUTH_BAD_REQUEST, "Resource not found", 400)
+            raise AuthError(AUTH_BAD_REQUEST, "Resource not found", 400)
         if _normalize_flag(payload.can_super) == 1 and resource_code != GLOBAL_RESOURCE_CODE:
-            raise AuthV2Error(AUTH_BAD_REQUEST, "can_super is only valid for global resource", 400)
+            raise AuthError(AUTH_BAD_REQUEST, "can_super is only valid for global resource", 400)
 
         actor_create = _actor_fields(current_user)
         actor_modify = _modified_actor_fields(current_user)
@@ -637,7 +637,7 @@ async def put_role_permissions(
 
             if existing_row is None:
                 if int(payload.expected_modified_at) != 0:
-                    raise AuthV2Error(AUTH_BAD_REQUEST, "Version conflict", 409, details={"actual_modified_at": 0})
+                    raise AuthError(AUTH_BAD_REQUEST, "Version conflict", 409, details={"actual_modified_at": 0})
                 await central_db.execute(
                     text(
                         """
@@ -727,7 +727,7 @@ async def put_role_permissions(
             )
             updated_row = result.fetchone()
             if updated_row is None:
-                raise AuthV2Error(AUTH_BAD_REQUEST, "Failed to upsert role permission", 500)
+                raise AuthError(AUTH_BAD_REQUEST, "Failed to upsert role permission", 500)
             updated = dict(updated_row._mapping)
             after = {
                 "id": int(updated["id"]),
@@ -753,10 +753,10 @@ async def put_role_permissions(
             result="success",
         )
         return success_json_response({"item": after}, request_id_value=rid, message="Role permission upserted")
-    except AuthV2Error:
+    except AuthError:
         raise
     except Exception:
-        raise AuthV2Error(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
+        raise AuthError(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
 
 
 @router.delete("/role-permissions")
@@ -768,15 +768,15 @@ async def delete_role_permissions(
 ):
     rid = request_id(request)
     if payload.expected_modified_at is None:
-        raise AuthV2Error(AUTH_BAD_REQUEST, "expected_modified_at is required", 400)
+        raise AuthError(AUTH_BAD_REQUEST, "expected_modified_at is required", 400)
 
     try:
         if not await _role_exists(central_db, payload.role_id):
-            raise AuthV2Error(AUTH_BAD_REQUEST, "Role not found", 400)
+            raise AuthError(AUTH_BAD_REQUEST, "Role not found", 400)
         if not await _master_id_exists(central_db, table="employee_position", row_id=payload.position_id):
-            raise AuthV2Error(AUTH_BAD_REQUEST, "Position not found", 400)
+            raise AuthError(AUTH_BAD_REQUEST, "Position not found", 400)
         if not await _master_id_exists(central_db, table="employee_department", row_id=payload.department_id):
-            raise AuthV2Error(AUTH_BAD_REQUEST, "Department not found", 400)
+            raise AuthError(AUTH_BAD_REQUEST, "Department not found", 400)
 
         async with central_db.begin():
             result = await central_db.execute(
@@ -794,7 +794,7 @@ async def delete_role_permissions(
             )
             row = result.fetchone()
             if row is None:
-                raise AuthV2Error(AUTH_BAD_REQUEST, "Role permission not found", 404)
+                raise AuthError(AUTH_BAD_REQUEST, "Role permission not found", 404)
             existing = dict(row._mapping)
             before = {
                 "id": int(existing["id"]),
@@ -831,10 +831,10 @@ async def delete_role_permissions(
             result="success",
         )
         return success_json_response({"item": after}, request_id_value=rid, message="Role permission disabled")
-    except AuthV2Error:
+    except AuthError:
         raise
     except Exception:
-        raise AuthV2Error(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
+        raise AuthError(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
 
 
 @router.get("/position-department-roles")
@@ -899,7 +899,7 @@ async def list_position_department_roles(
         )
         return success_json_response({"items": rows}, request_id_value=rid, message="Position-department roles fetched")
     except Exception:
-        raise AuthV2Error(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
+        raise AuthError(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
 
 
 @router.put("/position-department-roles")
@@ -911,7 +911,7 @@ async def put_position_department_roles(
 ):
     rid = request_id(request)
     if payload.expected_modified_at is None:
-        raise AuthV2Error(AUTH_BAD_REQUEST, "expected_modified_at is required", 400)
+        raise AuthError(AUTH_BAD_REQUEST, "expected_modified_at is required", 400)
 
     try:
         async with central_db.begin():
@@ -937,7 +937,7 @@ async def put_position_department_roles(
             now = datetime.utcnow()
             if row is None:
                 if int(payload.expected_modified_at) != 0:
-                    raise AuthV2Error(AUTH_BAD_REQUEST, "Version conflict", 409, details={"actual_modified_at": 0})
+                    raise AuthError(AUTH_BAD_REQUEST, "Version conflict", 409, details={"actual_modified_at": 0})
                 await central_db.execute(
                     text(
                         """
@@ -1014,7 +1014,7 @@ async def put_position_department_roles(
             )
             refreshed = refreshed_result.fetchone()
             if refreshed is None:
-                raise AuthV2Error(AUTH_BAD_REQUEST, "Failed to upsert mapping", 500)
+                raise AuthError(AUTH_BAD_REQUEST, "Failed to upsert mapping", 500)
             updated = dict(refreshed._mapping)
             after = {
                 "id": int(updated["id"]),
@@ -1040,10 +1040,10 @@ async def put_position_department_roles(
             result="success",
         )
         return success_json_response({"item": after}, request_id_value=rid, message="Mapping upserted")
-    except AuthV2Error:
+    except AuthError:
         raise
     except Exception:
-        raise AuthV2Error(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
+        raise AuthError(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
 
 
 @router.delete("/position-department-roles/{mapping_id}")
@@ -1056,7 +1056,7 @@ async def delete_position_department_role(
 ):
     rid = request_id(request)
     if expected_modified_at is None:
-        raise AuthV2Error(AUTH_BAD_REQUEST, "expected_modified_at is required", 400)
+        raise AuthError(AUTH_BAD_REQUEST, "expected_modified_at is required", 400)
     try:
         async with central_db.begin():
             result = await central_db.execute(
@@ -1073,7 +1073,7 @@ async def delete_position_department_role(
             )
             row = result.fetchone()
             if row is None:
-                raise AuthV2Error(AUTH_BAD_REQUEST, "Mapping not found", 404)
+                raise AuthError(AUTH_BAD_REQUEST, "Mapping not found", 404)
             existing = dict(row._mapping)
             before = {
                 "id": int(existing["id"]),
@@ -1111,10 +1111,10 @@ async def delete_position_department_role(
             result="success",
         )
         return success_json_response({"item": after}, request_id_value=rid, message="Mapping disabled")
-    except AuthV2Error:
+    except AuthError:
         raise
     except Exception:
-        raise AuthV2Error(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
+        raise AuthError(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
 
 
 @router.get("/effective/{employee_id}")
@@ -1143,7 +1143,7 @@ async def get_effective_authorization(
             result="success",
         )
         return success_json_response({"effective": resolved}, request_id_value=rid, message="Effective authz resolved")
-    except AuthV2Error:
+    except AuthError:
         raise
     except Exception:
-        raise AuthV2Error(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
+        raise AuthError(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)

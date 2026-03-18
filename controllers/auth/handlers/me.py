@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 
-from controllers.auth_v2.dependencies import require_auth
-from controllers.auth_v2.schemas.models import CurrentV2User
-from controllers.auth_v2.services.common import request_id, success_json_response
+from controllers.auth.dependencies import require_auth
+from controllers.auth.schemas.models import CurrentV2User
+from controllers.auth.services.common import request_id, success_json_response
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

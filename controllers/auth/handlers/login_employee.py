@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from controllers.auth_v2.constants import (
+from controllers.auth.constants import (
     AUTH_EMPLOYEE_INACTIVE,
     AUTH_EMPLOYEE_USER_MAPPING_MISSING,
     AUTH_FLOW_DISABLED,
@@ -27,11 +27,11 @@ from controllers.auth_v2.constants import (
     OUTCOME_SECURITY,
     OUTCOME_SUCCESS,
 )
-from controllers.auth_v2.schemas.models import LoginEmployeeRequest
-from controllers.auth_v2.services.audit import write_audit_event
-from controllers.auth_v2.services.authorization import AuthorizationResolver
-from controllers.auth_v2.services.common import (
-    AuthV2Error,
+from controllers.auth.schemas.models import LoginEmployeeRequest
+from controllers.auth.services.audit import write_audit_event
+from controllers.auth.services.authorization import AuthorizationResolver
+from controllers.auth.services.common import (
+    AuthError,
     client_ip,
     error_json_response,
     refresh_token_hash,
@@ -41,8 +41,8 @@ from controllers.auth_v2.services.common import (
     user_agent,
     utcnow,
 )
-from controllers.auth_v2.services.device_fingerprint import compute_device_fingerprint
-from controllers.auth_v2.services.token_service import issue_token_pair
+from controllers.auth.services.device_fingerprint import compute_device_fingerprint
+from controllers.auth.services.token_service import issue_token_pair
 from core.database_v2 import get_central_db_session, get_main_db_session
 from core.security import hash_password, verify_password
 from core.settings import get_settings
@@ -192,7 +192,7 @@ async def _resolve_main_identity(
     )
     contacts = [dict(row._mapping) for row in contact_result.fetchall()]
     if len(contacts) != 1:
-        raise AuthV2Error(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
+        raise AuthError(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
 
     employee_result = await main_db.execute(
         text(
@@ -208,12 +208,12 @@ async def _resolve_main_identity(
     )
     employee = employee_result.fetchone()
     if employee is None or int(employee._mapping.get("status") or 0) != 1:
-        raise AuthV2Error(AUTH_EMPLOYEE_INACTIVE, "Employee is inactive", 403)
+        raise AuthError(AUTH_EMPLOYEE_INACTIVE, "Employee is inactive", 403)
 
     employee_row = dict(employee._mapping)
     contact = contacts[0]
     if int(employee_row.get("contact_id") or 0) != int(contact["id"]):
-        raise AuthV2Error(AUTH_IDENTITY_MISMATCH, "Employee does not belong to contact", 401)
+        raise AuthError(AUTH_IDENTITY_MISMATCH, "Employee does not belong to contact", 401)
 
     return {"contact": contact, "employee": employee_row}
 
@@ -237,14 +237,14 @@ async def _resolve_central_identity(
     )
     mapping_row = mapping_result.fetchone()
     if mapping_row is None:
-        raise AuthV2Error(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
+        raise AuthError(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
 
     mapping = dict(mapping_row._mapping)
     if int(mapping.get("is_active") or 0) != 1:
-        raise AuthV2Error(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
+        raise AuthError(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
 
     if int(mapping.get("contact_id") or 0) != int(contact_id):
-        raise AuthV2Error(AUTH_IDENTITY_MISMATCH, "Contact mismatch for employee mapping", 401)
+        raise AuthError(AUTH_IDENTITY_MISMATCH, "Contact mismatch for employee mapping", 401)
 
     user_result = await central_db.execute(
         text(
@@ -260,18 +260,18 @@ async def _resolve_central_identity(
     )
     user_row = user_result.fetchone()
     if user_row is None:
-        raise AuthV2Error(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
+        raise AuthError(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
 
     user = dict(user_row._mapping)
     if int(user.get("inactive") or 0) != 0:
-        raise AuthV2Error(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
+        raise AuthError(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
 
     if int(user.get("contact_id") or 0) != int(contact_id):
-        raise AuthV2Error(AUTH_IDENTITY_MISMATCH, "User/contact mismatch", 401)
+        raise AuthError(AUTH_IDENTITY_MISMATCH, "User/contact mismatch", 401)
 
     user_country_code = str(user.get("country_code") or "").strip()
     if user_country_code and user_country_code != country_code:
-        raise AuthV2Error(AUTH_IDENTITY_MISMATCH, "Country code mismatch", 401)
+        raise AuthError(AUTH_IDENTITY_MISMATCH, "Country code mismatch", 401)
 
     return {"mapping": mapping, "user": user}
 
@@ -556,7 +556,7 @@ async def login_employee(
             request_id_value=rid,
             message="Login successful",
         )
-    except AuthV2Error as exc:
+    except AuthError as exc:
         await _record_failed_attempt(
             db=central_db,
             key_hash=key_hash,
