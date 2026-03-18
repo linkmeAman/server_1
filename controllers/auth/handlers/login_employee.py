@@ -226,39 +226,18 @@ async def _resolve_central_identity(
     employee_id: int,
     country_code: str,
 ) -> Dict[str, Any]:
-    mapping_result = await central_db.execute(
-        text(
-            """
-            SELECT id, contact_id, employee_id, user_id, is_active
-            FROM auth_employee_user_map
-            WHERE employee_id = :employee_id
-            LIMIT 1
-            """
-        ),
-        {"employee_id": int(employee_id)},
-    )
-    mapping_row = mapping_result.fetchone()
-    if mapping_row is None:
-        raise AuthError(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
-
-    mapping = dict(mapping_row._mapping)
-    if int(mapping.get("is_active") or 0) != 1:
-        raise AuthError(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
-
-    if int(mapping.get("contact_id") or 0) != int(contact_id):
-        raise AuthError(AUTH_IDENTITY_MISMATCH, "Contact mismatch for employee mapping", 401)
-
+    """Resolve the central user record directly via contact_id (no map table needed)."""
     user_result = await central_db.execute(
         text(
             """
-                        SELECT id, contact_id, country_code, password, password_hash, inactive
+            SELECT id, contact_id, country_code, password, password_hash, inactive
             FROM user
-            WHERE id = :user_id
+            WHERE contact_id = :contact_id
               AND (park IS NULL OR park = 0)
             LIMIT 1
             """
         ),
-        {"user_id": int(mapping["user_id"])},
+        {"contact_id": int(contact_id)},
     )
     user_row = user_result.fetchone()
     if user_row is None:
@@ -268,14 +247,11 @@ async def _resolve_central_identity(
     if int(user.get("inactive") or 0) != 0:
         raise AuthError(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
 
-    if int(user.get("contact_id") or 0) != int(contact_id):
-        raise AuthError(AUTH_IDENTITY_MISMATCH, "User/contact mismatch", 401)
-
     user_country_code = str(user.get("country_code") or "").strip()
     if user_country_code and user_country_code != country_code:
         raise AuthError(AUTH_IDENTITY_MISMATCH, "Country code mismatch", 401)
 
-    return {"mapping": mapping, "user": user}
+    return {"user": user}
 
 
 async def _validate_password_and_maybe_migrate(
