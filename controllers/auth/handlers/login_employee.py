@@ -330,7 +330,7 @@ async def _validate_password_and_maybe_migrate(
                     },
                 )
             except Exception:
-                pass
+                logger.exception("Failed to migrate password hash for user_id=%s", user_id)
             return True
 
     return False
@@ -566,6 +566,7 @@ async def login_employee(
         await central_db.commit()
         return error_json_response(exc.code, exc.message, exc.status_code, rid, details=exc.details)
     except Exception:
+        logger.exception("Unexpected error in login-employee rid=%s", rid)
         await central_db.rollback()
         return error_json_response(
             AUTH_SERVICE_UNAVAILABLE,
