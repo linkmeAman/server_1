@@ -12,7 +12,12 @@ from db.query_validator import MAX_ROWS
 router = APIRouter(prefix="/api", tags=["db-explorer"])
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 DEFAULT_LIMIT = 50
-_ALLOWED_FILTER_OPERATORS = {"contains", "equals", "starts_with", "ends_with"}
+_ALLOWED_FILTER_OPERATORS = {
+    "=", ">", ">=", "<", "<=", "!=", 
+    "like", "like %...%", "not like", "not like %...%", 
+    "in (...)", "not in (...)", "between", "not between", 
+    "is null", "is not null"
+}
 
 
 def _validate_identifier(name: str, field_name: str) -> str:
@@ -57,26 +62,46 @@ def _build_filter_clause(
             raise HTTPException(status_code=400, detail="Invalid multi-filter payload")
 
         for index, raw_column in enumerate(filter_columns):
-            value = str(filter_values[index] or "").strip()
             operator = str(filter_operators[index] or "").strip().lower()
-            if not value:
+            value = str(filter_values[index] or "").strip()
+            
+            if not value and operator not in ("is null", "is not null"):
                 continue
 
             safe_column = _validate_identifier(raw_column, "column name")
             if operator not in _ALLOWED_FILTER_OPERATORS:
                 raise HTTPException(status_code=400, detail=f"Unsupported filter operator: {operator}")
 
-            if operator == "contains":
+            if operator == "like %...%":
                 clauses.append(f"{_quoted(safe_column)} LIKE %s")
                 params.append(f"%{value}%")
-            elif operator == "starts_with":
-                clauses.append(f"{_quoted(safe_column)} LIKE %s")
-                params.append(f"{value}%")
-            elif operator == "ends_with":
-                clauses.append(f"{_quoted(safe_column)} LIKE %s")
-                params.append(f"%{value}")
+            elif operator == "not like %...%":
+                clauses.append(f"{_quoted(safe_column)} NOT LIKE %s")
+                params.append(f"%{value}%")
+            elif operator in ("like", "not like"):
+                clauses.append(f"{_quoted(safe_column)} {operator.upper()} %s")
+                params.append(value)
+            elif operator == "is null":
+                clauses.append(f"{_quoted(safe_column)} IS NULL")
+            elif operator == "is not null":
+                clauses.append(f"{_quoted(safe_column)} IS NOT NULL")
+            elif operator in ("in (...)", "not in (...)"):
+                op_sql = "IN" if operator == "in (...)" else "NOT IN"
+                values = [v.strip() for v in value.split(",")]
+                placeholders = ", ".join(["%s"] * len(values))
+                clauses.append(f"{_quoted(safe_column)} {op_sql} ({placeholders})")
+                params.extend(values)
+            elif operator in ("between", "not between"):
+                op_sql = "BETWEEN" if operator == "between" else "NOT BETWEEN"
+                parts = value.split(" AND ") if " AND " in value else value.split(" and ")
+                if len(parts) == 2:
+                    clauses.append(f"{_quoted(safe_column)} {op_sql} %s AND %s")
+                    params.extend([parts[0].strip(), parts[1].strip()])
+                else:
+                    clauses.append(f"{_quoted(safe_column)} = %s") # fallback if invalid between syntax
+                    params.append(value)
             else:
-                clauses.append(f"{_quoted(safe_column)} = %s")
+                clauses.append(f"{_quoted(safe_column)} {operator.upper()} %s")
                 params.append(value)
 
     where_sql = f" WHERE {' AND '.join(clauses)}" if clauses else ""
@@ -141,6 +166,8 @@ def table_rows(
     filter_column: list[str] = Query(default=[]),
     filter_value: list[str] = Query(default=[]),
     filter_operator: list[str] = Query(default=[]),
+    sort_column: str | None = Query(default=None),
+    sort_direction: str | None = Query(default="asc"),
 ):
     safe_table = _validate_identifier(table_name, "table name")
     selected_db = _optional_db_name(db)
@@ -153,9 +180,15 @@ def table_rows(
         filter_operators=filter_operator,
     )
 
+    order_sql = ""
+    if sort_column:
+        safe_sort_column = _validate_identifier(sort_column, "sort column")
+        safe_sort_dir = "ASC" if sort_direction and sort_direction.lower() == "asc" else "DESC"
+        order_sql = f" ORDER BY {_quoted(safe_sort_column)} {safe_sort_dir}"
+
     data_sql = (
         f"SELECT * FROM {_quoted(safe_table)}"
-        f"{where_sql} LIMIT %s OFFSET %s"
+        f"{where_sql}{order_sql} LIMIT %s OFFSET %s"
     )
     data_params = [*params, limit, offset]
 
