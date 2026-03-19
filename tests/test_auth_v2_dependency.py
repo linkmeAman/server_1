@@ -6,9 +6,9 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
-from controllers.auth_v2.constants import AUTH_TOKEN_VERSION_MISMATCH
-from controllers.auth_v2.dependencies import require_v2_auth
-from controllers.auth_v2.services.common import AuthV2Error
+from controllers.auth.constants import AUTH_TOKEN_VERSION_MISMATCH
+from controllers.auth.dependencies import require_v2_auth
+from controllers.auth.services.common import AuthError
 
 
 class TestAuthV2Dependency(unittest.TestCase):
@@ -29,8 +29,8 @@ class TestAuthV2Dependency(unittest.TestCase):
                 "auth_ver": 1,
                 "typ": "access",
             }
-            with patch("controllers.auth_v2.dependencies.verify_v2_access_token", return_value=claims):
-                with self.assertRaises(AuthV2Error) as ctx:
+            with patch("controllers.auth.dependencies.verify_v2_access_token", return_value=claims):
+                with self.assertRaises(AuthError) as ctx:
                     await require_v2_auth(authorization="Bearer token")
 
             self.assertEqual(AUTH_TOKEN_VERSION_MISMATCH, ctx.exception.code)

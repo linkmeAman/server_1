@@ -16,6 +16,7 @@ from .schemas.models import (
     ApproveEmployeeEventRequest,
     CheckConflictRequest,
     CreateEmployeeEventRequest,
+    DemoEventsBatchQueryRequest,
     EmployeeLeaveCalendarBatchQueryRequest,
     EmployeeWorkshiftCalendarBatchQueryRequest,
     ParkEmployeeEventRequest,
@@ -319,6 +320,66 @@ async def approve_event(event_id: int, payload: ApproveEmployeeEventRequest, req
         return success_response(
             data=data,
             message="Employee event approval processed",
+        ).model_dump(mode="json")
+    except EmployeeEventsError as exc:
+        return _error_response(exc, request)
+
+
+@router.post("/demo/query")
+async def post_demo_events_query(request: Request):
+    try:
+        require_app_access_claims(request.headers.get("Authorization"))
+        try:
+            body = await request.json()
+        except Exception as exc:
+            raise EmployeeEventsError(
+                code="EMP_EVENT_INVALID_DEMO_QUERY",
+                message="Request body must be valid JSON",
+                status_code=400,
+                data={"reason": "invalid_json"},
+            ) from exc
+
+        if not isinstance(body, dict):
+            raise EmployeeEventsError(
+                code="EMP_EVENT_INVALID_DEMO_QUERY",
+                message="Request body must be a JSON object",
+                status_code=400,
+                data={"reason": "invalid_body_type"},
+            )
+
+        try:
+            payload = DemoEventsBatchQueryRequest.model_validate(body)
+        except ValidationError as exc:
+            raise EmployeeEventsError(
+                code="EMP_EVENT_INVALID_DEMO_QUERY",
+                message="Invalid demo events query",
+                status_code=400,
+                data={"errors": exc.errors()},
+            ) from exc
+
+        try:
+            data = employee_events_service.get_demo_events_batch(
+                employee_ids=payload.employee_ids,
+                from_date=payload.from_date,
+                to_date=payload.to_date,
+                statuses=payload.statuses,
+                types=payload.types,
+                venue_ids=payload.venue_ids,
+                batch_ids=payload.batch_ids,
+            )
+        except EmployeeEventsError as exc:
+            if exc.status_code == 400 and exc.code != "EMP_EVENT_INVALID_DEMO_QUERY":
+                raise EmployeeEventsError(
+                    code="EMP_EVENT_INVALID_DEMO_QUERY",
+                    message=exc.message,
+                    status_code=400,
+                    data=exc.data,
+                ) from exc
+            raise
+
+        return success_response(
+            data=data,
+            message="Demo events fetched successfully",
         ).model_dump(mode="json")
     except EmployeeEventsError as exc:
         return _error_response(exc, request)

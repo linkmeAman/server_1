@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 import main
 from core.database_v2 import get_central_db_session
 from core.settings import get_settings
-from tests.auth_v2_test_utils import ensure_auth_v2_routes, testclient_requests_work
+from tests.auth_test_utils import ensure_auth_v2_routes, testclient_requests_work
 
 
 class _FakeBegin:
@@ -58,7 +58,7 @@ class TestAuthV2InternalPasswordChanged(unittest.TestCase):
             settings.API_KEYS = [api_key]
 
         with patch(
-            "controllers.auth_v2.handlers.internal_password_changed.revoke_all_sessions_for_user",
+            "controllers.auth.handlers.internal_password_changed.revoke_all_sessions_for_user",
             new=AsyncMock(return_value=6),
         ) as revoke_mock:
             client = TestClient(main.app)

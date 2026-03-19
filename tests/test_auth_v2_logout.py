@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 import main
 from core.database_v2 import get_central_db_session
-from tests.auth_v2_test_utils import build_headers, ensure_auth_v2_routes, testclient_requests_work
+from tests.auth_test_utils import build_headers, ensure_auth_v2_routes, testclient_requests_work
 
 
 class _FakeBegin:
@@ -59,13 +59,13 @@ class TestAuthV2Logout(unittest.TestCase):
         main.app.dependency_overrides[get_central_db_session] = _central_dep
 
         with patch(
-            "controllers.auth_v2.handlers.logout.verify_v2_refresh_token",
+            "controllers.auth.handlers.logout.verify_v2_refresh_token",
             return_value={"user_id": 1, "contact_id": 2, "employee_id": 3},
         ), patch(
-            "controllers.auth_v2.handlers.logout.refresh_token_hash",
+            "controllers.auth.handlers.logout.refresh_token_hash",
             return_value="hash",
         ), patch(
-            "controllers.auth_v2.handlers.logout.revoke_session_family",
+            "controllers.auth.handlers.logout.revoke_session_family",
             new=AsyncMock(return_value=4),
         ) as revoke_mock:
             client = TestClient(main.app)

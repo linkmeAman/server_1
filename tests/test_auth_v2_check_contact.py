@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 import main
 from core.database_v2 import get_central_db_session, get_main_db_session
-from tests.auth_v2_test_utils import build_headers, ensure_auth_v2_routes, testclient_requests_work
+from tests.auth_test_utils import build_headers, ensure_auth_v2_routes, testclient_requests_work
 
 
 class _FakeRow:
@@ -116,10 +116,10 @@ class TestAuthV2CheckContact(unittest.TestCase):
         self._override_sessions(main_session, central_session)
 
         with patch(
-            "controllers.auth_v2.handlers.check_contact.count_events",
+            "controllers.auth.handlers.check_contact.count_events",
             new=AsyncMock(side_effect=[0, 0, 0, 0]),
         ), patch(
-            "controllers.auth_v2.handlers.check_contact.write_audit_event",
+            "controllers.auth.handlers.check_contact.write_audit_event",
             new=AsyncMock(),
         ):
             client = self._client()
@@ -153,10 +153,10 @@ class TestAuthV2CheckContact(unittest.TestCase):
         self._override_sessions(main_session, central_session)
 
         with patch(
-            "controllers.auth_v2.handlers.check_contact.count_events",
+            "controllers.auth.handlers.check_contact.count_events",
             new=AsyncMock(side_effect=[0, 0, 0, 0]),
         ), patch(
-            "controllers.auth_v2.handlers.check_contact.write_audit_event",
+            "controllers.auth.handlers.check_contact.write_audit_event",
             new=AsyncMock(),
         ):
             client = self._client()
@@ -183,10 +183,10 @@ class TestAuthV2CheckContact(unittest.TestCase):
         self._override_sessions(_FailIfUsedMainSession(), _FakeCentralSession())
 
         with patch(
-            "controllers.auth_v2.handlers.check_contact.count_events",
+            "controllers.auth.handlers.check_contact.count_events",
             new=AsyncMock(side_effect=[999]),
         ), patch(
-            "controllers.auth_v2.handlers.check_contact.write_audit_event",
+            "controllers.auth.handlers.check_contact.write_audit_event",
             new=AsyncMock(),
         ):
             client = self._client()
@@ -214,10 +214,10 @@ class TestAuthV2CheckContact(unittest.TestCase):
         self._override_sessions(_FailIfUsedMainSession(), _FakeCentralSession())
 
         with patch(
-            "controllers.auth_v2.handlers.check_contact.count_events",
+            "controllers.auth.handlers.check_contact.count_events",
             new=AsyncMock(side_effect=[0, 999]),
         ), patch(
-            "controllers.auth_v2.handlers.check_contact.write_audit_event",
+            "controllers.auth.handlers.check_contact.write_audit_event",
             new=AsyncMock(),
         ):
             client = self._client()
@@ -240,10 +240,10 @@ class TestAuthV2CheckContact(unittest.TestCase):
         self._override_sessions(_FailIfUsedMainSession(), _FakeCentralSession())
 
         with patch(
-            "controllers.auth_v2.handlers.check_contact.count_events",
+            "controllers.auth.handlers.check_contact.count_events",
             new=AsyncMock(side_effect=[0, 0, 0, 99]),
         ), patch(
-            "controllers.auth_v2.handlers.check_contact.write_audit_event",
+            "controllers.auth.handlers.check_contact.write_audit_event",
             new=AsyncMock(),
         ):
             client = self._client()
@@ -287,13 +287,13 @@ class TestAuthV2CheckContact(unittest.TestCase):
         main.app.dependency_overrides[get_central_db_session] = _central_dep
 
         with patch(
-            "controllers.auth_v2.handlers.check_contact.count_events",
+            "controllers.auth.handlers.check_contact.count_events",
             new=AsyncMock(side_effect=[0, 0, 0, 0, 0, 0, 0, 0]),
         ), patch(
-            "controllers.auth_v2.handlers.check_contact.write_audit_event",
+            "controllers.auth.handlers.check_contact.write_audit_event",
             new=AsyncMock(),
         ), patch(
-            "controllers.auth_v2.handlers.check_contact.apply_timing_floor",
+            "controllers.auth.handlers.check_contact.apply_timing_floor",
             new=AsyncMock(),
         ) as timing_mock:
             client = self._client()

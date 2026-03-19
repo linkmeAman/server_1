@@ -21,11 +21,7 @@ from core.response import error_response
 from core.exceptions import DynamicAPIException
 from core.database import init_database
 from api.v1.router import api_router
-from controllers.auth_v2.services.common import AuthV2Error
-from routes.tables import router as explorer_tables_router
-from routes.query import router as explorer_query_router
-from routes.export import router as explorer_export_router
-from routes.ai_query import router as explorer_ai_query_router
+from controllers.auth.services.common import AuthError
 
 
 class ConsecutiveDuplicateFilter(logging.Filter):
@@ -133,8 +129,8 @@ async def dynamic_api_exception_handler(request: Request, exc: DynamicAPIExcepti
     )
 
 
-@app.exception_handler(AuthV2Error)
-async def auth_v2_exception_handler(request: Request, exc: AuthV2Error):
+@app.exception_handler(AuthError)
+async def auth_v2_exception_handler(request: Request, exc: AuthError):
     """Handle auth v2 exceptions with required envelope + request_id/details."""
     request_id = request.headers.get("X-Request-ID") or str(uuid4())
     payload = error_response(
