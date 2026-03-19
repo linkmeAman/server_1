@@ -27,6 +27,15 @@ def _quoted(name: str) -> str:
     return f"`{name}`"
 
 
+def _optional_db_name(db: str | None) -> str | None:
+    if db is None:
+        return None
+    cleaned = db.strip()
+    if not cleaned:
+        return None
+    return _validate_identifier(cleaned, "database name")
+
+
 def _build_filter_clause(
     *,
     search: str | None,
@@ -79,6 +88,7 @@ def _build_filter_clause(
 @router.get("/export/{table_name}")
 def export_table_csv(
     table_name: str,
+    db: str | None = Query(default=None),
     search: str | None = Query(default=None),
     column: str | None = Query(default=None),
     filter_column: list[str] = Query(default=[]),
@@ -86,6 +96,7 @@ def export_table_csv(
     filter_operator: list[str] = Query(default=[]),
 ):
     safe_table = _validate_identifier(table_name, "table name")
+    selected_db = _optional_db_name(db)
 
     where_sql, params = _build_filter_clause(
         search=search,
@@ -98,7 +109,7 @@ def export_table_csv(
     sql = f"SELECT * FROM {_quoted(safe_table)}{where_sql} LIMIT %s"
     params.append(MAX_ROWS)
 
-    with db_cursor() as cursor:
+    with db_cursor(database=selected_db) as cursor:
         cursor.execute(sql, params)
         rows = cursor.fetchall()
 
