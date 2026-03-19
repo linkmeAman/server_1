@@ -29,6 +29,7 @@ class SchemaColumn(BaseModel):
 class AIQueryRequest(BaseModel):
     prompt: str = PydanticField(..., min_length=1)
     tableName: str = PydanticField(..., min_length=1)
+    databaseName: str | None = None
     schema: List[SchemaColumn] = PydanticField(default_factory=list)
     provider: Literal["chatgpt", "local"] = "chatgpt"
 
@@ -66,9 +67,10 @@ def _extract_prompt_tables(prompt: str, primary_table: str) -> list[str]:
     return deduped
 
 
-def _load_table_schema_from_db(table_name: str) -> list[SchemaColumn]:
+def _load_table_schema_from_db(table_name: str, database_name: str | None = None) -> list[SchemaColumn]:
     safe_table = _validate_identifier(table_name)
-    with db_cursor() as cursor:
+    selected_db = _validate_identifier(database_name) if database_name else None
+    with db_cursor(database=selected_db) as cursor:
         cursor.execute(f"DESCRIBE {_quoted(safe_table)}")
         rows = cursor.fetchall() or []
 
@@ -93,7 +95,11 @@ async def _build_schema_context(payload: AIQueryRequest) -> str:
         schema_rows: list[SchemaColumn] = []
 
         try:
-            schema_rows = await asyncio.to_thread(_load_table_schema_from_db, safe_table)
+            schema_rows = await asyncio.to_thread(
+                _load_table_schema_from_db,
+                safe_table,
+                payload.databaseName,
+            )
         except Exception:
             if safe_table == primary and payload.schema:
                 schema_rows = payload.schema

@@ -15,15 +15,17 @@ def _read_required_env(name: str) -> str:
     return value
 
 
-def get_db_connection() -> pymysql.connections.Connection:
+def get_db_connection(database: str | None = None) -> pymysql.connections.Connection:
     """Return a direct pymysql connection using server-local DB settings."""
+
+    selected_database = (database or '').strip() or _read_required_env("DB_NAME")
 
     return pymysql.connect(
         host=os.getenv("DB_HOST", "127.0.0.1"),
         port=int(os.getenv("DB_PORT", "3306")),
         user=_read_required_env("DB_USER"),
         password=_read_required_env("DB_PASSWORD"),
-        database=_read_required_env("DB_NAME"),
+        database=selected_database,
         cursorclass=pymysql.cursors.DictCursor,
         autocommit=True,
         connect_timeout=10,
@@ -33,9 +35,9 @@ def get_db_connection() -> pymysql.connections.Connection:
 
 
 @contextmanager
-def db_cursor():
+def db_cursor(database: str | None = None):
     """Yield a dict cursor and close connection cleanly."""
-    conn = get_db_connection()
+    conn = get_db_connection(database=database)
     try:
         with conn.cursor() as cursor:
             yield cursor
