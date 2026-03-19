@@ -403,37 +403,47 @@ async def check_contact(
                                 contact_id_val,
                             )
 
-                        if central_audit_enabled:
-                            try:
-                                await write_audit_event(
-                                    central_db,
-                                    event_type=EVENT_CHECK_CONTACT,
-                                    outcome=OUTCOME_SUCCESS,
-                                    country_code=country_code,
-                                    mobile=mobile,
-                                    contact_id=contact_id_val,
-                                    ip=ip_value,
-                                    user_agent=ua_value,
-                                    request_id=rid,
-                                    details_json={"employee_count": len(employees)},
-                                )
-                                await central_db.commit()
-                            except Exception:
-                                logger.warning(
-                                    "check-contact degraded: central success audit write failed request_id=%s",
-                                    rid,
-                                )
-                                central_audit_enabled = False
+                        if not employees:
+                            response = await _generic_not_found(
+                                central_db=central_db,
+                                request=request,
+                                request_id_value=rid,
+                                country_code=country_code,
+                                mobile=mobile,
+                                reason="NO_ACTIVE_EMPLOYEES",
+                                audit_enabled=central_audit_enabled,
+                            )
+                        else:
+                            if central_audit_enabled:
+                                try:
+                                    await write_audit_event(
+                                        central_db,
+                                        event_type=EVENT_CHECK_CONTACT,
+                                        outcome=OUTCOME_SUCCESS,
+                                        country_code=country_code,
+                                        mobile=mobile,
+                                        contact_id=contact_id_val,
+                                        ip=ip_value,
+                                        user_agent=ua_value,
+                                        request_id=rid,
+                                        details_json={"employee_count": len(employees)},
+                                    )
+                                    await central_db.commit()
+                                except Exception:
+                                    logger.warning(
+                                        "check-contact degraded: central success audit write failed request_id=%s",
+                                        rid,
+                                    )
 
-                        response = success_json_response(
-                            {
-                                "contact_id": contact_id_val,
-                                "contact_name": _contact_name(contact),
-                                "employees": employees,
-                            },
-                            request_id_value=rid,
-                            message="Contact resolved",
-                        )
+                            response = success_json_response(
+                                {
+                                    "contact_id": contact_id_val,
+                                    "contact_name": _contact_name(contact),
+                                    "employees": employees,
+                                },
+                                request_id_value=rid,
+                                message="Contact resolved",
+                            )
     except Exception:
         logger.exception("Auth v2 check-contact failed request_id=%s", rid)
         try:
