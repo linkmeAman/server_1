@@ -22,6 +22,10 @@ from core.exceptions import DynamicAPIException
 from core.database import init_database
 from api.v1.router import api_router
 from controllers.auth.services.common import AuthError
+from routes.tables import router as explorer_tables_router
+from routes.query import router as explorer_query_router
+from routes.export import router as explorer_export_router
+from routes.ai_query import router as explorer_ai_query_router
 
 
 class ConsecutiveDuplicateFilter(logging.Filter):
@@ -222,6 +226,10 @@ setup_middleware(app)
 # Include explicit APIRouter endpoints first.
 # Legacy dynamic routes remain enabled as fallback for old clients.
 app.include_router(api_router)
+app.include_router(explorer_tables_router)
+app.include_router(explorer_query_router)
+app.include_router(explorer_export_router)
+app.include_router(explorer_ai_query_router)
 
 
 # Root endpoint
