@@ -176,24 +176,24 @@ async def _reset_lock_state(db: AsyncSession, key_hash: str) -> None:
 
 async def _resolve_main_identity(
     main_db: AsyncSession,
-    country_code: str,
-    mobile: str,
+    contact_id: int,
     employee_id: int,
 ) -> Dict[str, Any]:
+    """Fetch contact by PK and verify the chosen employee belongs to it."""
     contact_result = await main_db.execute(
         text(
             """
             SELECT id, country_code, mobile, fname, mname, lname
             FROM contact
-            WHERE country_code = :country_code
-              AND mobile = :mobile
+            WHERE id = :contact_id
               AND (park IS NULL OR park = 0)
+            LIMIT 1
             """
         ),
-        {"country_code": country_code, "mobile": mobile},
+        {"contact_id": int(contact_id)},
     )
-    contacts = [dict(row._mapping) for row in contact_result.fetchall()]
-    if len(contacts) != 1:
+    contact_row = contact_result.fetchone()
+    if contact_row is None:
         raise AuthError(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
 
     employee_result = await main_db.execute(
@@ -213,45 +213,38 @@ async def _resolve_main_identity(
         raise AuthError(AUTH_EMPLOYEE_INACTIVE, "Employee is inactive", 403)
 
     employee_row = dict(employee._mapping)
-    contact = contacts[0]
-    if int(employee_row.get("contact_id") or 0) != int(contact["id"]):
+    if int(employee_row.get("contact_id") or 0) != int(contact_id):
         raise AuthError(AUTH_IDENTITY_MISMATCH, "Employee does not belong to contact", 401)
 
-    return {"contact": contact, "employee": employee_row}
+    return {"contact": dict(contact_row._mapping), "employee": employee_row}
 
 
 async def _resolve_central_identity(
     central_db: AsyncSession,
-    contact_id: int,
-    employee_id: int,
     country_code: str,
+    mobile: str,
 ) -> Dict[str, Any]:
-    """Resolve the central user record directly via contact_id (no map table needed)."""
+    """Look up the central user by (country_code, mobile) — primary auth source."""
     user_result = await central_db.execute(
         text(
             """
-            SELECT id, contact_id, country_code, password, password_hash, inactive
+            SELECT id, contact_id, country_code, mobile,
+                   fname, lname, password, password_hash, inactive
             FROM user
-            WHERE contact_id = :contact_id
+            WHERE country_code = :country_code
+              AND mobile = :mobile
+              AND inactive = 0
               AND (park IS NULL OR park = 0)
             LIMIT 1
             """
         ),
-        {"contact_id": int(contact_id)},
+        {"country_code": country_code, "mobile": mobile},
     )
     user_row = user_result.fetchone()
     if user_row is None:
         raise AuthError(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
 
-    user = dict(user_row._mapping)
-    if int(user.get("inactive") or 0) != 0:
-        raise AuthError(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
-
-    user_country_code = str(user.get("country_code") or "").strip()
-    if user_country_code and user_country_code != country_code:
-        raise AuthError(AUTH_IDENTITY_MISMATCH, "Country code mismatch", 401)
-
-    return {"user": user}
+    return {"user": dict(user_row._mapping)}
 
 
 async def _validate_password_and_maybe_migrate(
@@ -342,16 +335,14 @@ async def login_employee(
     key_hash = _lock_key_hash(country_code, mobile, employee_id)
 
     try:
-        main_identity = await _resolve_main_identity(main_db, country_code, mobile, employee_id)
-        contact = main_identity["contact"]
-
-        central_identity = await _resolve_central_identity(
-            central_db,
-            int(contact["id"]),
-            employee_id,
-            country_code,
-        )
+        # ── 1. Primary auth lookup: pf_central.user ──────────────────────────
+        central_identity = await _resolve_central_identity(central_db, country_code, mobile)
         user = central_identity["user"]
+        contact_id = int(user["contact_id"])
+
+        # ── 2. Verify employee + contact from client DB ───────────────────────
+        main_identity = await _resolve_main_identity(main_db, contact_id, employee_id)
+        contact = main_identity["contact"]
 
         lock_state = await _load_lock_state(central_db, key_hash)
         now = datetime.utcnow()
