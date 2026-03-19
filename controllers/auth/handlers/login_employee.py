@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
@@ -48,6 +49,7 @@ from core.security import hash_password, verify_password
 from core.settings import get_settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
 
 def _lock_key_hash(country_code: str, mobile: str, employee_id: int) -> str:
@@ -59,7 +61,7 @@ async def _load_lock_state(db: AsyncSession, key_hash: str) -> Optional[Dict[str
         text(
             """
             SELECT id, fail_count, first_fail_at, last_fail_at, locked_until
-            FROM auth_lock_state_v2
+            FROM auth_lock_state
             WHERE key_type = :key_type AND key_hash = :key_hash
             LIMIT 1
             """
@@ -89,7 +91,7 @@ async def _record_failed_attempt(
         await db.execute(
             text(
                 """
-                INSERT INTO auth_lock_state_v2 (
+                INSERT INTO auth_lock_state (
                     key_type, country_code, mobile, employee_id, key_hash,
                     fail_count, first_fail_at, last_fail_at, locked_until, created_at, modified_at
                 ) VALUES (
@@ -129,7 +131,7 @@ async def _record_failed_attempt(
     await db.execute(
         text(
             """
-            UPDATE auth_lock_state_v2
+            UPDATE auth_lock_state
             SET fail_count = :fail_count,
                 first_fail_at = :first_fail_at,
                 last_fail_at = :last_fail_at,
@@ -155,7 +157,7 @@ async def _reset_lock_state(db: AsyncSession, key_hash: str) -> None:
     await db.execute(
         text(
             """
-            UPDATE auth_lock_state_v2
+            UPDATE auth_lock_state
             SET fail_count = 0,
                 first_fail_at = NULL,
                 last_fail_at = NULL,
@@ -174,24 +176,24 @@ async def _reset_lock_state(db: AsyncSession, key_hash: str) -> None:
 
 async def _resolve_main_identity(
     main_db: AsyncSession,
-    country_code: str,
-    mobile: str,
+    contact_id: int,
     employee_id: int,
 ) -> Dict[str, Any]:
+    """Fetch contact by PK and verify the chosen employee belongs to it."""
     contact_result = await main_db.execute(
         text(
             """
             SELECT id, country_code, mobile, fname, mname, lname
             FROM contact
-            WHERE country_code = :country_code
-              AND mobile = :mobile
+            WHERE id = :contact_id
               AND (park IS NULL OR park = 0)
+            LIMIT 1
             """
         ),
-        {"country_code": country_code, "mobile": mobile},
+        {"contact_id": int(contact_id)},
     )
-    contacts = [dict(row._mapping) for row in contact_result.fetchall()]
-    if len(contacts) != 1:
+    contact_row = contact_result.fetchone()
+    if contact_row is None:
         raise AuthError(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
 
     employee_result = await main_db.execute(
@@ -211,69 +213,38 @@ async def _resolve_main_identity(
         raise AuthError(AUTH_EMPLOYEE_INACTIVE, "Employee is inactive", 403)
 
     employee_row = dict(employee._mapping)
-    contact = contacts[0]
-    if int(employee_row.get("contact_id") or 0) != int(contact["id"]):
+    if int(employee_row.get("contact_id") or 0) != int(contact_id):
         raise AuthError(AUTH_IDENTITY_MISMATCH, "Employee does not belong to contact", 401)
 
-    return {"contact": contact, "employee": employee_row}
+    return {"contact": dict(contact_row._mapping), "employee": employee_row}
 
 
 async def _resolve_central_identity(
     central_db: AsyncSession,
-    contact_id: int,
-    employee_id: int,
     country_code: str,
+    mobile: str,
 ) -> Dict[str, Any]:
-    mapping_result = await central_db.execute(
-        text(
-            """
-            SELECT id, contact_id, employee_id, user_id, is_active
-            FROM auth_employee_user_map
-            WHERE employee_id = :employee_id
-            LIMIT 1
-            """
-        ),
-        {"employee_id": int(employee_id)},
-    )
-    mapping_row = mapping_result.fetchone()
-    if mapping_row is None:
-        raise AuthError(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
-
-    mapping = dict(mapping_row._mapping)
-    if int(mapping.get("is_active") or 0) != 1:
-        raise AuthError(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
-
-    if int(mapping.get("contact_id") or 0) != int(contact_id):
-        raise AuthError(AUTH_IDENTITY_MISMATCH, "Contact mismatch for employee mapping", 401)
-
+    """Look up the central user by (country_code, mobile) — primary auth source."""
     user_result = await central_db.execute(
         text(
             """
-            SELECT id, contact_id, country_code, password, inactive
+            SELECT id, contact_id, country_code, mobile,
+                   fname, lname, password, password_hash, inactive
             FROM user
-            WHERE id = :user_id
+            WHERE country_code = :country_code
+              AND mobile = :mobile
+              AND inactive = 0
               AND (park IS NULL OR park = 0)
             LIMIT 1
             """
         ),
-        {"user_id": int(mapping["user_id"])},
+        {"country_code": country_code, "mobile": mobile},
     )
     user_row = user_result.fetchone()
     if user_row is None:
         raise AuthError(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
 
-    user = dict(user_row._mapping)
-    if int(user.get("inactive") or 0) != 0:
-        raise AuthError(AUTH_EMPLOYEE_USER_MAPPING_MISSING, "Employee-user mapping missing", 401)
-
-    if int(user.get("contact_id") or 0) != int(contact_id):
-        raise AuthError(AUTH_IDENTITY_MISMATCH, "User/contact mismatch", 401)
-
-    user_country_code = str(user.get("country_code") or "").strip()
-    if user_country_code and user_country_code != country_code:
-        raise AuthError(AUTH_IDENTITY_MISMATCH, "Country code mismatch", 401)
-
-    return {"mapping": mapping, "user": user}
+    return {"user": dict(user_row._mapping)}
 
 
 async def _validate_password_and_maybe_migrate(
@@ -281,11 +252,18 @@ async def _validate_password_and_maybe_migrate(
     *,
     user_id: int,
     legacy_plain_password: str,
+    current_password_hash: str,
     provided_password: str,
     request_id_value: str,
     ip_value: str,
     ua_value: str,
 ) -> bool:
+    """Validate password against hash only (no plaintext fallback)."""
+    existing_user_hash = (current_password_hash or "").strip()
+    if existing_user_hash:
+        return verify_password(provided_password, existing_user_hash)
+
+    # Fallback: check auth_identity table for hash
     identity_result = await central_db.execute(
         text(
             """
@@ -299,56 +277,34 @@ async def _validate_password_and_maybe_migrate(
     )
     identity_row = identity_result.fetchone()
 
-    if identity_row is not None and identity_row._mapping.get("password_hash"):
-        return bool(verify_password(provided_password, str(identity_row._mapping.get("password_hash"))))
+    if identity_row is not None:
+        identity_hash = str(identity_row._mapping.get("password_hash") or "")
+        if identity_hash and verify_password(provided_password, identity_hash):
+            # Sync identity hash to user table for long-term convergence
+            try:
+                now = datetime.utcnow()
+                await central_db.execute(
+                    text(
+                        """
+                        UPDATE user
+                        SET password_hash = :password_hash,
+                            password_hash_algo = :password_hash_algo,
+                            password_hash_updated_at = :password_hash_updated_at
+                        WHERE id = :user_id
+                        """
+                    ),
+                    {
+                        "user_id": int(user_id),
+                        "password_hash": identity_hash,
+                        "password_hash_algo": "bcrypt",
+                        "password_hash_updated_at": now,
+                    },
+                )
+            except Exception:
+                logger.exception("Failed to migrate password hash for user_id=%s", user_id)
+            return True
 
-    if legacy_plain_password != provided_password:
-        return False
-
-    try:
-        new_hash = hash_password(provided_password)
-        if identity_row is None:
-            await central_db.execute(
-                text(
-                    """
-                    INSERT INTO auth_identity (user_id, password_hash, created_at)
-                    VALUES (:user_id, :password_hash, :created_at)
-                    """
-                ),
-                {
-                    "user_id": int(user_id),
-                    "password_hash": new_hash,
-                    "created_at": datetime.utcnow(),
-                },
-            )
-        else:
-            await central_db.execute(
-                text(
-                    """
-                    UPDATE auth_identity
-                    SET password_hash = :password_hash
-                    WHERE user_id = :user_id
-                    """
-                ),
-                {
-                    "user_id": int(user_id),
-                    "password_hash": new_hash,
-                },
-            )
-    except Exception:
-        await write_audit_event(
-            central_db,
-            event_type=EVENT_LOGIN_PASSWORD_MIGRATION,
-            outcome=OUTCOME_SECURITY,
-            reason_code=AUTH_PASSWORD_MIGRATION_DEFERRED,
-            user_id=int(user_id),
-            ip=ip_value,
-            user_agent=ua_value,
-            request_id=request_id_value,
-            details_json={"deferred": True},
-        )
-
-    return True
+    return False
 
 
 @router.post("/login-employee")
@@ -379,16 +335,14 @@ async def login_employee(
     key_hash = _lock_key_hash(country_code, mobile, employee_id)
 
     try:
-        main_identity = await _resolve_main_identity(main_db, country_code, mobile, employee_id)
-        contact = main_identity["contact"]
-
-        central_identity = await _resolve_central_identity(
-            central_db,
-            int(contact["id"]),
-            employee_id,
-            country_code,
-        )
+        # ── 1. Primary auth lookup: pf_central.user ──────────────────────────
+        central_identity = await _resolve_central_identity(central_db, country_code, mobile)
         user = central_identity["user"]
+        contact_id = int(user["contact_id"])
+
+        # ── 2. Verify employee + contact from client DB ───────────────────────
+        main_identity = await _resolve_main_identity(main_db, contact_id, employee_id)
+        contact = main_identity["contact"]
 
         lock_state = await _load_lock_state(central_db, key_hash)
         now = datetime.utcnow()
@@ -419,6 +373,7 @@ async def login_employee(
             central_db,
             user_id=int(user["id"]),
             legacy_plain_password=str(user.get("password") or ""),
+            current_password_hash=str(user.get("password_hash") or ""),
             provided_password=payload.password,
             request_id_value=rid,
             ip_value=ip_value,
@@ -580,6 +535,7 @@ async def login_employee(
         await central_db.commit()
         return error_json_response(exc.code, exc.message, exc.status_code, rid, details=exc.details)
     except Exception:
+        logger.exception("Unexpected error in login-employee rid=%s", rid)
         await central_db.rollback()
         return error_json_response(
             AUTH_SERVICE_UNAVAILABLE,

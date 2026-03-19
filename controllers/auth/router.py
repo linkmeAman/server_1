@@ -12,12 +12,16 @@ from controllers.auth.handlers.logout import router as logout_router
 from controllers.auth.handlers.me import router as me_router
 from controllers.auth.handlers.permissions_admin import router as permissions_admin_router
 from controllers.auth.handlers.refresh import router as refresh_router
+from controllers.auth.handlers.verify_identity import router as verify_identity_router
+from controllers.auth.handlers.select_role import router as select_role_router
 
 router = APIRouter()
 
 router.include_router(check_contact_router)
 router.include_router(onboarding_router)
 router.include_router(login_employee_router)
+router.include_router(verify_identity_router)
+router.include_router(select_role_router)
 router.include_router(refresh_router)
 router.include_router(logout_router)
 router.include_router(me_router)

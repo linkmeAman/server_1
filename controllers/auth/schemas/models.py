@@ -34,6 +34,17 @@ class LoginEmployeeRequest(BaseModel):
     password: str = Field(..., min_length=1)
 
 
+class VerifyIdentityRequest(BaseModel):
+    country_code: str = Field(..., min_length=1, max_length=8)
+    mobile: str = Field(..., min_length=6, max_length=20)
+    password: str = Field(..., min_length=1, max_length=128)
+
+
+class SelectRoleRequest(BaseModel):
+    identity_token: str = Field(..., min_length=10)
+    employee_id: int
+
+
 class SupremeStatusData(BaseModel):
     supreme_required: bool
     total_users: int

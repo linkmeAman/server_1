@@ -275,133 +275,165 @@ async def check_contact(
                     audit_enabled=central_audit_enabled,
                 )
             else:
-                contact_result = await main_db.execute(
+                # ── Primary lookup: pf_central.user ──────────────────────
+                user_result = await central_db.execute(
                     text(
                         """
-                        SELECT id, fname, mname, lname
-                        FROM contact
+                        SELECT id, contact_id, fname, lname
+                        FROM user
                         WHERE country_code = :country_code
                           AND mobile = :mobile
+                          AND inactive = 0
                           AND (park IS NULL OR park = 0)
+                        LIMIT 1
                         """
                     ),
                     {"country_code": country_code, "mobile": mobile},
                 )
-                contacts = [dict(row._mapping) for row in contact_result.fetchall()]
+                user_row = user_result.fetchone()
 
-                if len(contacts) != 1:
-                    reason = "CONTACT_AMBIGUOUS" if len(contacts) > 1 else "CONTACT_NOT_FOUND"
+                if user_row is None:
                     response = await _generic_not_found(
                         central_db=central_db,
                         request=request,
                         request_id_value=rid,
                         country_code=country_code,
                         mobile=mobile,
-                        reason=reason,
+                        reason="CONTACT_NOT_FOUND",
                         audit_enabled=central_audit_enabled,
                     )
                 else:
-                    contact = contacts[0]
-                    employee_result = await main_db.execute(
+                    user_rec = dict(user_row._mapping)
+                    contact_id_val = int(user_rec["contact_id"])
+
+                    # ── Fetch contact from client DB by PK ───────────────
+                    contact_result = await main_db.execute(
                         text(
                             """
-                            SELECT
-                                e.id AS employee_id,
-                                e.ecode AS ecode,
-                                e.position_id AS position_id,
-                                e.department_id AS department_id
-                            FROM employee e
-                            WHERE e.contact_id = :contact_id
-                              AND e.status = 1
-                              AND (e.park IS NULL OR e.park = 0)
-                            ORDER BY e.id ASC
+                            SELECT id, fname, mname, lname
+                            FROM contact
+                            WHERE id = :contact_id
+                              AND (park IS NULL OR park = 0)
+                            LIMIT 1
                             """
                         ),
-                        {"contact_id": int(contact["id"])},
+                        {"contact_id": contact_id_val},
                     )
-                    employee_rows = [dict(row._mapping) for row in employee_result.fetchall()]
-
-                    employees = []
-                    degraded_name_lookup = False
-                    for row in employee_rows:
-                        employee_id = int(row["employee_id"])
-                        try:
-                            org_context = await resolver.get_org_context(
-                                employee_id=employee_id,
-                                fail_open_name_lookup=True,
-                            )
-                        except Exception:
-                            org_context = {
-                                "position_id": row.get("position_id"),
-                                "position": None,
-                                "department_id": row.get("department_id"),
-                                "department": None,
-                                "degraded_name_lookup": True,
-                            }
-                        if bool(org_context.get("degraded_name_lookup")):
-                            degraded_name_lookup = True
-
-                        row["position_id"] = org_context.get("position_id")
-                        row["position"] = org_context.get("position")
-                        row["department_id"] = org_context.get("department_id")
-                        row["department"] = org_context.get("department")
-                        employees.append(
-                            EmployeeSummary(
-                                employee_id=employee_id,
-                                display_label=_employee_label(row),
-                                position_id=(
-                                    int(row["position_id"]) if row.get("position_id") is not None else None
-                                ),
-                                position=(
-                                    str(row["position"]).strip() if row.get("position") is not None else None
-                                ),
-                                department_id=(
-                                    int(row["department_id"]) if row.get("department_id") is not None else None
-                                ),
-                                department=(
-                                    str(row["department"]).strip() if row.get("department") is not None else None
-                                ),
-                            ).model_dump()
+                    contact_row = contact_result.fetchone()
+                    if contact_row is None:
+                        response = await _generic_not_found(
+                            central_db=central_db,
+                            request=request,
+                            request_id_value=rid,
+                            country_code=country_code,
+                            mobile=mobile,
+                            reason="CONTACT_NOT_FOUND",
+                            audit_enabled=central_audit_enabled,
                         )
-
-                    if degraded_name_lookup:
-                        logger.warning(
-                            "check-contact degraded: central org-name lookup unavailable request_id=%s contact_id=%s",
-                            rid,
-                            int(contact["id"]),
+                    else:
+                        contact = dict(contact_row._mapping)
+                        # Override contact["id"] to ensure it matches user.contact_id
+                        contact["id"] = contact_id_val
+                        employee_result = await main_db.execute(
+                            text(
+                                """
+                                SELECT
+                                    e.id AS employee_id,
+                                    e.ecode AS ecode,
+                                    e.position_id AS position_id,
+                                    e.department_id AS department_id
+                                FROM employee e
+                                WHERE e.contact_id = :contact_id
+                                  AND e.status = 1
+                                  AND (e.park IS NULL OR e.park = 0)
+                                ORDER BY e.id ASC
+                                """
+                            ),
+                            {"contact_id": contact_id_val},
                         )
+                        employee_rows = [dict(row._mapping) for row in employee_result.fetchall()]
 
-                    if central_audit_enabled:
-                        try:
-                            await write_audit_event(
-                                central_db,
-                                event_type=EVENT_CHECK_CONTACT,
-                                outcome=OUTCOME_SUCCESS,
-                                country_code=country_code,
-                                mobile=mobile,
-                                contact_id=int(contact["id"]),
-                                ip=ip_value,
-                                user_agent=ua_value,
-                                request_id=rid,
-                                details_json={"employee_count": len(employees)},
+                        employees = []
+                        degraded_name_lookup = False
+                        for row in employee_rows:
+                            employee_id = int(row["employee_id"])
+                            try:
+                                org_context = await resolver.get_org_context(
+                                    employee_id=employee_id,
+                                    fail_open_name_lookup=True,
+                                )
+                            except Exception:
+                                org_context = {
+                                    "position_id": row.get("position_id"),
+                                    "position": None,
+                                    "department_id": row.get("department_id"),
+                                    "department": None,
+                                    "degraded_name_lookup": True,
+                                }
+                            if bool(org_context.get("degraded_name_lookup")):
+                                degraded_name_lookup = True
+
+                            row["position_id"] = org_context.get("position_id")
+                            row["position"] = org_context.get("position")
+                            row["department_id"] = org_context.get("department_id")
+                            row["department"] = org_context.get("department")
+                            employees.append(
+                                EmployeeSummary(
+                                    employee_id=employee_id,
+                                    display_label=_employee_label(row),
+                                    position_id=(
+                                        int(row["position_id"]) if row.get("position_id") is not None else None
+                                    ),
+                                    position=(
+                                        str(row["position"]).strip() if row.get("position") is not None else None
+                                    ),
+                                    department_id=(
+                                        int(row["department_id"]) if row.get("department_id") is not None else None
+                                    ),
+                                    department=(
+                                        str(row["department"]).strip() if row.get("department") is not None else None
+                                    ),
+                                ).model_dump()
                             )
-                            await central_db.commit()
-                        except Exception:
+
+                        if degraded_name_lookup:
                             logger.warning(
-                                "check-contact degraded: central success audit write failed request_id=%s",
+                                "check-contact degraded: central org-name lookup unavailable request_id=%s contact_id=%s",
                                 rid,
+                                contact_id_val,
                             )
-                            central_audit_enabled = False
 
-                    response = success_json_response(
-                        {
-                            "contact_id": int(contact["id"]),
-                            "contact_name": _contact_name(contact),
-                            "employees": employees,
-                        },
-                        request_id_value=rid,
-                        message="Contact resolved",
-                    )
+                        if central_audit_enabled:
+                            try:
+                                await write_audit_event(
+                                    central_db,
+                                    event_type=EVENT_CHECK_CONTACT,
+                                    outcome=OUTCOME_SUCCESS,
+                                    country_code=country_code,
+                                    mobile=mobile,
+                                    contact_id=contact_id_val,
+                                    ip=ip_value,
+                                    user_agent=ua_value,
+                                    request_id=rid,
+                                    details_json={"employee_count": len(employees)},
+                                )
+                                await central_db.commit()
+                            except Exception:
+                                logger.warning(
+                                    "check-contact degraded: central success audit write failed request_id=%s",
+                                    rid,
+                                )
+                                central_audit_enabled = False
+
+                        response = success_json_response(
+                            {
+                                "contact_id": contact_id_val,
+                                "contact_name": _contact_name(contact),
+                                "employees": employees,
+                            },
+                            request_id_value=rid,
+                            message="Contact resolved",
+                        )
     except Exception:
         logger.exception("Auth v2 check-contact failed request_id=%s", rid)
         try:

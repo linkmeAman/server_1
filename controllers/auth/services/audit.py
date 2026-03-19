@@ -34,7 +34,7 @@ async def write_audit_event(
     await db.execute(
         text(
             """
-            INSERT INTO auth_audit_event_v2 (
+            INSERT INTO auth_audit_event (
                 event_type, outcome, reason_code, country_code, mobile,
                 contact_id, employee_id, user_id, ip, user_agent,
                 request_id, details_json, created_at
@@ -95,7 +95,7 @@ async def count_events(
     query = text(
         f"""
         SELECT COUNT(1) AS total
-        FROM auth_audit_event_v2
+        FROM auth_audit_event
         WHERE {' AND '.join(where_clauses)}
         """
     ).bindparams(bindparam("event_types", expanding=True))
