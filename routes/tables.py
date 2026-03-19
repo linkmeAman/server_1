@@ -25,6 +25,15 @@ def _quoted(name: str) -> str:
     return f"`{name}`"
 
 
+def _optional_db_name(db: str | None) -> str | None:
+    if db is None:
+        return None
+    cleaned = db.strip()
+    if not cleaned:
+        return None
+    return _validate_identifier(cleaned, "database name")
+
+
 def _build_filter_clause(
     *,
     search: str | None,
@@ -75,8 +84,10 @@ def _build_filter_clause(
 
 
 @router.get("/tables")
-def list_tables():
-    with db_cursor() as cursor:
+def list_tables(db: str | None = Query(default=None)):
+    selected_db = _optional_db_name(db)
+
+    with db_cursor(database=selected_db) as cursor:
         cursor.execute("SHOW TABLES")
         rows = cursor.fetchall()
 
@@ -89,11 +100,30 @@ def list_tables():
     return {"tables": sorted(tables)}
 
 
-@router.get("/schema/{table_name}")
-def describe_table(table_name: str):
-    safe_table = _validate_identifier(table_name, "table name")
-
+@router.get("/databases")
+def list_databases():
     with db_cursor() as cursor:
+        cursor.execute("SHOW DATABASES")
+        rows = cursor.fetchall()
+
+    databases = []
+    for row in rows:
+        if not row:
+            continue
+        value = str(next(iter(row.values()), "") or "").strip()
+        if not value:
+            continue
+        databases.append(value)
+
+    return {"databases": sorted(databases)}
+
+
+@router.get("/schema/{table_name}")
+def describe_table(table_name: str, db: str | None = Query(default=None)):
+    safe_table = _validate_identifier(table_name, "table name")
+    selected_db = _optional_db_name(db)
+
+    with db_cursor(database=selected_db) as cursor:
         cursor.execute(f"DESCRIBE {_quoted(safe_table)}")
         schema_rows = cursor.fetchall()
 
@@ -103,6 +133,7 @@ def describe_table(table_name: str):
 @router.get("/table/{table_name}")
 def table_rows(
     table_name: str,
+    db: str | None = Query(default=None),
     limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_ROWS),
     offset: int = Query(default=0, ge=0),
     search: str | None = Query(default=None),
@@ -112,6 +143,7 @@ def table_rows(
     filter_operator: list[str] = Query(default=[]),
 ):
     safe_table = _validate_identifier(table_name, "table name")
+    selected_db = _optional_db_name(db)
 
     where_sql, params = _build_filter_clause(
         search=search,
@@ -129,7 +161,7 @@ def table_rows(
 
     count_sql = f"SELECT COUNT(*) AS total FROM {_quoted(safe_table)}{where_sql}"
 
-    with db_cursor() as cursor:
+    with db_cursor(database=selected_db) as cursor:
         cursor.execute(count_sql, params)
         total_row = cursor.fetchone() or {"total": 0}
 
