@@ -423,6 +423,9 @@ async def login_employee(
         await _reset_lock_state(central_db, key_hash)
 
         authz = await AuthorizationResolver(main_db, central_db).resolve_employee_authorization(employee_id)
+        _fname = str(user.get("fname") or "").strip()
+        _lname = str(user.get("lname") or "").strip()
+        _display_name = " ".join(p for p in [_fname, _lname] if p) or None
         token_pair = issue_token_pair(
             user_id=int(user["id"]),
             contact_id=int(contact["id"]),
@@ -430,6 +433,7 @@ async def login_employee(
             roles=authz["roles"],
             mobile=mobile,
             authorization=authz,
+            extra_claims={"display_name": _display_name} if _display_name else {},
         )
         refresh_hash = refresh_token_hash(token_pair["refresh_token"])
         now_utc = utcnow()

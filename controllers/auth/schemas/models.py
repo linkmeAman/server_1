@@ -106,6 +106,7 @@ class CurrentV2User(BaseModel):
     employee_id: int
     roles: List[RoleSummary] = Field(default_factory=list)
     mobile: str
+    display_name: Optional[str] = None
     jti: str
     iat: int
     exp: int
