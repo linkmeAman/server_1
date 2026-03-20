@@ -27,6 +27,7 @@ from routes.tables import router as explorer_tables_router
 from routes.query import router as explorer_query_router
 from routes.export import router as explorer_export_router
 from routes.ai_query import router as explorer_ai_query_router
+from controllers.prism.router import router as prism_router
 
 
 class ConsecutiveDuplicateFilter(logging.Filter):
@@ -235,6 +236,7 @@ app.include_router(explorer_tables_router)
 app.include_router(explorer_query_router)
 app.include_router(explorer_export_router)
 app.include_router(explorer_ai_query_router)
+app.include_router(prism_router)
 
 
 # Root endpoint
