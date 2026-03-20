@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends
 from controllers.prism.assignments import router as assignments_router
 from controllers.prism.attributes import router as attributes_router
 from controllers.prism.evaluate import router as evaluate_router
+from controllers.prism.logs import router as logs_router
 from controllers.prism.policies import router as policies_router
 from controllers.prism.registry import router as registry_router
 from controllers.prism.roles import router as roles_router
@@ -25,4 +26,5 @@ router.include_router(policies_router,     dependencies=_guard)
 router.include_router(assignments_router,  dependencies=_guard)
 router.include_router(attributes_router,   dependencies=_guard)
 router.include_router(registry_router,     dependencies=_guard)
+router.include_router(logs_router,         dependencies=_guard)
 router.include_router(evaluate_router,     dependencies=_guard)

@@ -278,6 +278,25 @@ async def attach_policy_to_user(payload: UserPolicyAttach):
     return {"id": result.lastrowid, "user_id": payload.user_id, "policy_id": payload.policy_id}
 
 
+@router.get("/user-policies/{user_id}")
+async def get_user_policies(user_id: int):
+    """List all inline policies attached directly to a user."""
+    # TODO: Guard — require supreme user session
+    async with central_session_context() as db:
+        rows = _rows(await db.execute(
+            text(
+                "SELECT up.id, up.policy_id, p.name, p.type, p.is_active, "
+                "up.attached_by, up.created_at as attached_at "
+                "FROM prism_user_policies up "
+                "JOIN prism_policies p ON p.id = up.policy_id "
+                "WHERE up.user_id = :user_id "
+                "ORDER BY p.name"
+            ),
+            {"user_id": user_id},
+        ))
+    return {"user_id": user_id, "policies": rows, "total": len(rows)}
+
+
 @router.delete("/user-policies")
 async def detach_policy_from_user(user_id: int, policy_id: int):
     """Detach an inline policy from a user."""
