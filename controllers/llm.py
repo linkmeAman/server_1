@@ -12,7 +12,7 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 # LLM Server Configuration
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:8000")  # Default to localhost if not set
+LLM_API_URL = os.getenv("LLM_API_URL", "http://localhost:8000")  # Default to localhost if not set
 LLM_DEFAULT_MODEL = os.getenv("LLM_DEFAULT_MODEL", "phi-3")  # Default model to use if not specified
 LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "120.0"))  # 2 minutes timeout for LLM responses
 
@@ -27,7 +27,7 @@ def health():
     try:
         # Try to connect to the LLM server
         with httpx.Client(timeout=10.0) as client:
-            response = client.get(f"{LLM_BASE_URL}/v1/models")
+            response = client.get(f"{LLM_API_URL}/v1/models")
             
             if response.status_code == 200:
                 models_data = response.json()
@@ -35,7 +35,7 @@ def health():
                     "controller": "llm",
                     "status": "healthy",
                     "llm_server": "connected",
-                    "llm_url": LLM_BASE_URL,
+                    "llm_url": LLM_API_URL,
                     "available_models": models_data.get("data", []),
                     "default_model": LLM_DEFAULT_MODEL
                 }
@@ -44,17 +44,17 @@ def health():
                     "controller": "llm",
                     "status": "degraded",
                     "llm_server": "error",
-                    "llm_url": LLM_BASE_URL,
+                    "llm_url": LLM_API_URL,
                     "error": f"LLM server returned status {response.status_code}"
                 }
                 
     except httpx.ConnectError:
-        logger.error(f"Cannot connect to LLM server at {LLM_BASE_URL}")
+        logger.error(f"Cannot connect to LLM server at {LLM_API_URL}")
         return {
             "controller": "llm",
             "status": "unhealthy",
             "llm_server": "disconnected",
-            "llm_url": LLM_BASE_URL,
+            "llm_url": LLM_API_URL,
             "error": "Cannot connect to LLM server"
         }
     except Exception as e:
@@ -76,7 +76,7 @@ def models():
     """
     try:
         with httpx.Client(timeout=10.0) as client:
-            response = client.get(f"{LLM_BASE_URL}/v1/models")
+            response = client.get(f"{LLM_API_URL}/v1/models")
             
             if response.status_code == 200:
                 data = response.json()
@@ -171,7 +171,7 @@ def chat(
     try:
         with httpx.Client(timeout=LLM_TIMEOUT) as client:
             response = client.post(
-                f"{LLM_BASE_URL}/v1/chat/completions",
+                f"{LLM_API_URL}/v1/chat/completions",
                 json=payload,
                 headers={"Content-Type": "application/json"}
             )
@@ -225,10 +225,10 @@ def chat(
             "error": "Request timed out. The LLM server took too long to respond."
         }
     except httpx.ConnectError:
-        logger.error(f"Cannot connect to LLM server at {LLM_BASE_URL}")
+        logger.error(f"Cannot connect to LLM server at {LLM_API_URL}")
         return {
             "response": None,
-            "error": f"Cannot connect to LLM server at {LLM_BASE_URL}"
+            "error": f"Cannot connect to LLM server at {LLM_API_URL}"
         }
     except Exception as e:
         logger.error(f"Error in chat request: {e}", exc_info=True)
