@@ -94,7 +94,10 @@ async def _collect_policies(user_id: int, db: AsyncSession) -> Dict[str, List[di
         text("""
             SELECT p.id, p.name, p.type, p.effect_default,
                    ps.id AS stmt_id, ps.sid, ps.effect,
-                   ps.actions, ps.resources, ps.conditions, ps.priority
+                   ps.actions_json     AS actions,
+                   ps.resources_json   AS resources,
+                   ps.conditions_json  AS conditions,
+                   ps.priority
             FROM   prism_user_policies up
             JOIN   prism_policies      p  ON p.id = up.policy_id AND p.is_active = 1
             JOIN   prism_policy_statements ps ON ps.policy_id = p.id AND ps.is_active = 1
@@ -109,7 +112,10 @@ async def _collect_policies(user_id: int, db: AsyncSession) -> Dict[str, List[di
         text("""
             SELECT p.id, p.name, p.type, p.effect_default,
                    ps.id AS stmt_id, ps.sid, ps.effect,
-                   ps.actions, ps.resources, ps.conditions, ps.priority
+                   ps.actions_json     AS actions,
+                   ps.resources_json   AS resources,
+                   ps.conditions_json  AS conditions,
+                   ps.priority
             FROM   prism_user_roles   ur
             JOIN   prism_role_policies rp ON rp.role_id = ur.role_id
             JOIN   prism_policies      p  ON p.id = rp.policy_id AND p.is_active = 1
@@ -126,7 +132,10 @@ async def _collect_policies(user_id: int, db: AsyncSession) -> Dict[str, List[di
         text("""
             SELECT p.id, p.name, p.type, p.effect_default,
                    ps.id AS stmt_id, ps.sid, ps.effect,
-                   ps.actions, ps.resources, ps.conditions, ps.priority
+                   ps.actions_json     AS actions,
+                   ps.resources_json   AS resources,
+                   ps.conditions_json  AS conditions,
+                   ps.priority
             FROM   prism_user_permission_boundaries ub
             JOIN   prism_policies      p  ON p.id = ub.policy_id AND p.is_active = 1
             JOIN   prism_policy_statements ps ON ps.policy_id = p.id AND ps.is_active = 1
@@ -523,11 +532,11 @@ async def _log_decision(
                 INSERT INTO prism_access_logs
                     (user_id, action, resource_type, resource_id,
                      decision, deny_reason, matched_policy_id,
-                     matched_statement_id, request_context, created_at)
+                     matched_statement_id, request_context_json)
                 VALUES
                     (:uid, :action, :rt, :rid,
                      :decision, :reason, :pol_id,
-                     :stmt_id, :req_ctx, NOW())
+                     :stmt_id, :req_ctx)
             """),
             {
                 "uid":     user_id,
@@ -550,6 +559,44 @@ async def _log_decision(
 # Public entry point
 # ---------------------------------------------------------------------------
 
+def _fast_decide_from_cache(
+    action: str,
+    cached: dict,
+) -> Optional[PDPResult]:
+    """Attempt a decision using only cached data.
+
+    Returns a PDPResult when the cache is sufficient, or None when the full
+    DB-backed PDP must run (conditional statements or boundary present).
+    """
+    if cached.get("needs_full_pdp") or cached.get("has_boundary"):
+        return None  # fall through to full PDP
+
+    # Explicit static Deny wins first
+    for deny_pat in cached.get("static_denies", []):
+        if fnmatch.fnmatch(action, deny_pat):
+            return PDPResult(
+                decision="Deny",
+                reason=f"Static Deny (cache) — pattern '{deny_pat}'",
+                evaluated_policies=0,
+            )
+
+    # Static Allow
+    for allow_pat in cached.get("static_allows", []):
+        if fnmatch.fnmatch(action, allow_pat):
+            return PDPResult(
+                decision="Allow",
+                reason=f"Static Allow (cache) — pattern '{allow_pat}'",
+                evaluated_policies=0,
+            )
+
+    # Default Deny
+    return PDPResult(
+        decision="Deny",
+        reason="No matching Allow statement (cache, default deny)",
+        evaluated_policies=0,
+    )
+
+
 async def evaluate(req: PDPRequest, db: AsyncSession) -> PDPResult:
     """Evaluate one authorization request and return a PDPResult.
 
@@ -558,6 +605,22 @@ async def evaluate(req: PDPRequest, db: AsyncSession) -> PDPResult:
     - Committing/rolling back after calling this function (or letting the
       session context manager handle it)
     """
+    # ── Cache fast-path ───────────────────────────────────────────────────
+    try:
+        from core.prism_cache import get_prism_cache  # lazy import avoids circular dep
+        cached = await get_prism_cache(req.user_id)
+        if cached is not None:
+            fast_result = _fast_decide_from_cache(req.action, cached)
+            if fast_result is not None:
+                await _log_decision(
+                    req.user_id, req.action, req.resource_type, req.resource_id,
+                    fast_result.decision, fast_result.reason,
+                    None, None, req.request_context, db,
+                )
+                return fast_result
+    except Exception as exc:
+        logger.debug("PRISM PDP: cache fast-path error, falling through to DB: %s", exc)
+
     # ── STEP 1: collect policies ──────────────────────────────────────────
     policy_buckets = await _collect_policies(req.user_id, db)
 

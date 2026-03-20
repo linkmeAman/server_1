@@ -26,6 +26,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from core.database_v2 import central_session_context
+from core.prism_cache import (
+    invalidate_prism_cache,
+    invalidate_prism_cache_for_policy,
+    invalidate_prism_cache_for_role,
+)
 
 router = APIRouter(prefix="/prism/assignments", tags=["PRISM — Assignments"])
 
@@ -130,6 +135,7 @@ async def assign_role_to_user(payload: UserRoleAssign):
                 {"assigned_by": payload.assigned_by, "expires_at": payload.expires_at, "id": existing["id"]},
             )
             await db.commit()
+            await invalidate_prism_cache(payload.user_id)
             return {"id": existing["id"], "user_id": payload.user_id, "role_id": payload.role_id, "reassigned": True}
 
         result = await db.execute(
@@ -146,6 +152,7 @@ async def assign_role_to_user(payload: UserRoleAssign):
         )
         await db.commit()
 
+    await invalidate_prism_cache(payload.user_id)
     return {"id": result.lastrowid, "user_id": payload.user_id, "role_id": payload.role_id}
 
 
@@ -153,20 +160,24 @@ async def assign_role_to_user(payload: UserRoleAssign):
 async def revoke_user_role(assignment_id: int):
     """Revoke a user-role assignment by assignment ID."""
     # TODO: Guard — require supreme user session
+    affected_user_id: Optional[int] = None
     async with central_session_context() as db:
         assignment = _row(await db.execute(
-            text("SELECT id FROM prism_user_roles WHERE id = :id"),
+            text("SELECT id, user_id FROM prism_user_roles WHERE id = :id"),
             {"id": assignment_id},
         ))
         if not assignment:
             raise HTTPException(status_code=404, detail="Assignment not found")
 
+        affected_user_id = assignment.get("user_id")
         await db.execute(
             text("DELETE FROM prism_user_roles WHERE id = :id"),
             {"id": assignment_id},
         )
         await db.commit()
 
+    if affected_user_id is not None:
+        await invalidate_prism_cache(affected_user_id)
     return {"revoked": True, "id": assignment_id}
 
 
@@ -206,6 +217,7 @@ async def attach_policy_to_role(payload: RolePolicyAttach):
             {"role_id": payload.role_id, "policy_id": payload.policy_id, "attached_by": payload.attached_by},
         )
         await db.commit()
+        await invalidate_prism_cache_for_role(payload.role_id, db)
 
     return {"id": result.lastrowid, "role_id": payload.role_id, "policy_id": payload.policy_id}
 
@@ -227,6 +239,7 @@ async def detach_policy_from_role(role_id: int, policy_id: int):
             {"rid": role_id, "pid": policy_id},
         )
         await db.commit()
+        await invalidate_prism_cache_for_role(role_id, db)
 
     return {"detached": True, "role_id": role_id, "policy_id": policy_id}
 
@@ -261,6 +274,7 @@ async def attach_policy_to_user(payload: UserPolicyAttach):
         )
         await db.commit()
 
+    await invalidate_prism_cache(payload.user_id)
     return {"id": result.lastrowid, "user_id": payload.user_id, "policy_id": payload.policy_id}
 
 
@@ -282,6 +296,7 @@ async def detach_policy_from_user(user_id: int, policy_id: int):
         )
         await db.commit()
 
+    await invalidate_prism_cache(user_id)
     return {"detached": True, "user_id": user_id, "policy_id": policy_id}
 
 
@@ -332,6 +347,7 @@ async def set_permission_boundary(payload: PermissionBoundarySet):
             )
         await db.commit()
 
+    await invalidate_prism_cache(payload.user_id)
     return {"user_id": payload.user_id, "boundary_policy_id": payload.policy_id}
 
 
@@ -373,4 +389,5 @@ async def remove_permission_boundary(user_id: int):
         )
         await db.commit()
 
+    await invalidate_prism_cache(user_id)
     return {"removed": True, "user_id": user_id}
