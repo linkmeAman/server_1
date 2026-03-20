@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,6 +45,7 @@ from controllers.auth.services.common import (
 from controllers.auth.services.device_fingerprint import compute_device_fingerprint
 from controllers.auth.services.token_service import issue_token_pair
 from core.database_v2 import get_central_db_session, get_main_db_session
+from core.prism_cache import build_prism_cache
 from core.security import hash_password, verify_password
 from core.settings import get_settings
 
@@ -311,6 +312,7 @@ async def _validate_password_and_maybe_migrate(
 async def login_employee(
     payload: LoginEmployeeRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     main_db: AsyncSession = Depends(get_main_db_session),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
@@ -493,6 +495,10 @@ async def login_employee(
             },
         )
         await central_db.commit()
+
+        # Rebuild PRISM permissions cache for this user in the background.
+        # Uses its own DB session — failures are logged but never surface to caller.
+        background_tasks.add_task(build_prism_cache, int(user["id"]))
 
         return success_json_response(
             {

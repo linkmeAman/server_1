@@ -151,7 +151,13 @@ class Settings(BaseSettings):
     AUTH_V2_LOGIN_COOLDOWN_MINUTES: int = int(os.getenv("AUTH_V2_LOGIN_COOLDOWN_MINUTES", 15))
     AUTH_V2_BOOTSTRAP_ONLY: bool = os.getenv("AUTH_V2_BOOTSTRAP_ONLY", "True").lower() == "true"
     AUTH_SUPREME_CREATE_ENABLED: bool = os.getenv("AUTH_SUPREME_CREATE_ENABLED", "False").lower() == "true"
-    
+
+    # Redis / PRISM cache (Phase 3)
+    # Format: redis://:password@host:port/db  or  redis://host:port/db
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    # TTL for prism:perms:{user_id} cache entries (seconds)
+    PRISM_CACHE_TTL_SECONDS: int = int(os.getenv("PRISM_CACHE_TTL_SECONDS", 300))
+
     # Logging
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "logs/app.log"

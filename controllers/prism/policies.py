@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from core.database_v2 import central_session_context
+from core.prism_cache import invalidate_prism_cache_for_policy
 
 router = APIRouter(prefix="/prism/policies", tags=["PRISM — Policies"])
 
@@ -335,6 +336,7 @@ async def add_statement(policy_id: int, payload: StatementCreate, changed_by: Op
         new_version = policy["version"] + 1
         await _snapshot_policy_version(db, policy_id, new_version, changed_by, f"Statement {stmt_id} added")
         await db.commit()
+        await invalidate_prism_cache_for_policy(policy_id, db)
 
     return {"id": stmt_id, "policy_id": policy_id, "new_version": new_version}
 
@@ -389,6 +391,7 @@ async def update_statement(policy_id: int, statement_id: int, payload: Statement
         new_version = policy["version"] + 1
         await _snapshot_policy_version(db, policy_id, new_version, changed_by, f"Statement {statement_id} updated")
         await db.commit()
+        await invalidate_prism_cache_for_policy(policy_id, db)
 
     return {"updated": True, "statement_id": statement_id, "new_version": new_version}
 
@@ -417,5 +420,6 @@ async def delete_statement(policy_id: int, statement_id: int, changed_by: Option
         new_version = policy["version"] + 1
         await _snapshot_policy_version(db, policy_id, new_version, changed_by, f"Statement {statement_id} removed")
         await db.commit()
+        await invalidate_prism_cache_for_policy(policy_id, db)
 
     return {"deactivated": True, "statement_id": statement_id, "new_version": new_version}

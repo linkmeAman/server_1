@@ -20,6 +20,7 @@ from core.middleware import setup_middleware
 from core.response import error_response
 from core.exceptions import DynamicAPIException
 from core.database import init_database
+from core.prism_cache import init_redis, close_redis
 from api.v1.router import api_router
 from controllers.auth.services.common import AuthError
 from routes.tables import router as explorer_tables_router
@@ -87,12 +88,16 @@ async def lifespan(app: FastAPI):
         logger.info("Database initialized successfully")
     else:
         logger.warning("Database not configured or failed to initialize")
-    
+
+    # Initialize Redis (PRISM cache — non-fatal if unavailable)
+    await init_redis()
+
     logger.info("Application startup complete")
     
     yield
     
     # Shutdown
+    await close_redis()
     logger.info("Shutting down Dynamic Multi-Project API")
 
 
