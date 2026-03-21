@@ -45,7 +45,7 @@ from controllers.auth.services.common import (
 from controllers.auth.services.device_fingerprint import compute_device_fingerprint
 from controllers.auth.services.token_service import issue_token_pair
 from core.database_v2 import get_central_db_session, get_main_db_session
-from core.prism_cache import build_prism_cache
+from core.prism_cache import build_prism_cache, sync_prism_employee_attrs
 from core.security import hash_password, verify_password
 from core.settings import get_settings
 
@@ -499,6 +499,8 @@ async def login_employee(
         # Rebuild PRISM permissions cache for this user in the background.
         # Uses its own DB session — failures are logged but never surface to caller.
         background_tasks.add_task(build_prism_cache, int(user["id"]))
+        # Sync employee ABAC attributes so the PDP has fresh department/designation context.
+        background_tasks.add_task(sync_prism_employee_attrs, int(user["id"]), int(contact["id"]))
 
         return success_json_response(
             {

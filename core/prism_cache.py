@@ -39,7 +39,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.database_v2 import central_session_context
+from core.database_v2 import central_session_context, main_session_context
 from core.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -207,6 +207,79 @@ async def invalidate_prism_cache_for_policy(policy_id: int, db: AsyncSession) ->
             )
     except Exception as exc:
         logger.debug("PRISM cache: bulk-policy invalidate error policy_id=%s: %s", policy_id, exc)
+
+
+async def sync_prism_employee_attrs(user_id: int, contact_id: int) -> None:
+    """Background task: pull employee fields from main DB and upsert into
+    prism_user_attributes (source='employee_table').
+
+    Called at successful login so the PDP has up-to-date ABAC context for
+    conditions such as user:department, user:designation, etc.
+    Failures are silenced — this is best-effort and never blocks the caller.
+    """
+    EMPLOYEE_FIELDS = (
+        "department",
+        "designation",
+        "cost_center",
+        "clearance_level",
+        "employment_type",
+    )
+    try:
+        async with main_session_context() as main_db:
+            result = await main_db.execute(
+                text(
+                    "SELECT department, designation, cost_center, "
+                    "clearance_level, employment_type "
+                    "FROM employee WHERE contact_id = :cid LIMIT 1"
+                ),
+                {"cid": contact_id},
+            )
+            row = result.fetchone()
+            if row is None:
+                logger.debug(
+                    "sync_prism_employee_attrs: no employee for contact_id=%s", contact_id
+                )
+                return
+            emp = dict(row._mapping)
+
+        async with central_session_context() as db:
+            for field in EMPLOYEE_FIELDS:
+                val = emp.get(field)
+                if val is None:
+                    continue
+                existing = (await db.execute(
+                    text(
+                        "SELECT id FROM prism_user_attributes "
+                        "WHERE user_id = :uid AND `key` = :key"
+                    ),
+                    {"uid": user_id, "key": field},
+                )).fetchone()
+                if existing:
+                    await db.execute(
+                        text(
+                            "UPDATE prism_user_attributes "
+                            "SET value = :value, source = 'employee_table', updated_at = NOW() "
+                            "WHERE user_id = :uid AND `key` = :key"
+                        ),
+                        {"value": str(val), "uid": user_id, "key": field},
+                    )
+                else:
+                    await db.execute(
+                        text(
+                            "INSERT INTO prism_user_attributes (user_id, `key`, value, source) "
+                            "VALUES (:uid, :key, :value, 'employee_table')"
+                        ),
+                        {"uid": user_id, "key": field, "value": str(val)},
+                    )
+            await db.commit()
+
+        logger.debug(
+            "sync_prism_employee_attrs: synced user_id=%s contact_id=%s", user_id, contact_id
+        )
+    except Exception:
+        logger.exception(
+            "sync_prism_employee_attrs failed user_id=%s contact_id=%s", user_id, contact_id
+        )
 
 
 # ---------------------------------------------------------------------------
