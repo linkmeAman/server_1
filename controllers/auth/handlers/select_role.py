@@ -84,7 +84,7 @@ from controllers.auth.services.common import (
 from controllers.auth.services.device_fingerprint import compute_device_fingerprint
 from controllers.auth.services.token_service import issue_token_pair, verify_identity_token
 from core.database_v2 import get_central_db_session, get_main_db_session
-from core.prism_cache import build_prism_cache
+from core.prism_cache import build_prism_cache, sync_prism_employee_attrs
 from core.settings import get_settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -285,6 +285,8 @@ async def select_role(
 
         # Rebuild PRISM permissions cache for this user in the background.
         background_tasks.add_task(build_prism_cache, user_id)
+        # Sync employee ABAC attributes so the PDP has fresh department/designation context.
+        background_tasks.add_task(sync_prism_employee_attrs, user_id, contact_id)
 
         # ── 6. Build rich profile response ───────────────────────────────────
         fname_c = _str(contact.get("fname"))
