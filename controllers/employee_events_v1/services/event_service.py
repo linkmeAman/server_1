@@ -33,8 +33,10 @@ class EmployeeEventsService:
         2: ("Work From Home", "#96C1CC"),
         3: ("Half Day", "#E29082"),
         4: ("Late", "#FF5722"),
+        5: ("Punch IN/OUT", "#0EA5E9"),
         6: ("Optional Holiday", "#4167B0"),
         7: ("Supplementary", "#FFC25C"),
+        8: ("BREAK", "#14B8A6"),
     }
     _LEAVE_UNKNOWN_REQUEST_TYPE_COLOR = "#9CA3AF"
     _LEAVE_PENDING_COLOR_DELTA = -40
