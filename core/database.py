@@ -141,11 +141,11 @@ def init_database() -> bool:
     try:
         main_engine = create_engine(
             _to_sync_engine_url(SQLALCHEMY_DATABASE_URL),
-            echo=get_settings().DEBUG,
+            echo=False,  # Never echo SQL — stdout logging is expensive
             pool_pre_ping=True,
             pool_recycle=300,
-            pool_size=5,
-            max_overflow=10,
+            pool_size=10,
+            max_overflow=20,
         )
 
         central_url = get_central_database_url()
@@ -154,11 +154,11 @@ def init_database() -> bool:
             SQLALCHEMY_BINDS["central"] = central_url
             central_engine = create_engine(
                 _to_sync_engine_url(central_url),
-                echo=get_settings().DEBUG,
+                echo=False,  # Never echo SQL — stdout logging is expensive
                 pool_pre_ping=True,
                 pool_recycle=300,
-                pool_size=5,
-                max_overflow=10,
+                pool_size=10,
+                max_overflow=20,
             )
         else:
             logger.warning("No central DB configuration found. Auth features will be limited.")
