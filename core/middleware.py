@@ -4,6 +4,7 @@ Middleware components for the dynamic API system
 import time
 import json
 import logging
+from typing import Callable
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
