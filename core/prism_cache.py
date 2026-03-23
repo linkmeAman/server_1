@@ -312,6 +312,7 @@ async def _compute_cache_data(user_id: int, db: AsyncSession) -> Dict[str, Any]:
 
     # ── collect all policy statements for this user ───────────────────────
     # Direct user-attached policies
+    # prism_user_policies has no expires_at column
     direct_stmts = await db.execute(
         text("""
             SELECT ps.effect,
@@ -322,9 +323,8 @@ async def _compute_cache_data(user_id: int, db: AsyncSession) -> Dict[str, Any]:
             JOIN   prism_policies      p  ON p.id = up.policy_id AND p.is_active = 1
             JOIN   prism_policy_statements ps ON ps.policy_id = p.id AND ps.is_active = 1
             WHERE  up.user_id = :uid
-              AND (up.expires_at IS NULL OR up.expires_at > :now)
         """),
-        {"uid": user_id, "now": now_iso},
+        {"uid": user_id},
     )
 
     # Role-sourced policies
