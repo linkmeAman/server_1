@@ -20,7 +20,7 @@ from core.database_v2 import central_session_context
 from core.prism_guard import CallerContext, require_prism_caller
 from core.prism_pdp import PDPRequest, PDPResult, evaluate
 
-router = APIRouter(prefix="/evaluate", tags=["PRISM · Evaluate"])
+router = APIRouter(prefix="/prism/evaluate", tags=["PRISM · Evaluate"])
 
 
 # ---------------------------------------------------------------------------
