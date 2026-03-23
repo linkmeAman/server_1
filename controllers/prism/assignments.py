@@ -35,6 +35,33 @@ from core.prism_cache import (
 router = APIRouter(prefix="/prism/assignments", tags=["PRISM — Assignments"])
 
 
+# ── Enrolled Users (all users that have any PRISM assignment) ───────────────
+
+@router.get("/enrolled-users")
+async def get_enrolled_users():
+    """List all user IDs that have at least one PRISM role, policy, or boundary."""
+    async with central_session_context() as db:
+        rows = _rows(await db.execute(text("""
+            SELECT
+                u.user_id,
+                COUNT(DISTINCT r.id)  AS role_count,
+                COUNT(DISTINCT p.id)  AS policy_count,
+                EXISTS(
+                    SELECT 1 FROM prism_user_permission_boundaries b WHERE b.user_id = u.user_id
+                ) AS has_boundary
+            FROM (
+                SELECT user_id FROM prism_user_roles
+                UNION
+                SELECT user_id FROM prism_user_policies
+            ) u
+            LEFT JOIN prism_user_roles r    ON r.user_id = u.user_id
+            LEFT JOIN prism_user_policies p ON p.user_id = u.user_id
+            GROUP BY u.user_id
+            ORDER BY u.user_id
+        """)))
+    return {"users": rows, "total": len(rows)}
+
+
 # ── Helper ─────────────────────────────────────────────────────────────────
 
 def _row(result) -> Optional[dict]:
@@ -286,7 +313,7 @@ async def get_user_policies(user_id: int):
         rows = _rows(await db.execute(
             text(
                 "SELECT up.id, up.policy_id, p.name, p.type, p.is_active, "
-                "up.attached_by, up.created_at as attached_at "
+                "up.attached_by "
                 "FROM prism_user_policies up "
                 "JOIN prism_policies p ON p.id = up.policy_id "
                 "WHERE up.user_id = :user_id "
