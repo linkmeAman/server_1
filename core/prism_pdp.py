@@ -92,7 +92,7 @@ async def _collect_policies(user_id: int, db: AsyncSession) -> Dict[str, List[di
     # 1a. Direct user-attached policies (inline)
     user_policies = _rows(await db.execute(
         text("""
-            SELECT p.id, p.name, p.type, p.effect_default,
+            SELECT p.id, p.name, p.type,
                    ps.id AS stmt_id, ps.sid, ps.effect,
                    ps.actions_json     AS actions,
                    ps.resources_json   AS resources,
@@ -110,7 +110,7 @@ async def _collect_policies(user_id: int, db: AsyncSession) -> Dict[str, List[di
     # 1b. Role-attached policies (via active, non-expired roles)
     role_policies = _rows(await db.execute(
         text("""
-            SELECT p.id, p.name, p.type, p.effect_default,
+            SELECT p.id, p.name, p.type,
                    ps.id AS stmt_id, ps.sid, ps.effect,
                    ps.actions_json     AS actions,
                    ps.resources_json   AS resources,
@@ -130,7 +130,7 @@ async def _collect_policies(user_id: int, db: AsyncSession) -> Dict[str, List[di
     #     AND boundary to grant access)
     boundary_policies = _rows(await db.execute(
         text("""
-            SELECT p.id, p.name, p.type, p.effect_default,
+            SELECT p.id, p.name, p.type,
                    ps.id AS stmt_id, ps.sid, ps.effect,
                    ps.actions_json     AS actions,
                    ps.resources_json   AS resources,
