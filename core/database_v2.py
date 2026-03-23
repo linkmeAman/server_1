@@ -77,7 +77,13 @@ def _resolve_central_url() -> str:
 def get_main_async_engine() -> AsyncEngine:
     global _main_engine, _main_sessionmaker
     if _main_engine is None:
-        _main_engine = create_async_engine(_resolve_main_url(), pool_pre_ping=True, pool_recycle=300)
+        _main_engine = create_async_engine(
+            _resolve_main_url(),
+            pool_pre_ping=True,
+            pool_recycle=300,
+            pool_size=10,
+            max_overflow=20,
+        )
         _main_sessionmaker = async_sessionmaker(
             bind=_main_engine,
             class_=AsyncSession,
@@ -91,7 +97,13 @@ def get_main_async_engine() -> AsyncEngine:
 def get_central_async_engine() -> AsyncEngine:
     global _central_engine, _central_sessionmaker
     if _central_engine is None:
-        _central_engine = create_async_engine(_resolve_central_url(), pool_pre_ping=True, pool_recycle=300)
+        _central_engine = create_async_engine(
+            _resolve_central_url(),
+            pool_pre_ping=True,
+            pool_recycle=300,
+            pool_size=10,
+            max_overflow=20,
+        )
         _central_sessionmaker = async_sessionmaker(
             bind=_central_engine,
             class_=AsyncSession,
