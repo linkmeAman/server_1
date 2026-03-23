@@ -368,7 +368,7 @@ async def login_employee(
                 "Too many failed attempts. Please try again later.",
                 429,
                 rid,
-                details={},
+                details={"locked_until": lock_state.get("locked_until").isoformat()},
             )
 
         valid_password = await _validate_password_and_maybe_migrate(
@@ -411,7 +411,7 @@ async def login_employee(
                     "Too many failed attempts. Please try again later.",
                     429,
                     rid,
-                    details={},
+                    details={"locked_until": lock_state["locked_until"].isoformat()},
                 )
             return error_json_response(
                 AUTH_INVALID_CREDENTIALS,
