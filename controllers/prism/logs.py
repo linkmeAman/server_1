@@ -42,7 +42,7 @@ async def list_access_logs(
             where_parts.append("action LIKE :action")
             params["action"] = f"%{action}%"
         if resource:
-            where_parts.append("resource LIKE :resource")
+            where_parts.append("resource_type LIKE :resource")
             params["resource"] = f"%{resource}%"
 
         where = " AND ".join(where_parts)
@@ -55,7 +55,7 @@ async def list_access_logs(
 
         rows = _rows(await db.execute(
             text(
-                f"SELECT id, user_id, action, resource, decision, matched_policy_id, "
+                f"SELECT id, user_id, action, resource_type, resource_id, decision, matched_policy_id, "
                 f"matched_statement_id, request_context_json, evaluated_at "
                 f"FROM prism_access_logs WHERE {where} "
                 f"ORDER BY evaluated_at DESC "

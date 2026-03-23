@@ -90,6 +90,7 @@ async def _collect_policies(user_id: int, db: AsyncSession) -> Dict[str, List[di
     now_iso = datetime.now(timezone.utc).isoformat()
 
     # 1a. Direct user-attached policies (inline)
+    # prism_user_policies has no expires_at — use attached_at for creation time only
     user_policies = _rows(await db.execute(
         text("""
             SELECT p.id, p.name, p.type,
@@ -102,9 +103,8 @@ async def _collect_policies(user_id: int, db: AsyncSession) -> Dict[str, List[di
             JOIN   prism_policies      p  ON p.id = up.policy_id AND p.is_active = 1
             JOIN   prism_policy_statements ps ON ps.policy_id = p.id AND ps.is_active = 1
             WHERE  up.user_id = :uid
-              AND (up.expires_at IS NULL OR up.expires_at > :now)
         """),
-        {"uid": user_id, "now": now_iso},
+        {"uid": user_id},
     ))
 
     # 1b. Role-attached policies (via active, non-expired roles)
@@ -170,27 +170,25 @@ async def _build_context(
     else:
         rows = _rows(await db.execute(
             text(
-                "SELECT attr_key, attr_value, attr_type "
+                "SELECT `key` AS attr_key, value AS attr_value "
                 "FROM prism_user_attributes "
-                "WHERE user_id = :uid AND is_active = 1"
+                "WHERE user_id = :uid"
             ),
             {"uid": user_id},
         ))
-        user_attrs = {r["attr_key"]: _cast_attr(r["attr_value"], r["attr_type"])
-                      for r in rows}
+        user_attrs = {r["attr_key"]: r["attr_value"] for r in rows}
     user_attrs.setdefault("id", str(user_id))
 
     # Resource attributes (if available)
     res_rows = _rows(await db.execute(
         text(
-            "SELECT attr_key, attr_value, attr_type "
+            "SELECT `key` AS attr_key, value AS attr_value "
             "FROM prism_resource_attributes "
-            "WHERE resource_type = :rt AND resource_id = :rid AND is_active = 1"
+            "WHERE resource_type = :rt AND resource_id = :rid"
         ),
         {"rt": resource_type, "rid": resource_id},
     ))
-    resource_attrs = {r["attr_key"]: _cast_attr(r["attr_value"], r["attr_type"])
-                      for r in res_rows}
+    resource_attrs = {r["attr_key"]: r["attr_value"] for r in res_rows}
     resource_attrs.setdefault("type", resource_type)
     resource_attrs.setdefault("id", resource_id)
 
