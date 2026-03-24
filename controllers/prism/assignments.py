@@ -25,7 +25,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from core.database_v2 import central_session_context
+from core.database_v2 import central_session_context, main_session_context
 from core.prism_cache import (
     invalidate_prism_cache,
     invalidate_prism_cache_for_policy,
@@ -106,6 +106,118 @@ async def get_all_users_with_prism_status(page: int = 1, page_size: int = 100):
             {"limit": page_size, "offset": offset},
         ))
     return {"users": rows, "total": total, "page": page, "page_size": page_size}
+
+
+@router.get("/all-employees")
+async def get_all_employees_with_prism_status(page: int = 1, page_size: int = 100):
+    """List all employee accounts (legacy `user` table) with their PRISM enrollment status.
+
+    Step 1 — central DB: fetch `user` rows + PRISM aggregate counts.
+    Step 2 — main DB:    fetch contact name + employee designation/department by contact_id.
+    Step 3 — merge in Python (cross-DB JOIN not possible).
+    """
+    offset = (page - 1) * page_size
+
+    # ── Step 1: central DB ─────────────────────────────────────────────────
+    async with central_session_context() as db:
+        count_row = _row(await db.execute(
+            text("SELECT COUNT(*) AS total FROM `user` WHERE inactive = 0")
+        ))
+        total = count_row["total"] if count_row else 0
+
+        rows = _rows(await db.execute(
+            text("""
+                SELECT
+                    u.id           AS user_id,
+                    u.contact_id,
+                    u.mobile,
+                    COALESCE(e.role_count,   0) AS role_count,
+                    COALESCE(e.policy_count, 0) AS policy_count,
+                    EXISTS(
+                        SELECT 1 FROM prism_user_permission_boundaries b WHERE b.user_id = u.id
+                    ) AS has_boundary
+                FROM `user` u
+                LEFT JOIN (
+                    SELECT
+                        eu.user_id,
+                        COUNT(DISTINCT ur.id) AS role_count,
+                        COUNT(DISTINCT up.id) AS policy_count
+                    FROM (
+                        SELECT user_id FROM prism_user_roles
+                        UNION
+                        SELECT user_id FROM prism_user_policies
+                    ) eu
+                    LEFT JOIN prism_user_roles    ur ON ur.user_id = eu.user_id
+                    LEFT JOIN prism_user_policies up ON up.user_id = eu.user_id
+                    GROUP BY eu.user_id
+                ) e ON e.user_id = u.id
+                WHERE u.inactive = 0
+                ORDER BY
+                    CASE WHEN e.user_id IS NOT NULL THEN 0 ELSE 1 END,
+                    u.id
+                LIMIT :limit OFFSET :offset
+            """),
+            {"limit": page_size, "offset": offset},
+        ))
+
+    if not rows:
+        return {"users": [], "total": total, "page": page, "page_size": page_size}
+
+    # ── Step 2: main DB — enrich with contact + employee info ──────────────
+    contact_ids = [r["contact_id"] for r in rows if r.get("contact_id")]
+    contact_info: dict = {}
+
+    if contact_ids:
+        # Build safe named placeholders — avoids any injection risk
+        placeholders = ", ".join(f":cid_{i}" for i in range(len(contact_ids)))
+        params = {f"cid_{i}": cid for i, cid in enumerate(contact_ids)}
+
+        async with main_session_context() as main_db:
+            contacts = _rows(await main_db.execute(
+                text(f"""
+                    SELECT
+                        c.id                                             AS contact_id,
+                        TRIM(CONCAT(
+                            COALESCE(c.fname, ''), ' ',
+                            COALESCE(c.lname, '')
+                        ))                                               AS full_name,
+                        c.email,
+                        emp.ecode,
+                        emp.designation,
+                        emp.department
+                    FROM contact c
+                    LEFT JOIN employee emp
+                        ON emp.contact_id = c.id
+                        AND (emp.park IS NULL OR emp.park = 0)
+                        AND emp.status = 1
+                    WHERE c.id IN ({placeholders})
+                      AND (c.park IS NULL OR c.park = 0)
+                """),
+                params,
+            ))
+            contact_info = {r["contact_id"]: r for r in contacts}
+
+    # ── Step 3: merge ─────────────────────────────────────────────────────
+    merged = []
+    for r in rows:
+        cid = r.get("contact_id")
+        info = contact_info.get(cid, {})
+        full_name = (info.get("full_name") or "").strip() or None
+        merged.append({
+            "user_id":     r["user_id"],
+            "contact_id":  cid,
+            "mobile":      r.get("mobile"),
+            "full_name":   full_name,
+            "email":       info.get("email"),
+            "ecode":       info.get("ecode"),
+            "designation": info.get("designation"),
+            "department":  info.get("department"),
+            "role_count":  r["role_count"],
+            "policy_count": r["policy_count"],
+            "has_boundary": bool(r["has_boundary"]),
+        })
+
+    return {"users": merged, "total": total, "page": page, "page_size": page_size}
 
 
 # ── Helper ─────────────────────────────────────────────────────────────────
