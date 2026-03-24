@@ -27,7 +27,7 @@ from controllers.auth.services.common import (
     user_agent,
 )
 from controllers.auth.services.session_revocation import revoke_all_sessions_for_user
-from core.database_v2 import get_central_db_session
+from core.database import get_central_db_session
 from core.settings import get_settings
 
 router = APIRouter(prefix="/internal/auth/events", tags=["auth-internal"])
@@ -108,3 +108,4 @@ async def internal_password_changed(
             rid,
             details={},
         )
+

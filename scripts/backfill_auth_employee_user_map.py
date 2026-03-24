@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy import text
 
-from core.database_v2 import central_session_context, main_session_context
+from core.database import central_session_context, main_session_context
 
 
 @dataclass
@@ -266,3 +266,4 @@ async def amain() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(asyncio.run(amain()))
+

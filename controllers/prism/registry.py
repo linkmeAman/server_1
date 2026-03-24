@@ -20,7 +20,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from core.database_v2 import central_session_context
+from core.database import central_session_context
 
 router = APIRouter(prefix="/prism/registry", tags=["PRISM — Registry"])
 
@@ -314,3 +314,4 @@ async def deactivate_action(code: str):
         await db.commit()
 
     return {"deactivated": True, "code": code}
+

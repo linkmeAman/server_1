@@ -16,7 +16,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from core.database_v2 import central_session_context
+from core.database import central_session_context
 from core.prism_guard import CallerContext, require_prism_caller
 from core.prism_pdp import PDPRequest, PDPResult, evaluate
 
@@ -103,3 +103,4 @@ async def evaluate_access(
         matched_statement_id=result.matched_statement_id,
         evaluated_policies=result.evaluated_policies,
     )
+

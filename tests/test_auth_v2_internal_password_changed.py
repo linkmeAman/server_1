@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 import main
-from core.database_v2 import get_central_db_session
+from core.database import get_central_db_session
 from core.settings import get_settings
 from tests.auth_test_utils import ensure_auth_v2_routes, testclient_requests_work
 
@@ -78,3 +78,4 @@ class TestAuthV2InternalPasswordChanged(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

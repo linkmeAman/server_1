@@ -43,7 +43,7 @@ from controllers.auth.services.common import (
     utcnow,
 )
 from controllers.auth.services.token_service import issue_identity_token
-from core.database_v2 import get_central_db_session, get_main_db_session
+from core.database import get_central_db_session, get_main_db_session
 from core.security import verify_password
 from core.settings import get_settings
 
@@ -366,3 +366,4 @@ async def verify_identity(
     except Exception:
         logger.exception("verify-identity failed request_id=%s", rid)
         return error_json_response(AUTH_SERVICE_UNAVAILABLE, "Service unavailable", 503, rid, details={})
+

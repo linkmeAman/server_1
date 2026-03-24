@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from core.database_v2 import central_session_context
+from core.database import central_session_context
 from core.prism_cache import invalidate_prism_cache_for_role
 
 router = APIRouter(prefix="/prism/roles", tags=["PRISM — Roles"])
@@ -185,3 +185,4 @@ async def deactivate_role(role_id: int):
         await invalidate_prism_cache_for_role(role_id, db)
 
     return {"deactivated": True, "id": role_id}
+

@@ -9,7 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, Query
 from sqlalchemy import text
 
-from core.database_v2 import central_session_context
+from core.database import central_session_context
 
 router = APIRouter(prefix="/prism/logs", tags=["PRISM — Access Logs"])
 
@@ -65,3 +65,4 @@ async def list_access_logs(
         ))
 
     return {"logs": rows, "total": total, "limit": limit, "offset": offset}
+

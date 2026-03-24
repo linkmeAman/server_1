@@ -104,7 +104,7 @@ def _validate_manifest_records(records: List[Dict[str, Any]]) -> List[str]:
 
 
 async def _fetch_db_catalog() -> Dict[str, Dict[str, Any]]:
-    from core.database_v2 import central_session_context
+    from core.database import central_session_context
 
     async with central_session_context() as central_db:
         result = await central_db.execute(
@@ -217,3 +217,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

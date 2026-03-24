@@ -49,7 +49,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from core.database_v2 import central_session_context
+from core.database import central_session_context
 
 # ── Seed definitions ───────────────────────────────────────────────────────
 
@@ -516,3 +516,4 @@ def _parse_args() -> argparse.Namespace:
 if __name__ == "__main__":
     args = _parse_args()
     asyncio.run(main(dry_run=args.dry_run, reset_policies=args.reset_policies))
+

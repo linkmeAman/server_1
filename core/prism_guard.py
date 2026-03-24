@@ -25,7 +25,7 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from core.database_v2 import central_session_context
+from core.database import central_session_context
 from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
@@ -153,3 +153,4 @@ async def require_prism_super(
             detail="This operation requires is_super=True (full super-admin privilege)",
         )
     return caller
+
