@@ -18,7 +18,7 @@ from controllers.auth.dependencies import require_super_auth
 from controllers.auth.schemas.models import CurrentV2User
 from controllers.auth.services.authorization import AuthorizationResolver
 from controllers.auth.services.common import AuthError, request_id, success_json_response
-from core.database_v2 import get_central_db_session, get_main_db_session
+from core.database import get_central_db_session, get_main_db_session
 
 router = APIRouter(prefix="/internal/auth/permissions", tags=["auth-permissions-admin"])
 logger = logging.getLogger(__name__)
@@ -1147,3 +1147,4 @@ async def get_effective_authorization(
         raise
     except Exception:
         raise AuthError(AUTH_SERVICE_UNAVAILABLE, "Auth v2 service unavailable", 503)
+

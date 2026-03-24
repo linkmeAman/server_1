@@ -25,7 +25,7 @@ from controllers.users.constants import (
     USER_SESSION_NOT_FOUND,
 )
 from controllers.users.schemas.models import CreateUserRequest
-from core.database_v2 import get_central_db_session
+from core.database import get_central_db_session
 from core.security import hash_password
 
 router = APIRouter(prefix="/auth/users", tags=["users"])
@@ -425,3 +425,4 @@ async def revoke_session(
     except Exception:
         await central_db.rollback()
         return error_json_response(USER_SERVICE_UNAVAILABLE, "Unable to revoke session", 503, rid)
+

@@ -34,7 +34,7 @@ from controllers.auth.services.common import (
     user_agent,
     utcnow,
 )
-from core.database_v2 import get_central_db_session, get_main_db_session
+from core.database import get_central_db_session, get_main_db_session
 from core.settings import get_settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -468,3 +468,4 @@ async def check_contact(
             details={},
         )
     return response
+

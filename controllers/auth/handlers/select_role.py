@@ -52,7 +52,7 @@ import logging
 from datetime import timedelta
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -83,7 +83,8 @@ from controllers.auth.services.common import (
 )
 from controllers.auth.services.device_fingerprint import compute_device_fingerprint
 from controllers.auth.services.token_service import issue_token_pair, verify_identity_token
-from core.database_v2 import get_central_db_session, get_main_db_session
+from core.database import get_central_db_session, get_main_db_session
+from core.prism_cache import build_prism_cache, sync_prism_employee_attrs
 from core.settings import get_settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -174,6 +175,7 @@ async def _load_user(central_db: AsyncSession, user_id: int) -> Dict[str, Any]:
 async def select_role(
     payload: SelectRoleRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     main_db: AsyncSession = Depends(get_main_db_session),
     central_db: AsyncSession = Depends(get_central_db_session),
 ) -> JSONResponse:
@@ -281,6 +283,11 @@ async def select_role(
         )
         await central_db.commit()
 
+        # Rebuild PRISM permissions cache for this user in the background.
+        background_tasks.add_task(build_prism_cache, user_id)
+        # Sync employee ABAC attributes so the PDP has fresh department/designation context.
+        background_tasks.add_task(sync_prism_employee_attrs, user_id, contact_id)
+
         # ── 6. Build rich profile response ───────────────────────────────────
         fname_c = _str(contact.get("fname"))
         mname_c = _str(contact.get("mname"))
@@ -362,3 +369,4 @@ async def select_role(
     except Exception:
         logger.exception("select-role failed request_id=%s", rid)
         return error_json_response(AUTH_SERVICE_UNAVAILABLE, "Service unavailable", 503, rid, details={})
+

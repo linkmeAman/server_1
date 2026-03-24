@@ -1,11 +1,18 @@
 """Database configuration and models for the Dynamic API."""
 
 import logging
-from typing import Dict, Generator, Optional
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator, Dict, Generator, Optional
 from urllib.parse import quote_plus
 
 from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_engine, inspect, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from .settings import get_settings
@@ -19,10 +26,16 @@ Base = declarative_base()
 SQLALCHEMY_DATABASE_URL: Optional[str] = None
 SQLALCHEMY_BINDS: Dict[str, str] = {}
 
-# Global engines and session maker
+# Global sync engines and session maker
 engine: Optional[Engine] = None
 engines: Dict[str, Engine] = {}
 SessionLocal = None
+
+# Global async engines and session makers
+_async_main_engine: Optional[AsyncEngine] = None
+_async_central_engine: Optional[AsyncEngine] = None
+_async_main_sessionmaker: Optional[async_sessionmaker[AsyncSession]] = None
+_async_central_sessionmaker: Optional[async_sessionmaker[AsyncSession]] = None
 
 
 def _build_mysql_url(
@@ -141,11 +154,11 @@ def init_database() -> bool:
     try:
         main_engine = create_engine(
             _to_sync_engine_url(SQLALCHEMY_DATABASE_URL),
-            echo=get_settings().DEBUG,
+            echo=False,  # Never echo SQL — stdout logging is expensive
             pool_pre_ping=True,
             pool_recycle=300,
-            pool_size=5,
-            max_overflow=10,
+            pool_size=10,
+            max_overflow=20,
         )
 
         central_url = get_central_database_url()
@@ -154,11 +167,11 @@ def init_database() -> bool:
             SQLALCHEMY_BINDS["central"] = central_url
             central_engine = create_engine(
                 _to_sync_engine_url(central_url),
-                echo=get_settings().DEBUG,
+                echo=False,  # Never echo SQL — stdout logging is expensive
                 pool_pre_ping=True,
                 pool_recycle=300,
-                pool_size=5,
-                max_overflow=10,
+                pool_size=10,
+                max_overflow=20,
             )
         else:
             logger.warning("No central DB configuration found. Auth features will be limited.")
@@ -214,6 +227,130 @@ def get_db_session() -> Session:
         raise RuntimeError("Database not initialized. Call init_database() first.")
 
     return SessionLocal()
+
+
+# ============================================================================
+# Async Database Engines and Sessions (merged from database_v2.py)
+# ============================================================================
+
+def _to_async_url(url: str) -> str:
+    """Convert any MySQL sync URL to an aiomysql async driver URL."""
+    if url.startswith("mysql+aiomysql://"):
+        return url
+    if url.startswith("mysql+pymysql://"):
+        return url.replace("mysql+pymysql://", "mysql+aiomysql://", 1)
+    if url.startswith("mysql://"):
+        return url.replace("mysql://", "mysql+aiomysql://", 1)
+    return url
+
+
+def _get_async_main_url() -> str:
+    settings = get_settings()
+    url = getattr(settings, "DATABASE_MAIN_URL", None) or get_main_database_url()
+    if url:
+        return _to_async_url(url)
+    raise RuntimeError("Main DB URL is not configured")
+
+
+def _get_async_central_url() -> str:
+    url = get_central_database_url()
+    if url:
+        return _to_async_url(url)
+    raise RuntimeError("Central DB URL is not configured")
+
+
+def get_main_async_engine() -> AsyncEngine:
+    global _async_main_engine, _async_main_sessionmaker
+    if _async_main_engine is None:
+        _async_main_engine = create_async_engine(
+            _get_async_main_url(),
+            pool_pre_ping=True,
+            pool_recycle=300,
+            pool_size=10,
+            max_overflow=20,
+        )
+        _async_main_sessionmaker = async_sessionmaker(
+            bind=_async_main_engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            autoflush=False,
+            autocommit=False,
+        )
+    return _async_main_engine
+
+
+def get_central_async_engine() -> AsyncEngine:
+    global _async_central_engine, _async_central_sessionmaker
+    if _async_central_engine is None:
+        _async_central_engine = create_async_engine(
+            _get_async_central_url(),
+            pool_pre_ping=True,
+            pool_recycle=300,
+            pool_size=10,
+            max_overflow=20,
+        )
+        _async_central_sessionmaker = async_sessionmaker(
+            bind=_async_central_engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            autoflush=False,
+            autocommit=False,
+        )
+    return _async_central_engine
+
+
+def _get_async_main_sessionmaker() -> async_sessionmaker[AsyncSession]:
+    if _async_main_sessionmaker is None:
+        get_main_async_engine()
+    if _async_main_sessionmaker is None:
+        raise RuntimeError("Main async sessionmaker is not initialized")
+    return _async_main_sessionmaker
+
+
+def _get_async_central_sessionmaker() -> async_sessionmaker[AsyncSession]:
+    if _async_central_sessionmaker is None:
+        get_central_async_engine()
+    if _async_central_sessionmaker is None:
+        raise RuntimeError("Central async sessionmaker is not initialized")
+    return _async_central_sessionmaker
+
+
+async def get_main_db_session() -> AsyncGenerator[AsyncSession, None]:
+    """FastAPI dependency — async main DB session."""
+    session = _get_async_main_sessionmaker()()
+    try:
+        yield session
+    finally:
+        await session.close()
+
+
+async def get_central_db_session() -> AsyncGenerator[AsyncSession, None]:
+    """FastAPI dependency — async central DB session."""
+    session = _get_async_central_sessionmaker()()
+    try:
+        yield session
+    finally:
+        await session.close()
+
+
+@asynccontextmanager
+async def main_session_context() -> AsyncGenerator[AsyncSession, None]:
+    """Async context manager — main DB session (for scripts and non-FastAPI usage)."""
+    session = _get_async_main_sessionmaker()()
+    try:
+        yield session
+    finally:
+        await session.close()
+
+
+@asynccontextmanager
+async def central_session_context() -> AsyncGenerator[AsyncSession, None]:
+    """Async context manager — central DB session (for scripts and non-FastAPI usage)."""
+    session = _get_async_central_sessionmaker()()
+    try:
+        yield session
+    finally:
+        await session.close()
 
 
 # ============================================================================
