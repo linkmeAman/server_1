@@ -119,6 +119,36 @@ async def _resolve_caller(token: str) -> CallerContext:
     )
 
 
+async def _resolve_any_caller(token: str) -> CallerContext:
+    """Decode token → verify signature only → return CallerContext.
+
+    Does NOT check auth_supreme_user.  Safe for read-only self-service
+    endpoints (e.g. /prism/evaluate/me/permissions) where the caller is
+    fetching their own data.
+    """
+    try:
+        claims = _verify_token(token)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+
+    user_id: Optional[int] = claims.get("user_id") or claims.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Token missing user identity")
+
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid user identity in token")
+
+    return CallerContext(
+        user_id=user_id,
+        is_super=bool(claims.get("is_super", False)),
+        employee_id=claims.get("employee_id"),
+        contact_id=claims.get("contact_id"),
+        token_claims=claims,
+    )
+
+
 async def require_prism_caller(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
@@ -153,4 +183,22 @@ async def require_prism_super(
             detail="This operation requires is_super=True (full super-admin privilege)",
         )
     return caller
+
+
+async def require_any_caller(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
+) -> CallerContext:
+    """Dependency: requires a valid Bearer token but NOT supreme user status.
+
+    Use this for self-service endpoints where any authenticated user
+    (employee or supreme) may fetch their own data.
+    e.g. GET /prism/evaluate/me/permissions
+    """
+    if not credentials or not credentials.credentials:
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization: Bearer <token> header is required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return await _resolve_any_caller(credentials.credentials)
 
