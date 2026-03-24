@@ -62,6 +62,52 @@ async def get_enrolled_users():
     return {"users": rows, "total": len(rows)}
 
 
+@router.get("/all-users")
+async def get_all_users_with_prism_status(page: int = 1, page_size: int = 100):
+    """List all app users from the users table with their PRISM enrollment status."""
+    offset = (page - 1) * page_size
+    async with central_session_context() as db:
+        count_row = _row(await db.execute(text("SELECT COUNT(*) AS total FROM users")))
+        total = count_row["total"] if count_row else 0
+
+        rows = _rows(await db.execute(
+            text("""
+                SELECT
+                    u.id           AS user_id,
+                    u.username,
+                    u.display_name,
+                    u.email,
+                    u.is_active,
+                    COALESCE(e.role_count,   0) AS role_count,
+                    COALESCE(e.policy_count, 0) AS policy_count,
+                    EXISTS(
+                        SELECT 1 FROM prism_user_permission_boundaries b WHERE b.user_id = u.id
+                    ) AS has_boundary
+                FROM users u
+                LEFT JOIN (
+                    SELECT
+                        eu.user_id,
+                        COUNT(DISTINCT ur.id) AS role_count,
+                        COUNT(DISTINCT up.id) AS policy_count
+                    FROM (
+                        SELECT user_id FROM prism_user_roles
+                        UNION
+                        SELECT user_id FROM prism_user_policies
+                    ) eu
+                    LEFT JOIN prism_user_roles    ur ON ur.user_id = eu.user_id
+                    LEFT JOIN prism_user_policies up ON up.user_id = eu.user_id
+                    GROUP BY eu.user_id
+                ) e ON e.user_id = u.id
+                ORDER BY
+                    CASE WHEN e.user_id IS NOT NULL THEN 0 ELSE 1 END,
+                    u.id
+                LIMIT :limit OFFSET :offset
+            """),
+            {"limit": page_size, "offset": offset},
+        ))
+    return {"users": rows, "total": total, "page": page, "page_size": page_size}
+
+
 # ── Helper ─────────────────────────────────────────────────────────────────
 
 def _row(result) -> Optional[dict]:
