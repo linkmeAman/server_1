@@ -25,7 +25,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from core.database_v2 import central_session_context, main_session_context
+from core.database import central_session_context, main_session_context
 from core.prism_cache import (
     invalidate_prism_cache,
     invalidate_prism_cache_for_policy,
@@ -595,3 +595,4 @@ async def remove_permission_boundary(user_id: int):
 
     await invalidate_prism_cache(user_id)
     return {"removed": True, "user_id": user_id}
+

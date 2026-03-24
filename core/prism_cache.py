@@ -39,7 +39,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.database_v2 import central_session_context, main_session_context
+from core.database import central_session_context, main_session_context
 from core.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -422,3 +422,4 @@ async def build_prism_cache(user_id: int) -> None:
         )
     except Exception as exc:
         logger.warning("PRISM cache: build failed for user_id=%s: %s", user_id, exc)
+

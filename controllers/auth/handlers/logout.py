@@ -25,7 +25,7 @@ from controllers.auth.services.common import (
 )
 from controllers.auth.services.session_revocation import revoke_session_family
 from controllers.auth.services.token_service import verify_refresh_token
-from core.database_v2 import get_central_db_session
+from core.database import get_central_db_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -138,3 +138,4 @@ async def logout(
             rid,
             details={},
         )
+

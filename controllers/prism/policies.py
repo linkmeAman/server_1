@@ -21,7 +21,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from core.database_v2 import central_session_context
+from core.database import central_session_context
 from core.prism_cache import invalidate_prism_cache_for_policy
 
 router = APIRouter(prefix="/prism/policies", tags=["PRISM — Policies"])
@@ -423,3 +423,4 @@ async def delete_statement(policy_id: int, statement_id: int, changed_by: Option
         await invalidate_prism_cache_for_policy(policy_id, db)
 
     return {"deactivated": True, "statement_id": statement_id, "new_version": new_version}
+

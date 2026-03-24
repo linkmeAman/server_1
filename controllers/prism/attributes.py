@@ -23,7 +23,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from core.database_v2 import central_session_context, main_session_context
+from core.database import central_session_context, main_session_context
 
 router = APIRouter(prefix="/prism/attributes", tags=["PRISM — ABAC Attributes"])
 
@@ -298,3 +298,4 @@ async def delete_resource_attribute(resource_type: str, resource_id: str, key: s
         await db.commit()
 
     return {"deleted": True, "resource_type": resource_type, "resource_id": resource_id, "key": key}
+

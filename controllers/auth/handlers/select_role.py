@@ -83,7 +83,7 @@ from controllers.auth.services.common import (
 )
 from controllers.auth.services.device_fingerprint import compute_device_fingerprint
 from controllers.auth.services.token_service import issue_token_pair, verify_identity_token
-from core.database_v2 import get_central_db_session, get_main_db_session
+from core.database import get_central_db_session, get_main_db_session
 from core.prism_cache import build_prism_cache, sync_prism_employee_attrs
 from core.settings import get_settings
 
@@ -369,3 +369,4 @@ async def select_role(
     except Exception:
         logger.exception("select-role failed request_id=%s", rid)
         return error_json_response(AUTH_SERVICE_UNAVAILABLE, "Service unavailable", 503, rid, details={})
+
