@@ -18,14 +18,17 @@ Routes:
   DELETE /prism/assignments/boundaries/{user_id}    remove boundary for a user
 """
 
+import re
 from datetime import datetime
 from typing import Optional
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from core.database import central_session_context, main_session_context
+from core.settings import get_settings
 from core.prism_cache import (
     invalidate_prism_cache,
     invalidate_prism_cache_for_policy,
@@ -108,116 +111,138 @@ async def get_all_users_with_prism_status(page: int = 1, page_size: int = 100):
     return {"users": rows, "total": total, "page": page, "page_size": page_size}
 
 
+def _quoted_schema(name: str) -> str:
+    """Backtick-quote a DB schema name; raise if it contains unsafe characters."""
+    if not re.match(r'^[A-Za-z0-9_]+$', name):
+        raise ValueError(f"Invalid schema name: {name!r}")
+    return f"`{name}`"
+
+
+def _get_db_schemas() -> tuple[str, str]:
+    """Return (main_schema, central_schema) as backtick-quoted strings.
+
+    Prefers explicit DB_NAME / DB_CENTRAL settings; falls back to parsing the
+    DATABASE_*_URL connection strings.
+    """
+    settings = get_settings()
+
+    def _name_from_url(url: str) -> str:
+        return urlparse(url).path.lstrip('/') if url else ''
+
+    main_name = settings.DB_NAME or _name_from_url(
+        getattr(settings, 'DATABASE_MAIN_URL', '') or getattr(settings, 'DATABASE_URL', '')
+    )
+    central_name = (
+        getattr(settings, 'CENTRAL_DB_NAME', '')
+        or getattr(settings, 'DB_CENTRAL', '')
+        or _name_from_url(getattr(settings, 'DATABASE_CENTRAL_URL', '') or getattr(settings, 'CENTRAL_DATABASE_URL', ''))
+    )
+
+    if not main_name:
+        raise RuntimeError("Cannot determine main DB schema name (set DB_NAME or DATABASE_MAIN_URL)")
+    if not central_name:
+        raise RuntimeError("Cannot determine central DB schema name (set DB_CENTRAL or DATABASE_CENTRAL_URL)")
+
+    return _quoted_schema(main_name), _quoted_schema(central_name)
+
+
 @router.get("/all-employees")
 async def get_all_employees_with_prism_status(page: int = 1, page_size: int = 100):
-    """List all employee accounts (legacy `user` table) with their PRISM enrollment status.
+    """List all employees (contact_group_id=2) that have a user account,
+    enriched with their PRISM enrollment status.
 
-    Step 1 — central DB: fetch `user` rows + PRISM aggregate counts.
-    Step 2 — main DB:    fetch contact name + employee designation/department by contact_id.
-    Step 3 — merge in Python (cross-DB JOIN not possible).
+    Uses a single cross-DB SQL query — both schemas must be on the same
+    MySQL server instance.
     """
+    main_schema, central_schema = _get_db_schemas()
     offset = (page - 1) * page_size
 
-    # ── Step 1: central DB ─────────────────────────────────────────────────
-    async with central_session_context() as db:
-        count_row = _row(await db.execute(
-            text("SELECT COUNT(*) AS total FROM `user` WHERE inactive = 0")
-        ))
+    async with main_session_context() as db:
+        count_row = _row(await db.execute(text(f"""
+            SELECT COUNT(*) AS total
+            FROM {main_schema}.contact c
+            JOIN {main_schema}.employee e ON c.id = e.contact_id
+            JOIN {central_schema}.`user` u ON e.contact_id = u.contact_id
+            WHERE c.park = 0
+              AND c.contact_group_id = 2
+              AND e.park = 0
+              AND u.park = 0
+        """)))
         total = count_row["total"] if count_row else 0
 
         rows = _rows(await db.execute(
-            text("""
+            text(f"""
                 SELECT
-                    u.id           AS user_id,
-                    u.contact_id,
+                    u.id        AS user_id,
                     u.mobile,
-                    COALESCE(e.role_count,   0) AS role_count,
-                    COALESCE(e.policy_count, 0) AS policy_count,
+                    c.id        AS contact_id,
+                    TRIM(CONCAT(
+                        COALESCE(c.fname, ''), ' ',
+                        COALESCE(c.lname, '')
+                    ))          AS full_name,
+                    c.email,
+                    e.ecode,
+                    e.department_id,
+                    e.position_id,
+                    COALESCE(psum.role_count,   0) AS role_count,
+                    COALESCE(psum.policy_count, 0) AS policy_count,
                     EXISTS(
-                        SELECT 1 FROM prism_user_permission_boundaries b WHERE b.user_id = u.id
+                        SELECT 1
+                        FROM {central_schema}.prism_user_permission_boundaries b
+                        WHERE b.user_id = u.id
                     ) AS has_boundary
-                FROM `user` u
+                FROM {main_schema}.contact c
+                JOIN {main_schema}.employee e
+                    ON c.id = e.contact_id
+                JOIN {central_schema}.`user` u
+                    ON e.contact_id = u.contact_id
                 LEFT JOIN (
                     SELECT
                         eu.user_id,
                         COUNT(DISTINCT ur.id) AS role_count,
                         COUNT(DISTINCT up.id) AS policy_count
                     FROM (
-                        SELECT user_id FROM prism_user_roles
+                        SELECT user_id FROM {central_schema}.prism_user_roles
                         UNION
-                        SELECT user_id FROM prism_user_policies
+                        SELECT user_id FROM {central_schema}.prism_user_policies
                     ) eu
-                    LEFT JOIN prism_user_roles    ur ON ur.user_id = eu.user_id
-                    LEFT JOIN prism_user_policies up ON up.user_id = eu.user_id
+                    LEFT JOIN {central_schema}.prism_user_roles    ur ON ur.user_id = eu.user_id
+                    LEFT JOIN {central_schema}.prism_user_policies up ON up.user_id = eu.user_id
                     GROUP BY eu.user_id
-                ) e ON e.user_id = u.id
-                WHERE u.inactive = 0
+                ) psum ON psum.user_id = u.id
+                WHERE c.park = 0
+                  AND c.contact_group_id = 2
+                  AND e.park = 0
+                  AND u.park = 0
                 ORDER BY
-                    CASE WHEN e.user_id IS NOT NULL THEN 0 ELSE 1 END,
+                    CASE WHEN psum.user_id IS NOT NULL THEN 0 ELSE 1 END,
                     u.id
                 LIMIT :limit OFFSET :offset
             """),
             {"limit": page_size, "offset": offset},
         ))
 
-    if not rows:
-        return {"users": [], "total": total, "page": page, "page_size": page_size}
-
-    # ── Step 2: main DB — enrich with contact + employee info ──────────────
-    contact_ids = [r["contact_id"] for r in rows if r.get("contact_id")]
-    contact_info: dict = {}
-
-    if contact_ids:
-        # Build safe named placeholders — avoids any injection risk
-        placeholders = ", ".join(f":cid_{i}" for i in range(len(contact_ids)))
-        params = {f"cid_{i}": cid for i, cid in enumerate(contact_ids)}
-
-        async with main_session_context() as main_db:
-            contacts = _rows(await main_db.execute(
-                text(f"""
-                    SELECT
-                        c.id                                             AS contact_id,
-                        TRIM(CONCAT(
-                            COALESCE(c.fname, ''), ' ',
-                            COALESCE(c.lname, '')
-                        ))                                               AS full_name,
-                        c.email,
-                        emp.ecode,
-                        emp.department_id,
-                        emp.position_id
-                    FROM contact c
-                    LEFT JOIN employee emp
-                        ON emp.contact_id = c.id
-                        AND (emp.park IS NULL OR emp.park = 0)
-                        AND emp.status = 1
-                    WHERE c.id IN ({placeholders})
-                      AND (c.park IS NULL OR c.park = 0)
-                """),
-                params,
-            ))
-            contact_info = {r["contact_id"]: r for r in contacts}
-
-    # ── Step 3: merge ─────────────────────────────────────────────────────
-    merged = []
-    for r in rows:
-        cid = r.get("contact_id")
-        info = contact_info.get(cid, {})
-        full_name = (info.get("full_name") or "").strip() or None
-        merged.append({
-            "user_id":     r["user_id"],
-            "contact_id":  cid,
-            "mobile":      r.get("mobile"),
-            "full_name":   full_name,
-            "email":       info.get("email"),
-            "ecode":        info.get("ecode"),
-            "department_id": info.get("department_id"),
-            "position_id":   info.get("position_id"),
-            "role_count":  r["role_count"],
-            "policy_count": r["policy_count"],
-            "has_boundary": bool(r["has_boundary"]),
-        })
-
-    return {"users": merged, "total": total, "page": page, "page_size": page_size}
+    return {
+        "users": [
+            {
+                "user_id":       r["user_id"],
+                "contact_id":    r["contact_id"],
+                "mobile":        r["mobile"],
+                "full_name":     (r["full_name"] or "").strip() or None,
+                "email":         r["email"],
+                "ecode":         r["ecode"],
+                "department_id": r["department_id"],
+                "position_id":   r["position_id"],
+                "role_count":    r["role_count"],
+                "policy_count":  r["policy_count"],
+                "has_boundary":  bool(r["has_boundary"]),
+            }
+            for r in rows
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 # ── Helper ─────────────────────────────────────────────────────────────────
