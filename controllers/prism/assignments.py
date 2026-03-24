@@ -183,8 +183,8 @@ async def get_all_employees_with_prism_status(page: int = 1, page_size: int = 10
                         ))                                               AS full_name,
                         c.email,
                         emp.ecode,
-                        emp.designation,
-                        emp.department
+                        emp.department_id,
+                        emp.position_id
                     FROM contact c
                     LEFT JOIN employee emp
                         ON emp.contact_id = c.id
@@ -209,9 +209,9 @@ async def get_all_employees_with_prism_status(page: int = 1, page_size: int = 10
             "mobile":      r.get("mobile"),
             "full_name":   full_name,
             "email":       info.get("email"),
-            "ecode":       info.get("ecode"),
-            "designation": info.get("designation"),
-            "department":  info.get("department"),
+            "ecode":        info.get("ecode"),
+            "department_id": info.get("department_id"),
+            "position_id":   info.get("position_id"),
             "role_count":  r["role_count"],
             "policy_count": r["policy_count"],
             "has_boundary": bool(r["has_boundary"]),
