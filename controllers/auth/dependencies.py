@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import Header
+from sqlalchemy import text
 
 from controllers.auth.constants import (
     AUTH_FORBIDDEN,
@@ -13,6 +14,7 @@ from controllers.auth.constants import (
 from controllers.auth.schemas.models import CurrentV2User
 from controllers.auth.services.common import AuthError
 from controllers.auth.services.token_service import verify_access_token
+from core.database import central_session_context
 from core.settings import get_settings
 
 
@@ -46,6 +48,29 @@ async def require_auth(authorization: str | None = Header(default=None, alias=HE
     claims = verify_access_token(token)
     if int(claims.get("auth_ver", -1)) != int(get_settings().AUTH_V2_TOKEN_VERSION):
         raise AuthError(AUTH_TOKEN_VERSION_MISMATCH, "Token version mismatch", 401)
+
+    user_id = claims.get("user_id")
+    token_jti = claims.get("jti")
+    if user_id is None or not token_jti:
+        raise AuthError(AUTH_UNAUTHORIZED, "Session invalid", 401)
+
+    async with central_session_context() as db:
+        active_row = await db.execute(
+            text(
+                """
+                SELECT id
+                FROM auth_refresh_token
+                WHERE user_id = :user_id
+                  AND token_jti = :token_jti
+                  AND revoked_at IS NULL
+                  AND expires_at > UTC_TIMESTAMP()
+                LIMIT 1
+                """
+            ),
+            {"user_id": int(user_id), "token_jti": str(token_jti)},
+        )
+        if active_row.fetchone() is None:
+            raise AuthError(AUTH_UNAUTHORIZED, "Session revoked. Please login again.", 401)
 
     claims = dict(claims)
     claims["roles"] = _normalize_roles(claims.get("roles"))

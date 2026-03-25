@@ -132,6 +132,16 @@ async def invalidate_prism_cache(user_id: int) -> None:
     """Delete the permissions cache for a single user."""
     client = _client()
     if client is None:
+        # Even when Redis is unavailable, still revoke auth sessions.
+        try:
+            from controllers.auth.constants import REVOKE_REASON_SESSION_FAMILY_WIPE
+            from controllers.auth.services.session_revocation import revoke_all_sessions_for_user
+
+            async with central_session_context() as db:
+                await revoke_all_sessions_for_user(int(user_id), REVOKE_REASON_SESSION_FAMILY_WIPE, db)
+                await db.commit()
+        except Exception as exc:
+            logger.debug("PRISM cache: session revoke error for user_id=%s: %s", user_id, exc)
         return
     try:
         deleted = await client.delete(_cache_key(user_id))
@@ -139,6 +149,17 @@ async def invalidate_prism_cache(user_id: int) -> None:
             logger.debug("PRISM cache: invalidated user_id=%s", user_id)
     except Exception as exc:
         logger.debug("PRISM cache: invalidate error for user_id=%s: %s", user_id, exc)
+
+    # Force re-auth on permission mutations affecting this user.
+    try:
+        from controllers.auth.constants import REVOKE_REASON_SESSION_FAMILY_WIPE
+        from controllers.auth.services.session_revocation import revoke_all_sessions_for_user
+
+        async with central_session_context() as db:
+            await revoke_all_sessions_for_user(int(user_id), REVOKE_REASON_SESSION_FAMILY_WIPE, db)
+            await db.commit()
+    except Exception as exc:
+        logger.debug("PRISM cache: session revoke error for user_id=%s: %s", user_id, exc)
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +183,19 @@ async def invalidate_prism_cache_for_role(role_id: int, db: AsyncSession) -> Non
             keys = [_cache_key(uid) for uid in user_ids]
             await client.delete(*keys)
             logger.debug("PRISM cache: invalidated %d users for role_id=%s", len(user_ids), role_id)
+            try:
+                from controllers.auth.constants import REVOKE_REASON_SESSION_FAMILY_WIPE
+                from controllers.auth.services.session_revocation import revoke_all_sessions_for_user
+
+                for uid in user_ids:
+                    await revoke_all_sessions_for_user(int(uid), REVOKE_REASON_SESSION_FAMILY_WIPE, db)
+                await db.commit()
+            except Exception as revoke_exc:
+                logger.debug(
+                    "PRISM cache: session revoke error for role_id=%s: %s",
+                    role_id,
+                    revoke_exc,
+                )
     except Exception as exc:
         logger.debug("PRISM cache: bulk-role invalidate error role_id=%s: %s", role_id, exc)
 
@@ -205,6 +239,19 @@ async def invalidate_prism_cache_for_policy(policy_id: int, db: AsyncSession) ->
             logger.debug(
                 "PRISM cache: invalidated %d users for policy_id=%s", len(user_ids), policy_id
             )
+            try:
+                from controllers.auth.constants import REVOKE_REASON_SESSION_FAMILY_WIPE
+                from controllers.auth.services.session_revocation import revoke_all_sessions_for_user
+
+                for uid in user_ids:
+                    await revoke_all_sessions_for_user(int(uid), REVOKE_REASON_SESSION_FAMILY_WIPE, db)
+                await db.commit()
+            except Exception as revoke_exc:
+                logger.debug(
+                    "PRISM cache: session revoke error for policy_id=%s: %s",
+                    policy_id,
+                    revoke_exc,
+                )
     except Exception as exc:
         logger.debug("PRISM cache: bulk-policy invalidate error policy_id=%s: %s", policy_id, exc)
 

@@ -77,6 +77,28 @@ def _verify_token(token: str) -> dict:
     raise ValueError("Token is invalid or expired")
 
 
+async def _ensure_active_session(user_id: int, token_jti: str) -> None:
+    """Fail if the caller's auth session has been revoked or expired."""
+    async with central_session_context() as db:
+        row = _row(await db.execute(
+            text(
+                """
+                SELECT id
+                FROM auth_refresh_token
+                WHERE user_id = :uid
+                  AND token_jti = :jti
+                  AND revoked_at IS NULL
+                  AND expires_at > UTC_TIMESTAMP()
+                LIMIT 1
+                """
+            ),
+            {"uid": int(user_id), "jti": str(token_jti)},
+        ))
+
+    if not row:
+        raise HTTPException(status_code=401, detail="Session revoked. Please login again.")
+
+
 async def _resolve_caller(token: str) -> CallerContext:
     """Decode token → verify active supreme user → return CallerContext."""
     try:
@@ -92,6 +114,11 @@ async def _resolve_caller(token: str) -> CallerContext:
         user_id = int(user_id)
     except (TypeError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid user identity in token")
+
+    token_jti = claims.get("jti")
+    if not token_jti:
+        raise HTTPException(status_code=401, detail="Token missing session identifier")
+    await _ensure_active_session(user_id, str(token_jti))
 
     # Verify the user exists in auth_supreme_user and is active
     async with central_session_context() as db:
@@ -139,6 +166,11 @@ async def _resolve_any_caller(token: str) -> CallerContext:
         user_id = int(user_id)
     except (TypeError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid user identity in token")
+
+    token_jti = claims.get("jti")
+    if not token_jti:
+        raise HTTPException(status_code=401, detail="Token missing session identifier")
+    await _ensure_active_session(user_id, str(token_jti))
 
     return CallerContext(
         user_id=user_id,
