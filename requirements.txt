@@ -29,6 +29,10 @@ pyseto==1.7.6
 bcrypt==4.1.3
 PyYAML==6.0.2
 
+# Cache (PRISM Phase 3)
+# redis>=4.2 ships redis.asyncio as a built-in submodule — no [asyncio] extra needed
+redis>=4.2.0
+
 # Read-only DB explorer
 sqlparse==0.5.3
 pandas==2.2.3

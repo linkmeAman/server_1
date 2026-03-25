@@ -18,7 +18,7 @@ from controllers.auth.constants import (
     AUTH_PASSWORD_MIGRATION_DEFERRED,
 )
 from controllers.auth.services.common import AuthError
-from core.database_v2 import get_central_db_session, get_main_db_session
+from core.database import get_central_db_session, get_main_db_session
 from tests.auth_test_utils import build_headers, ensure_auth_v2_routes, testclient_requests_work
 
 
@@ -288,3 +288,4 @@ class TestAuthV2LoginEmployee(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

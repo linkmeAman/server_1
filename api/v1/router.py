@@ -13,6 +13,7 @@ from controllers.employee_events_v1 import router as employee_events_v1_router
 from controllers.google_calendar_v1 import router as google_calendar_v1_router
 from controllers.internal.sqlgw_admin import router as sqlgw_admin_router
 from controllers.orders import router as orders_router
+from controllers.prism.router import router as prism_router
 
 api_router = APIRouter()
 
@@ -32,3 +33,6 @@ api_router.include_router(sqlgw_admin_router)
 
 # 3) Orders explicit routes
 api_router.include_router(orders_router)
+
+# 4) PRISM — Access Control (roles, policies, assignments, attributes, registry)
+api_router.include_router(prism_router)

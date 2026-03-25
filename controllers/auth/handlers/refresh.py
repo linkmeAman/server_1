@@ -41,7 +41,7 @@ from controllers.auth.services.common import (
 from controllers.auth.services.device_fingerprint import compute_device_fingerprint
 from controllers.auth.services.session_revocation import revoke_session_family
 from controllers.auth.services.token_service import issue_token_pair, verify_refresh_token
-from core.database_v2 import get_central_db_session, get_main_db_session
+from core.database import get_central_db_session, get_main_db_session
 from core.settings import get_settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -443,3 +443,4 @@ async def refresh(
             rid,
             details={},
         )
+
