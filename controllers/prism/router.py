@@ -14,6 +14,7 @@ from controllers.prism.logs import router as logs_router
 from controllers.prism.policies import router as policies_router
 from controllers.prism.registry import router as registry_router
 from controllers.prism.roles import router as roles_router
+from controllers.prism.sidenav import router as sidenav_router
 from core.prism_guard import require_prism_caller
 
 # Single shared guard dependency injected across every PRISM endpoint
@@ -28,3 +29,5 @@ router.include_router(attributes_router,   dependencies=_guard)
 router.include_router(registry_router,     dependencies=_guard)
 router.include_router(logs_router,         dependencies=_guard)
 router.include_router(evaluate_router,     dependencies=_guard)
+# Sidenav uses per-endpoint auth (GET = any caller, PUT = supreme only)
+router.include_router(sidenav_router)
