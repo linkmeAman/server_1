@@ -152,7 +152,18 @@ def describe_table(table_name: str, db: str | None = Query(default=None)):
         cursor.execute(f"DESCRIBE {_quoted(safe_table)}")
         schema_rows = cursor.fetchall()
 
-    return {"table": safe_table, "schema": schema_rows}
+        view_query = None
+        is_view = False
+        try:
+            cursor.execute(f"SHOW CREATE VIEW {_quoted(safe_table)}")
+            view_result = cursor.fetchone()
+            if view_result and "Create View" in view_result:
+                view_query = view_result["Create View"]
+                is_view = True
+        except Exception:
+            pass
+
+    return {"table": safe_table, "schema": schema_rows, "is_view": is_view, "view_query": view_query}
 
 
 @router.get("/table/{table_name}")
