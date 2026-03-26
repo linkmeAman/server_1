@@ -425,10 +425,22 @@ async def _compute_cache_data(user_id: int, db: AsyncSession) -> Dict[str, Any]:
         )
         resource_global = _is_global_resource(resources if isinstance(resources, list) else [])
 
-        if has_conditions or not resource_global:
+        if has_conditions:
+            # Conditions require per-request PDP evaluation — can't cache statically
             needs_full_pdp = True
+        elif not resource_global:
+            # Resource-scoped statement: full PDP is required for accurate decisions.
+            # For Allow: we cannot promote to static_allows (would over-grant).
+            # For Deny: we conservatively add to static_denies so that the UI
+            # correctly hides/blocks the action even for specific-resource denies.
+            # The full PDP will handle the exact resource match at request time.
+            needs_full_pdp = True
+            if effect == "Deny":
+                for action in (actions if isinstance(actions, list) else [actions]):
+                    if action and action not in static_denies:
+                        static_denies.append(str(action))
         else:
-            # Plain global statement — safe to cache
+            # Plain global statement — safe to cache as-is
             target = static_allows if effect == "Allow" else static_denies
             for action in (actions if isinstance(actions, list) else [actions]):
                 if action and action not in target:

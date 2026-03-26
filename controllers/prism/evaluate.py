@@ -181,3 +181,74 @@ async def get_my_permissions(
         has_boundary=bool(cache.get("has_boundary", False)),
     )
 
+
+# ---------------------------------------------------------------------------
+# Self-service per-action PDP check (any authenticated user)
+# ---------------------------------------------------------------------------
+
+class MeCheckRequest(BaseModel):
+    """Single action check the caller wants evaluated against their own policies."""
+    action: str = Field(..., description="Action to check, e.g. 'report:read'")
+    resource_type: str = Field(default="*", description="Resource type, e.g. 'report'")
+    resource_id: str = Field(default="*", description="Resource ID or '*' for collection-level")
+    request_context: Dict[str, Any] = Field(default_factory=dict)
+
+
+class MeCheckResponse(BaseModel):
+    """PDP decision for the calling user."""
+    allowed: bool
+    decision: str = Field(..., description="'Allow' or 'Deny'")
+    reason: str
+    action: str
+    resource_type: str
+    resource_id: str
+
+
+@router.post("/me/check", response_model=MeCheckResponse, status_code=200)
+async def check_my_permission(
+    body: MeCheckRequest,
+    caller: CallerContext = Depends(require_any_caller),
+) -> MeCheckResponse:
+    """Evaluate a single action for the calling user against the full PDP.
+
+    Called by the frontend when the permission snapshot has needs_full_pdp=True
+    and the static cache alone is insufficient to make a correct decision.
+
+    Supreme users always receive Allow regardless of policies.
+
+    Unlike POST / (which lets a supreme user evaluate any user_id), this
+    endpoint only evaluates the *calling* user — no privilege escalation possible.
+    """
+    if caller.is_super:
+        return MeCheckResponse(
+            allowed=True,
+            decision="Allow",
+            reason="Supreme user — bypasses all PRISM checks",
+            action=body.action,
+            resource_type=body.resource_type,
+            resource_id=body.resource_id,
+        )
+
+    async with central_session_context() as db:
+        try:
+            result: PDPResult = await evaluate(
+                PDPRequest(
+                    user_id=caller.user_id,
+                    action=body.action,
+                    resource_type=body.resource_type,
+                    resource_id=body.resource_id,
+                    request_context=body.request_context,
+                ),
+                db,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"PDP evaluation error: {exc}")
+
+    return MeCheckResponse(
+        allowed=(result.decision == "Allow"),
+        decision=result.decision,
+        reason=result.reason,
+        action=body.action,
+        resource_type=body.resource_type,
+        resource_id=body.resource_id,
+    )

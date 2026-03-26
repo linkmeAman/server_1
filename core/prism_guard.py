@@ -234,3 +234,23 @@ async def require_any_caller(
         )
     return await _resolve_any_caller(credentials.credentials)
 
+
+async def resolve_caller_from_request(request: Request) -> Optional["CallerContext"]:
+    """Imperatively extract and validate the Bearer token from a Request object.
+
+    Unlike the Depends-based helpers, this can be called directly from any
+    coroutine (e.g. dynamic router middleware) without FastAPI dependency
+    injection.
+
+    Returns None (does NOT raise) when the request carries no Authorization
+    header or the token is missing — callers should treat this as anonymous.
+    Raises HTTPException(401/403) when a token IS present but invalid.
+    """
+    auth_header: str = request.headers.get("authorization", "")
+    if not auth_header.lower().startswith("bearer "):
+        return None
+    token = auth_header[7:].strip()
+    if not token:
+        return None
+    return await _resolve_any_caller(token)
+

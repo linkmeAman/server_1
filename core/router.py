@@ -2,6 +2,7 @@
 Dynamic router for the multi-project API system
 Handles URL patterns like /py/{controller}/{function}/{id?} and dispatches to appropriate functions
 """
+import fnmatch
 import time
 import logging
 from typing import Optional, Dict, Any
@@ -20,6 +21,35 @@ logger = logging.getLogger(__name__)
 # Create the dynamic router
 # No prefix - routes accessible at /controller/function
 dynamic_router = APIRouter(prefix="", tags=["Dynamic API"])
+
+# ---------------------------------------------------------------------------
+# Controllers that are exempt from the PRISM auth layer.
+# Keep this list minimal — only truly public endpoints belong here.
+# ---------------------------------------------------------------------------
+_PRISM_EXEMPT_CONTROLLERS = frozenset({
+    "health",
+})
+
+
+def _prism_action_allowed(
+    action: str,
+    static_allows: list[str],
+    static_denies: list[str],
+) -> bool:
+    """Check a single action against the static PRISM cache snapshot.
+
+    The dynamic router uses an **explicit-deny** model (not the standard
+    PRISM default-deny), because legacy policies use verb-based action
+    patterns (e.g. ``*:read``) that don't match controller:function-style
+    action names.  This means:
+      - A token with a valid session is assumed allowed unless a DENY pattern
+        in static_denies explicitly matches the action.
+      - Supreme users are never checked here (handled before this call).
+    """
+    for pat in static_denies:
+        if fnmatch.fnmatch(action, pat):
+            return False
+    return True  # default-allow: no explicit deny found
 
 
 async def log_request_middleware(request: Request, call_next):
@@ -89,9 +119,70 @@ async def _dispatch_request(
     Internal function to dispatch requests to controller functions
     """
     try:
+        # ------------------------------------------------------------------
+        # PRISM enforcement — authenticate the caller and check the cache
+        # ------------------------------------------------------------------
+        if controller not in _PRISM_EXEMPT_CONTROLLERS:
+            from core.prism_guard import resolve_caller_from_request
+            from core.prism_cache import get_prism_cache
+
+            try:
+                caller = await resolve_caller_from_request(request)
+            except HTTPException:
+                raise  # 401/403 from token validation — propagate as-is
+
+            if caller is None:
+                # No Authorization header → anonymous request, deny by default
+                return JSONResponse(
+                    content=error_response(
+                        error="Unauthorized",
+                        message="Authentication required",
+                    ).model_dump(mode="json"),
+                    status_code=401,
+                )
+
+            if not caller.is_super:
+                # Supreme users bypass PRISM (all access granted)
+                prism_action = f"{controller}:{function}"
+                cache = await get_prism_cache(caller.user_id)
+
+                if cache is None:
+                    # Cache miss — conservative deny; user should re-login
+                    # to rebuild their snapshot
+                    logger.warning(
+                        "PRISM cache miss for user_id=%s on %s — denying",
+                        caller.user_id, prism_action,
+                    )
+                    return JSONResponse(
+                        content=error_response(
+                            error="Forbidden",
+                            message=(
+                                "Permission snapshot unavailable. "
+                                "Please log out and log back in."
+                            ),
+                        ).model_dump(mode="json"),
+                        status_code=403,
+                    )
+
+                static_allows: list[str] = cache.get("static_allows", [])
+                static_denies: list[str] = cache.get("static_denies", [])
+
+                if not _prism_action_allowed(prism_action, static_allows, static_denies):
+                    logger.info(
+                        "PRISM denied user_id=%s action=%s",
+                        caller.user_id, prism_action,
+                    )
+                    return JSONResponse(
+                        content=error_response(
+                            error="Forbidden",
+                            message=f"Access denied: {prism_action}",
+                        ).model_dump(mode="json"),
+                        status_code=403,
+                    )
+
         # Extract request data
         query_params, body_data = await get_request_data(request)
-        
+
         # Log the dispatch
         params_info = []
         if item_id:
