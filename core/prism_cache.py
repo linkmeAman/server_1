@@ -132,6 +132,16 @@ async def invalidate_prism_cache(user_id: int) -> None:
     """Delete the permissions cache for a single user."""
     client = _client()
     if client is None:
+        # Even when Redis is unavailable, still revoke auth sessions.
+        try:
+            from controllers.auth.constants import REVOKE_REASON_SESSION_FAMILY_WIPE
+            from controllers.auth.services.session_revocation import revoke_all_sessions_for_user
+
+            async with central_session_context() as db:
+                await revoke_all_sessions_for_user(int(user_id), REVOKE_REASON_SESSION_FAMILY_WIPE, db)
+                await db.commit()
+        except Exception as exc:
+            logger.debug("PRISM cache: session revoke error for user_id=%s: %s", user_id, exc)
         return
     try:
         deleted = await client.delete(_cache_key(user_id))
@@ -139,6 +149,17 @@ async def invalidate_prism_cache(user_id: int) -> None:
             logger.debug("PRISM cache: invalidated user_id=%s", user_id)
     except Exception as exc:
         logger.debug("PRISM cache: invalidate error for user_id=%s: %s", user_id, exc)
+
+    # Force re-auth on permission mutations affecting this user.
+    try:
+        from controllers.auth.constants import REVOKE_REASON_SESSION_FAMILY_WIPE
+        from controllers.auth.services.session_revocation import revoke_all_sessions_for_user
+
+        async with central_session_context() as db:
+            await revoke_all_sessions_for_user(int(user_id), REVOKE_REASON_SESSION_FAMILY_WIPE, db)
+            await db.commit()
+    except Exception as exc:
+        logger.debug("PRISM cache: session revoke error for user_id=%s: %s", user_id, exc)
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +183,19 @@ async def invalidate_prism_cache_for_role(role_id: int, db: AsyncSession) -> Non
             keys = [_cache_key(uid) for uid in user_ids]
             await client.delete(*keys)
             logger.debug("PRISM cache: invalidated %d users for role_id=%s", len(user_ids), role_id)
+            try:
+                from controllers.auth.constants import REVOKE_REASON_SESSION_FAMILY_WIPE
+                from controllers.auth.services.session_revocation import revoke_all_sessions_for_user
+
+                for uid in user_ids:
+                    await revoke_all_sessions_for_user(int(uid), REVOKE_REASON_SESSION_FAMILY_WIPE, db)
+                await db.commit()
+            except Exception as revoke_exc:
+                logger.debug(
+                    "PRISM cache: session revoke error for role_id=%s: %s",
+                    role_id,
+                    revoke_exc,
+                )
     except Exception as exc:
         logger.debug("PRISM cache: bulk-role invalidate error role_id=%s: %s", role_id, exc)
 
@@ -205,6 +239,19 @@ async def invalidate_prism_cache_for_policy(policy_id: int, db: AsyncSession) ->
             logger.debug(
                 "PRISM cache: invalidated %d users for policy_id=%s", len(user_ids), policy_id
             )
+            try:
+                from controllers.auth.constants import REVOKE_REASON_SESSION_FAMILY_WIPE
+                from controllers.auth.services.session_revocation import revoke_all_sessions_for_user
+
+                for uid in user_ids:
+                    await revoke_all_sessions_for_user(int(uid), REVOKE_REASON_SESSION_FAMILY_WIPE, db)
+                await db.commit()
+            except Exception as revoke_exc:
+                logger.debug(
+                    "PRISM cache: session revoke error for policy_id=%s: %s",
+                    policy_id,
+                    revoke_exc,
+                )
     except Exception as exc:
         logger.debug("PRISM cache: bulk-policy invalidate error policy_id=%s: %s", policy_id, exc)
 
@@ -378,10 +425,22 @@ async def _compute_cache_data(user_id: int, db: AsyncSession) -> Dict[str, Any]:
         )
         resource_global = _is_global_resource(resources if isinstance(resources, list) else [])
 
-        if has_conditions or not resource_global:
+        if has_conditions:
+            # Conditions require per-request PDP evaluation — can't cache statically
             needs_full_pdp = True
+        elif not resource_global:
+            # Resource-scoped statement: full PDP is required for accurate decisions.
+            # For Allow: we cannot promote to static_allows (would over-grant).
+            # For Deny: we conservatively add to static_denies so that the UI
+            # correctly hides/blocks the action even for specific-resource denies.
+            # The full PDP will handle the exact resource match at request time.
+            needs_full_pdp = True
+            if effect == "Deny":
+                for action in (actions if isinstance(actions, list) else [actions]):
+                    if action and action not in static_denies:
+                        static_denies.append(str(action))
         else:
-            # Plain global statement — safe to cache
+            # Plain global statement — safe to cache as-is
             target = static_allows if effect == "Allow" else static_denies
             for action in (actions if isinstance(actions, list) else [actions]):
                 if action and action not in target:

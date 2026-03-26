@@ -77,6 +77,28 @@ def _verify_token(token: str) -> dict:
     raise ValueError("Token is invalid or expired")
 
 
+async def _ensure_active_session(user_id: int, token_jti: str) -> None:
+    """Fail if the caller's auth session has been revoked or expired."""
+    async with central_session_context() as db:
+        row = _row(await db.execute(
+            text(
+                """
+                SELECT id
+                FROM auth_refresh_token
+                WHERE user_id = :uid
+                  AND token_jti = :jti
+                  AND revoked_at IS NULL
+                  AND expires_at > UTC_TIMESTAMP()
+                LIMIT 1
+                """
+            ),
+            {"uid": int(user_id), "jti": str(token_jti)},
+        ))
+
+    if not row:
+        raise HTTPException(status_code=401, detail="Session revoked. Please login again.")
+
+
 async def _resolve_caller(token: str) -> CallerContext:
     """Decode token → verify active supreme user → return CallerContext."""
     try:
@@ -92,6 +114,11 @@ async def _resolve_caller(token: str) -> CallerContext:
         user_id = int(user_id)
     except (TypeError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid user identity in token")
+
+    token_jti = claims.get("jti")
+    if not token_jti:
+        raise HTTPException(status_code=401, detail="Token missing session identifier")
+    await _ensure_active_session(user_id, str(token_jti))
 
     # Verify the user exists in auth_supreme_user and is active
     async with central_session_context() as db:
@@ -139,6 +166,11 @@ async def _resolve_any_caller(token: str) -> CallerContext:
         user_id = int(user_id)
     except (TypeError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid user identity in token")
+
+    token_jti = claims.get("jti")
+    if not token_jti:
+        raise HTTPException(status_code=401, detail="Token missing session identifier")
+    await _ensure_active_session(user_id, str(token_jti))
 
     return CallerContext(
         user_id=user_id,
@@ -201,4 +233,24 @@ async def require_any_caller(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return await _resolve_any_caller(credentials.credentials)
+
+
+async def resolve_caller_from_request(request: Request) -> Optional["CallerContext"]:
+    """Imperatively extract and validate the Bearer token from a Request object.
+
+    Unlike the Depends-based helpers, this can be called directly from any
+    coroutine (e.g. dynamic router middleware) without FastAPI dependency
+    injection.
+
+    Returns None (does NOT raise) when the request carries no Authorization
+    header or the token is missing — callers should treat this as anonymous.
+    Raises HTTPException(401/403) when a token IS present but invalid.
+    """
+    auth_header: str = request.headers.get("authorization", "")
+    if not auth_header.lower().startswith("bearer "):
+        return None
+    token = auth_header[7:].strip()
+    if not token:
+        return None
+    return await _resolve_any_caller(token)
 
