@@ -90,7 +90,7 @@ class Settings(BaseSettings):
 
     # Authentication / Token Settings
     PASETO_SECRET_KEY: str = os.getenv("PASETO_SECRET_KEY", "change-this-paseto-secret-key")
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 15))
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 480))
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", 7))
     RESET_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("RESET_TOKEN_EXPIRE_MINUTES", 30))
 
@@ -130,7 +130,7 @@ class Settings(BaseSettings):
     # Authentication v2
     AUTH_V2_ISSUER: str = os.getenv("AUTH_V2_ISSUER", "dynamic-api-auth-v2")
     AUTH_V2_AUDIENCE: str = os.getenv("AUTH_V2_AUDIENCE", "dynamic-api-clients")
-    AUTH_V2_ACCESS_TOKEN_MINUTES: int = int(os.getenv("AUTH_V2_ACCESS_TOKEN_MINUTES", 15))
+    AUTH_V2_ACCESS_TOKEN_MINUTES: int = int(os.getenv("AUTH_V2_ACCESS_TOKEN_MINUTES", 480))
     AUTH_V2_REFRESH_TOKEN_DAYS: int = int(os.getenv("AUTH_V2_REFRESH_TOKEN_DAYS", 7))
     AUTH_V2_TOKEN_VERSION: int = int(os.getenv("AUTH_V2_TOKEN_VERSION", 2))
     AUTH_V2_CURRENT_KID: str = os.getenv("AUTH_V2_CURRENT_KID", "v2-kid-1")
