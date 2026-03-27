@@ -256,6 +256,153 @@ async def invalidate_prism_cache_for_policy(policy_id: int, db: AsyncSession) ->
         logger.debug("PRISM cache: bulk-policy invalidate error policy_id=%s: %s", policy_id, exc)
 
 
+async def _get_table_columns(db: AsyncSession, table_name: str) -> set[str]:
+    """Return the current connection's column names for a table."""
+    result = await db.execute(
+        text(
+            """
+            SELECT COLUMN_NAME
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = :table_name
+            """
+        ),
+        {"table_name": table_name},
+    )
+    return {str(row[0]) for row in result.fetchall()}
+
+
+async def load_employee_sync_attributes(contact_id: int) -> Dict[str, str]:
+    """Resolve employee-derived PRISM attrs against schema variants.
+
+    Production schemas do not always expose text columns like `department` or
+    `designation` directly on `employee`. When only `department_id`/`position_id`
+    exist, fall back to the existing auth authorization resolver to derive
+    display names from master tables.
+    """
+    direct_attr_fields = (
+        "designation",
+        "cost_center",
+        "clearance_level",
+        "employment_type",
+    )
+
+    async with main_session_context() as main_db:
+        employee_columns = await _get_table_columns(main_db, "employee")
+        if not employee_columns or "contact_id" not in employee_columns:
+            return {}
+
+        select_columns: list[str] = []
+        for column_name in (
+            "id",
+            "contact_id",
+            "department",
+            "department_id",
+            "position_id",
+            *direct_attr_fields,
+        ):
+            if column_name in employee_columns:
+                select_columns.append(column_name)
+
+        if not select_columns:
+            return {}
+
+        where_parts = ["contact_id = :cid"]
+        if "status" in employee_columns:
+            where_parts.append("status = 1")
+        if "park" in employee_columns:
+            where_parts.append("(park IS NULL OR park = 0)")
+
+        order_clause = " ORDER BY id ASC" if "id" in employee_columns else ""
+        result = await main_db.execute(
+            text(
+                f"""
+                SELECT {", ".join(select_columns)}
+                FROM employee
+                WHERE {" AND ".join(where_parts)}
+                {order_clause}
+                LIMIT 1
+                """
+            ),
+            {"cid": contact_id},
+        )
+        row = result.fetchone()
+        if row is None:
+            return {}
+
+        employee = dict(row._mapping)
+        attrs: Dict[str, str] = {}
+
+        for field_name in direct_attr_fields:
+            field_value = employee.get(field_name)
+            if field_value is not None:
+                attrs[field_name] = str(field_value)
+
+        department_value = employee.get("department")
+        if department_value is not None:
+            attrs["department"] = str(department_value)
+
+        needs_org_resolution = (
+            "department" not in attrs or "designation" not in attrs
+        ) and employee.get("id") is not None
+
+        if needs_org_resolution:
+            from app.modules.auth.services.authorization import AuthorizationResolver
+
+            async with central_session_context() as central_db:
+                resolver = AuthorizationResolver(main_db, central_db)
+                org_context = await resolver.get_org_context(
+                    employee_id=int(employee["id"]),
+                    fail_open_name_lookup=True,
+                )
+
+            if "department" not in attrs and org_context.get("department"):
+                attrs["department"] = str(org_context["department"])
+
+            # Some deployments store only `position_id`; use that as the
+            # closest stable source for the designation-like attribute.
+            if "designation" not in attrs and org_context.get("position"):
+                attrs["designation"] = str(org_context["position"])
+
+        return attrs
+
+
+async def _upsert_employee_table_attrs(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    attrs: Dict[str, str],
+) -> None:
+    """Insert/update employee-derived user attrs in the central DB."""
+    for key, value in attrs.items():
+        existing = (
+            await db.execute(
+                text(
+                    "SELECT id FROM prism_user_attributes "
+                    "WHERE user_id = :uid AND `key` = :key"
+                ),
+                {"uid": user_id, "key": key},
+            )
+        ).fetchone()
+        if existing:
+            await db.execute(
+                text(
+                    "UPDATE prism_user_attributes "
+                    "SET value = :value, source = 'employee_table', updated_at = NOW() "
+                    "WHERE user_id = :uid AND `key` = :key"
+                ),
+                {"value": value, "uid": user_id, "key": key},
+            )
+        else:
+            await db.execute(
+                text(
+                    "INSERT INTO prism_user_attributes (user_id, `key`, value, source) "
+                    "VALUES (:uid, :key, :value, 'employee_table')"
+                ),
+                {"uid": user_id, "key": key, "value": value},
+            )
+
+
 async def sync_prism_employee_attrs(user_id: int, contact_id: int) -> None:
     """Background task: pull employee fields from main DB and upsert into
     prism_user_attributes (source='employee_table').
@@ -264,60 +411,17 @@ async def sync_prism_employee_attrs(user_id: int, contact_id: int) -> None:
     conditions such as user:department, user:designation, etc.
     Failures are silenced — this is best-effort and never blocks the caller.
     """
-    EMPLOYEE_FIELDS = (
-        "department",
-        "designation",
-        "cost_center",
-        "clearance_level",
-        "employment_type",
-    )
     try:
-        async with main_session_context() as main_db:
-            result = await main_db.execute(
-                text(
-                    "SELECT department, designation, cost_center, "
-                    "clearance_level, employment_type "
-                    "FROM employee WHERE contact_id = :cid LIMIT 1"
-                ),
-                {"cid": contact_id},
+        attrs = await load_employee_sync_attributes(contact_id)
+        if not attrs:
+            logger.debug(
+                "sync_prism_employee_attrs: no employee attrs resolved for contact_id=%s",
+                contact_id,
             )
-            row = result.fetchone()
-            if row is None:
-                logger.debug(
-                    "sync_prism_employee_attrs: no employee for contact_id=%s", contact_id
-                )
-                return
-            emp = dict(row._mapping)
+            return
 
         async with central_session_context() as db:
-            for field in EMPLOYEE_FIELDS:
-                val = emp.get(field)
-                if val is None:
-                    continue
-                existing = (await db.execute(
-                    text(
-                        "SELECT id FROM prism_user_attributes "
-                        "WHERE user_id = :uid AND `key` = :key"
-                    ),
-                    {"uid": user_id, "key": field},
-                )).fetchone()
-                if existing:
-                    await db.execute(
-                        text(
-                            "UPDATE prism_user_attributes "
-                            "SET value = :value, source = 'employee_table', updated_at = NOW() "
-                            "WHERE user_id = :uid AND `key` = :key"
-                        ),
-                        {"value": str(val), "uid": user_id, "key": field},
-                    )
-                else:
-                    await db.execute(
-                        text(
-                            "INSERT INTO prism_user_attributes (user_id, `key`, value, source) "
-                            "VALUES (:uid, :key, :value, 'employee_table')"
-                        ),
-                        {"uid": user_id, "key": field, "value": str(val)},
-                    )
+            await _upsert_employee_table_attrs(db, user_id=user_id, attrs=attrs)
             await db.commit()
 
         logger.debug(
