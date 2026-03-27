@@ -10,7 +10,7 @@ from core.settings import get_settings
 
 class TestAuthV2KeyRotation(unittest.TestCase):
     def test_old_key_verifies_during_window_and_retired_key_rejects(self):
-        from controllers.auth.services import token_service
+        from app.modules.auth.services import token_service
 
         try:
             token_service._load_pyseto()
@@ -114,7 +114,7 @@ class TestAuthV2KeyRotation(unittest.TestCase):
             settings.AUTH_V2_TOKEN_VERSION = original["AUTH_V2_TOKEN_VERSION"]
 
     def test_access_token_length_under_8192_chars(self):
-        from controllers.auth.services import token_service
+        from app.modules.auth.services import token_service
 
         try:
             token_service._load_pyseto()
@@ -176,3 +176,4 @@ class TestAuthV2KeyRotation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 
 from controllers.api.auth import router as auth_router
-from controllers.auth.router import router as auth_v2_router
+from app.modules.auth.router import router as auth_v2_router
 from controllers.users.router import router as users_router
 from controllers.api.example import router as example_router
 from controllers.api.geosearch import router as geosearch_router
@@ -36,3 +36,4 @@ api_router.include_router(orders_router)
 
 # 4) PRISM — Access Control (roles, policies, assignments, attributes, registry)
 api_router.include_router(prism_router)
+

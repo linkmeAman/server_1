@@ -112,25 +112,25 @@ class TestAuthFlowsOrgPermissions(unittest.TestCase):
         }
 
         with patch(
-            "controllers.auth.handlers.login_employee._resolve_main_identity",
+            "app.modules.auth.handlers.login_employee._resolve_main_identity",
             new=AsyncMock(return_value={"contact": {"id": 2}, "employee": {"id": 3}}),
         ), patch(
-            "controllers.auth.handlers.login_employee._resolve_central_identity",
+            "app.modules.auth.handlers.login_employee._resolve_central_identity",
             new=AsyncMock(return_value={"user": {"id": 1, "password": "x"}}),
         ), patch(
-            "controllers.auth.handlers.login_employee._load_lock_state",
+            "app.modules.auth.handlers.login_employee._load_lock_state",
             new=AsyncMock(return_value=None),
         ), patch(
-            "controllers.auth.handlers.login_employee._validate_password_and_maybe_migrate",
+            "app.modules.auth.handlers.login_employee._validate_password_and_maybe_migrate",
             new=AsyncMock(return_value=True),
         ), patch(
-            "controllers.auth.handlers.login_employee.AuthorizationResolver.resolve_employee_authorization",
+            "app.modules.auth.handlers.login_employee.AuthorizationResolver.resolve_employee_authorization",
             new=AsyncMock(return_value=authz),
         ), patch(
-            "controllers.auth.handlers.login_employee.issue_v2_token_pair",
+            "app.modules.auth.handlers.login_employee.issue_v2_token_pair",
             return_value={"access_token": "at", "refresh_token": "rt", "jti": "j"},
         ), patch(
-            "controllers.auth.handlers.login_employee.write_audit_event",
+            "app.modules.auth.handlers.login_employee.write_audit_event",
             new=AsyncMock(),
         ):
             client = TestClient(main.app)
@@ -160,7 +160,7 @@ class TestAuthFlowsOrgPermissions(unittest.TestCase):
             self.skipTest("TestClient request execution is not responsive in this runtime")
 
         with patch(
-            "controllers.auth.handlers.refresh.verify_v2_refresh_token",
+            "app.modules.auth.handlers.refresh.verify_v2_refresh_token",
             return_value={
                 "jti": "refresh-jti",
                 "user_id": 1,
@@ -170,13 +170,13 @@ class TestAuthFlowsOrgPermissions(unittest.TestCase):
                 "permissions": ["old.permission:view"],
             },
         ), patch(
-            "controllers.auth.handlers.refresh.refresh_token_hash",
+            "app.modules.auth.handlers.refresh.refresh_token_hash",
             side_effect=lambda token: "hashed-token" if token == "old-r" else "new-hash",
         ), patch(
-            "controllers.auth.handlers.refresh.compute_device_fingerprint",
+            "app.modules.auth.handlers.refresh.compute_device_fingerprint",
             return_value="fp-1",
         ), patch(
-            "controllers.auth.handlers.refresh.AuthorizationResolver.resolve_employee_authorization",
+            "app.modules.auth.handlers.refresh.AuthorizationResolver.resolve_employee_authorization",
             new=AsyncMock(
                 return_value={
                     "position_id": 11,
@@ -191,10 +191,10 @@ class TestAuthFlowsOrgPermissions(unittest.TestCase):
                 }
             ),
         ), patch(
-            "controllers.auth.handlers.refresh.issue_v2_token_pair",
+            "app.modules.auth.handlers.refresh.issue_v2_token_pair",
             return_value={"access_token": "new-a", "refresh_token": "new-r", "jti": "new-jti"},
         ), patch(
-            "controllers.auth.handlers.refresh.write_audit_event",
+            "app.modules.auth.handlers.refresh.write_audit_event",
             new=AsyncMock(),
         ):
             client = TestClient(main.app)
@@ -215,4 +215,5 @@ class TestAuthFlowsOrgPermissions(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 

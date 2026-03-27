@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from controllers.auth.services.authorization import AuthorizationResolver
+from app.modules.auth.services.authorization import AuthorizationResolver
 
 
 class _FakeRow:
@@ -180,3 +180,4 @@ class TestAuthorizationResolver(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

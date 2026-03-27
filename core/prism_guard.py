@@ -58,7 +58,7 @@ def _verify_token(token: str) -> dict:
     """
     # Auth v2 (keyring-based — preferred path for all new sessions)
     try:
-        from controllers.auth.services.token_service import verify_v2_access_token
+        from app.modules.auth.services.token_service import verify_v2_access_token
         claims = verify_v2_access_token(token)
         if claims:
             return claims
@@ -253,4 +253,5 @@ async def resolve_caller_from_request(request: Request) -> Optional["CallerConte
     if not token:
         return None
     return await _resolve_any_caller(token)
+
 

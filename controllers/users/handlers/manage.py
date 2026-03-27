@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from controllers.auth.dependencies import require_super_auth
-from controllers.auth.services.common import (
+from app.modules.auth.dependencies import require_super_auth
+from app.modules.auth.services.common import (
     error_json_response,
     request_id,
     success_json_response,
@@ -425,4 +425,5 @@ async def revoke_session(
     except Exception:
         await central_db.rollback()
         return error_json_response(USER_SERVICE_UNAVAILABLE, "Unable to revoke session", 503, rid)
+
 
