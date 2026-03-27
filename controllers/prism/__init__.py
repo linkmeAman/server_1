@@ -1,11 +1,7 @@
-"""PRISM — Policy-driven Role & Identity Security Manager
+"""Compatibility wrapper for legacy PRISM package path.
 
-Access control module.  All routes require supreme-user authentication.
-
-Sub-modules:
-  roles        → role registry CRUD
-  policies     → policy document + statement CRUD
-  assignments  → attach/detach roles to users, policies to roles/users, boundaries
-  attributes   → user and resource ABAC attribute management
-  registry     → resource and action catalog CRUD (drives UI dropdowns)
+Canonical package moved to app.modules.prism.
 """
+
+from app.modules.prism import *  # noqa: F401,F403
+
