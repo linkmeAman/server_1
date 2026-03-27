@@ -36,7 +36,7 @@ class TestAuthV2Me(unittest.TestCase):
         }
 
         with patch(
-            "controllers.auth.dependencies.verify_v2_access_token",
+            "app.modules.auth.dependencies.verify_v2_access_token",
             return_value=claims,
         ), patch(
             "core.database.get_central_db_session",
@@ -79,7 +79,7 @@ class TestAuthV2Me(unittest.TestCase):
         }
 
         with patch(
-            "controllers.auth.dependencies.verify_v2_access_token",
+            "app.modules.auth.dependencies.verify_v2_access_token",
             return_value=claims,
         ), patch(
             "core.database.get_central_async_engine",
@@ -121,7 +121,7 @@ class TestAuthV2Me(unittest.TestCase):
         }
 
         with patch(
-            "controllers.auth.dependencies.verify_v2_access_token",
+            "app.modules.auth.dependencies.verify_v2_access_token",
             return_value=claims,
         ):
             client = TestClient(main.app)
@@ -143,5 +143,6 @@ class TestAuthV2Me(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

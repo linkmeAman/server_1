@@ -12,6 +12,13 @@ backend/python/server_1/
       v1/
         router.py
     modules/
+      auth/
+        handlers/
+        schemas/
+        services/
+        constants.py
+        dependencies.py
+        router.py
       prism/
         assignments.py
         attributes.py
@@ -35,7 +42,8 @@ backend/python/server_1/
 4. Switch runtime imports (`main.py`) to canonical paths.
 5. Remove wrappers only after all internal imports are migrated and tested.
 
-## Completed In This Change (Phase 1)
+## Completed
+### Phase 1
 - Created canonical package roots:
   - `app/`
   - `app/api/v1/`
@@ -49,8 +57,17 @@ backend/python/server_1/
   - `controllers/prism/*.py` -> imports from `app.modules.prism.*`
   - `api/v1/router.py` -> imports from `app.api.v1.router`
 
+### Phase 2
+- Migrated auth-v2 module to canonical path:
+  - `app/modules/auth/*` (handlers, schemas, services, router, constants, dependencies)
+- Replaced auth imports across Python codebase:
+  - `controllers.auth.*` -> `app.modules.auth.*`
+- Added recursive compatibility wrappers:
+  - `controllers/auth/**/*.py` -> imports from `app.modules.auth.*`
+- Updated API v1 router to use canonical auth router:
+  - `app/api/v1/router.py` now imports `app.modules.auth.router`
+
 ## Next Phases
-- Phase 2: move `controllers/auth` to `app/modules/auth`.
 - Phase 3: move `controllers/users` to `app/modules/users`.
 - Phase 4: move `controllers/employee_events_v1` and `controllers/google_calendar_v1` to `app/modules/*`.
 - Phase 5: move reusable runtime utilities from `core/` into `app/core/` (with compatibility wrappers).

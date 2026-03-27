@@ -22,7 +22,7 @@ from core.exceptions import DynamicAPIException
 from core.database import init_database
 from core.prism_cache import init_redis, close_redis
 from app.api.v1.router import api_router
-from controllers.auth.services.common import AuthError
+from app.modules.auth.services.common import AuthError
 from routes.tables import router as explorer_tables_router
 from routes.query import router as explorer_query_router
 from routes.export import router as explorer_export_router
@@ -266,3 +266,4 @@ if __name__ == "__main__":
         log_level=settings.LOG_LEVEL.lower(),
         access_log=True
     )
+

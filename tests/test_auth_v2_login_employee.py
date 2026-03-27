@@ -10,14 +10,14 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 import main
-from controllers.auth.constants import (
+from app.modules.auth.constants import (
     AUTH_EMPLOYEE_INACTIVE,
     AUTH_EMPLOYEE_USER_MAPPING_MISSING,
     AUTH_IDENTITY_MISMATCH,
     AUTH_LOGIN_COOLDOWN,
     AUTH_PASSWORD_MIGRATION_DEFERRED,
 )
-from controllers.auth.services.common import AuthError
+from app.modules.auth.services.common import AuthError
 from core.database import get_central_db_session, get_main_db_session
 from tests.auth_test_utils import build_headers, ensure_auth_v2_routes, testclient_requests_work
 
@@ -88,19 +88,19 @@ class TestAuthV2LoginEmployee(unittest.TestCase):
         self._override_sessions(_FakeMainSession(), _FakeCentralSession())
 
         with patch(
-            "controllers.auth.handlers.login_employee._resolve_main_identity",
+            "app.modules.auth.handlers.login_employee._resolve_main_identity",
             new=AsyncMock(return_value={"contact": {"id": 99}, "employee": {"id": 77}}),
         ), patch(
-            "controllers.auth.handlers.login_employee._resolve_central_identity",
+            "app.modules.auth.handlers.login_employee._resolve_central_identity",
             new=AsyncMock(return_value={"user": {"id": 12, "password": "x"}}),
         ), patch(
-            "controllers.auth.handlers.login_employee._load_lock_state",
+            "app.modules.auth.handlers.login_employee._load_lock_state",
             new=AsyncMock(return_value=None),
         ), patch(
-            "controllers.auth.handlers.login_employee._validate_password_and_maybe_migrate",
+            "app.modules.auth.handlers.login_employee._validate_password_and_maybe_migrate",
             new=AsyncMock(return_value=True),
         ), patch(
-            "controllers.auth.handlers.login_employee.AuthorizationResolver.resolve_employee_authorization",
+            "app.modules.auth.handlers.login_employee.AuthorizationResolver.resolve_employee_authorization",
             new=AsyncMock(
                 return_value={
                     "position_id": 11,
@@ -115,10 +115,10 @@ class TestAuthV2LoginEmployee(unittest.TestCase):
                 }
             ),
         ), patch(
-            "controllers.auth.handlers.login_employee.issue_v2_token_pair",
+            "app.modules.auth.handlers.login_employee.issue_v2_token_pair",
             return_value={"access_token": "a", "refresh_token": "r", "jti": "j"},
         ), patch(
-            "controllers.auth.handlers.login_employee.write_audit_event",
+            "app.modules.auth.handlers.login_employee.write_audit_event",
             new=AsyncMock(),
         ):
             client = TestClient(main.app)
@@ -147,10 +147,10 @@ class TestAuthV2LoginEmployee(unittest.TestCase):
         async def _run():
             fake_central = _FakeCentralSession(identity_row=None, fail_on_insert=True)
             with patch(
-                "controllers.auth.handlers.login_employee.write_audit_event",
+                "app.modules.auth.handlers.login_employee.write_audit_event",
                 new=AsyncMock(),
             ) as audit_mock:
-                from controllers.auth.handlers.login_employee import _validate_password_and_maybe_migrate
+                from app.modules.auth.handlers.login_employee import _validate_password_and_maybe_migrate
 
                 ok = await _validate_password_and_maybe_migrate(
                     fake_central,
@@ -176,16 +176,16 @@ class TestAuthV2LoginEmployee(unittest.TestCase):
         self._override_sessions(_FakeMainSession(), _FakeCentralSession())
 
         with patch(
-            "controllers.auth.handlers.login_employee._resolve_main_identity",
+            "app.modules.auth.handlers.login_employee._resolve_main_identity",
             new=AsyncMock(return_value={"contact": {"id": 99}, "employee": {"id": 77}}),
         ), patch(
-            "controllers.auth.handlers.login_employee._resolve_central_identity",
+            "app.modules.auth.handlers.login_employee._resolve_central_identity",
             new=AsyncMock(return_value={"user": {"id": 12, "password": "x"}}),
         ), patch(
-            "controllers.auth.handlers.login_employee._load_lock_state",
+            "app.modules.auth.handlers.login_employee._load_lock_state",
             new=AsyncMock(return_value={"locked_until": datetime.utcnow() + timedelta(minutes=5)}),
         ), patch(
-            "controllers.auth.handlers.login_employee.write_audit_event",
+            "app.modules.auth.handlers.login_employee.write_audit_event",
             new=AsyncMock(),
         ):
             client = TestClient(main.app)
@@ -221,16 +221,16 @@ class TestAuthV2LoginEmployee(unittest.TestCase):
         for code, _label in scenarios:
             with self.subTest(code=code):
                 with patch(
-                    "controllers.auth.handlers.login_employee._resolve_main_identity",
+                    "app.modules.auth.handlers.login_employee._resolve_main_identity",
                     new=AsyncMock(return_value={"contact": {"id": 99}, "employee": {"id": 77}}),
                 ), patch(
-                    "controllers.auth.handlers.login_employee._resolve_central_identity",
+                    "app.modules.auth.handlers.login_employee._resolve_central_identity",
                     new=AsyncMock(side_effect=AuthError(code, "mismatch", 401)),
                 ), patch(
-                    "controllers.auth.handlers.login_employee._record_failed_attempt",
+                    "app.modules.auth.handlers.login_employee._record_failed_attempt",
                     new=AsyncMock(return_value={"fail_count": 1, "locked_until": None}),
                 ), patch(
-                    "controllers.auth.handlers.login_employee.write_audit_event",
+                    "app.modules.auth.handlers.login_employee.write_audit_event",
                     new=AsyncMock(),
                 ):
                     client = TestClient(main.app)
@@ -258,13 +258,13 @@ class TestAuthV2LoginEmployee(unittest.TestCase):
         self._override_sessions(_FakeMainSession(), _FakeCentralSession())
 
         with patch(
-            "controllers.auth.handlers.login_employee._resolve_main_identity",
+            "app.modules.auth.handlers.login_employee._resolve_main_identity",
             new=AsyncMock(side_effect=AuthError(AUTH_EMPLOYEE_INACTIVE, "inactive", 403)),
         ), patch(
-            "controllers.auth.handlers.login_employee._record_failed_attempt",
+            "app.modules.auth.handlers.login_employee._record_failed_attempt",
             new=AsyncMock(return_value={"fail_count": 1, "locked_until": None}),
         ), patch(
-            "controllers.auth.handlers.login_employee.write_audit_event",
+            "app.modules.auth.handlers.login_employee.write_audit_event",
             new=AsyncMock(),
         ):
             client = TestClient(main.app)
@@ -288,4 +288,5 @@ class TestAuthV2LoginEmployee(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 
