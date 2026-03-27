@@ -25,8 +25,8 @@ from app.modules.users.constants import (
     USER_SESSION_NOT_FOUND,
 )
 from app.modules.users.schemas.models import CreateUserRequest
-from core.database import get_central_db_session
-from core.security import hash_password
+from app.core.database import get_central_db_session
+from app.core.security import hash_password
 
 router = APIRouter(prefix="/auth/users", tags=["users"])
 

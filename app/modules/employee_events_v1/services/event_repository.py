@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import inspect, text
 
-from core.database import engines
+from app.core.database import engines
 
 from ..dependencies import EmployeeEventsError
 

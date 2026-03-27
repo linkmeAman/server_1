@@ -50,7 +50,22 @@ backend/python/server_1/
         router.py
       sqlgw_admin/
         router.py
-    core/                  # planned migration target for current core/
+    core/
+      database.py
+      exceptions.py
+      loader.py
+      middleware.py
+      models.py
+      prism_cache.py
+      prism_guard.py
+      prism_pdp.py
+      response.py
+      router.py
+      security.py
+      settings.py
+      sql_gateway.py
+      sqlgw_policy_store.py
+      sqlgw_schema.py
     shared/
       response_normalization.py
   controllers/             # temporary compatibility layer (to be removed)
@@ -126,8 +141,20 @@ backend/python/server_1/
 - Updated cross-module runtime import:
   - `routes/ai_query.py` now imports `app.modules.llm.service`
 
+### Phase 6
+- Migrated reusable runtime utilities to canonical path:
+  - `app/core/*`
+- Replaced runtime imports across application code:
+  - `main.py`, `app/**/*`, `scripts/**/*`, `alembic/env.py`
+  - `core.*` -> `app.core.*`
+- Added compatibility wrappers:
+  - `core/*.py` -> aliases to `app.core.*`
+- Removed eager router exports from module package roots:
+  - `app/modules/*/__init__.py` no longer imports `router`
+- Updated router imports to explicit module paths where needed:
+  - `app/api/v1/router.py` now imports `employee_events_v1.router` and `google_calendar_v1.router` directly
+
 ## Next Phases
-- Phase 6: move reusable runtime utilities from `core/` into `app/core/` (with compatibility wrappers).
 - Phase 7: retire legacy wrappers and remove deprecated import paths.
 
 ## Rules During Migration

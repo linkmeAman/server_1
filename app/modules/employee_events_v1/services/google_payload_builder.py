@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
-from core.settings import get_settings
+from app.core.settings import get_settings
 
 
 def _parse_local_datetime(date_value: Any, time_value: Any, timezone_name: str) -> datetime:

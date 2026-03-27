@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import Response
 
-from core.response import APIResponse, success_response
+from app.core.response import APIResponse, success_response
 
 
 def normalize_result(result: Any) -> Any:

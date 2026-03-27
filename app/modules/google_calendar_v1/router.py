@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
-from core.response import error_response, success_response
+from app.core.response import error_response, success_response
 
 from .dependencies import GoogleCalendarError, require_app_access_claims
 from .schemas.models import CreateCalendarEventRequest, DeleteMode, UpdateCalendarEventRequest

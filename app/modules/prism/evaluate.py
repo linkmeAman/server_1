@@ -16,9 +16,9 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from core.database import central_session_context
-from core.prism_guard import CallerContext, require_prism_caller, require_any_caller
-from core.prism_pdp import PDPRequest, PDPResult, evaluate
+from app.core.database import central_session_context
+from app.core.prism_guard import CallerContext, require_prism_caller, require_any_caller
+from app.core.prism_pdp import PDPRequest, PDPResult, evaluate
 
 router = APIRouter(prefix="/prism/evaluate", tags=["PRISM · Evaluate"])
 
@@ -153,7 +153,7 @@ async def get_my_permissions(
             has_boundary=False,
         )
 
-    from core.prism_cache import get_prism_cache, build_prism_cache
+    from app.core.prism_cache import get_prism_cache, build_prism_cache
 
     cache = await get_prism_cache(caller.user_id)
     if cache is None:

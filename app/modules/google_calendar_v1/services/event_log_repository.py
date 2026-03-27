@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 
 from sqlalchemy import text
 
-from core.database import get_db_session
+from app.core.database import get_db_session
 
 
 class LogPersistenceError(RuntimeError):

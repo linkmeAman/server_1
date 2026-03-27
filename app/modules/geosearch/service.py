@@ -6,7 +6,7 @@ from decimal import Decimal, getcontext
 import math
 import logging
 from typing import Optional, List, Dict, Any, Tuple
-from core.database import get_db_session, Venue, City
+from app.core.database import get_db_session, Venue, City
 from sqlalchemy import func, and_
 
 # Set high precision for decimal calculations

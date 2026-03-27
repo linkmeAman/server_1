@@ -8,7 +8,7 @@ from datetime import date as date_value, datetime, time as time_value, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from core.settings import get_settings
+from app.core.settings import get_settings
 
 from ..dependencies import EmployeeEventsError
 from .event_repository import EmployeeEventsRepository

@@ -11,10 +11,10 @@ from uuid import uuid4
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from core.response import error_response, success_response
-from core.security import validate_token
-from core.settings import get_settings
-from core.sql_gateway import SQLGatewayError, execute_gateway_request, parse_gateway_payload
+from app.core.response import error_response, success_response
+from app.core.security import validate_token
+from app.core.settings import get_settings
+from app.core.sql_gateway import SQLGatewayError, execute_gateway_request, parse_gateway_payload
 
 logger = logging.getLogger(__name__)
 

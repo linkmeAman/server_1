@@ -8,9 +8,9 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from core.database import get_db_session
-from core.models import AuthIdentity, User
-from core.security import (
+from app.core.database import get_db_session
+from app.core.models import AuthIdentity, User
+from app.core.security import (
     SecurityDependencyError,
     create_access_token,
     create_refresh_token,
@@ -19,7 +19,7 @@ from core.security import (
     validate_token,
     verify_password,
 )
-from core.settings import get_settings
+from app.core.settings import get_settings
 
 logger = logging.getLogger(__name__)
 

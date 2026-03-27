@@ -1,5 +1,1 @@
-"""Employee Events V1 isolated module."""
-
-from .router import router
-
-__all__ = ["router"]
+"""Employee Events V1 module."""

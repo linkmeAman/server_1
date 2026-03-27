@@ -9,7 +9,7 @@ from fastapi import APIRouter, Path, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from core.response import error_response, success_response
+from app.core.response import error_response, success_response
 
 from .dependencies import EmployeeEventsError, require_app_access_claims
 from .schemas.models import (

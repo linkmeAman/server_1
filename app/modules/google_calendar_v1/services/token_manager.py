@@ -8,8 +8,8 @@ from typing import Any, Dict, Optional
 import httpx
 from sqlalchemy import text
 
-from core.database import engines
-from core.settings import get_settings
+from app.core.database import engines
+from app.core.settings import get_settings
 
 from ..dependencies import GoogleCalendarError
 

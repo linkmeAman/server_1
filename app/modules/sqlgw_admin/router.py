@@ -10,10 +10,10 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from core.response import error_response, success_response
-from core.security import validate_token
-from core.settings import get_settings
-from core.sqlgw_policy_store import (
+from app.core.response import error_response, success_response
+from app.core.security import validate_token
+from app.core.settings import get_settings
+from app.core.sqlgw_policy_store import (
     SQLGWPolicyError,
     activate_policy,
     approve_policy,
@@ -22,7 +22,7 @@ from core.sqlgw_policy_store import (
     get_policy_version,
     list_policy_versions,
 )
-from core.sqlgw_schema import SQLGWSchemaError, list_columns, list_supported_databases, list_tables
+from app.core.sqlgw_schema import SQLGWSchemaError, list_columns, list_supported_databases, list_tables
 
 logger = logging.getLogger(__name__)
 

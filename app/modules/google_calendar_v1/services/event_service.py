@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional, Tuple
 
-from core.settings import get_settings
+from app.core.settings import get_settings
 
 from ..dependencies import GoogleCalendarError
 from .datetime_utils import normalize_google_event_for_log, select_next_upcoming_instance_id

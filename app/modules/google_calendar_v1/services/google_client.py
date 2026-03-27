@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 import httpx
 
-from core.settings import get_settings
+from app.core.settings import get_settings
 
 from ..dependencies import GoogleCalendarError
 

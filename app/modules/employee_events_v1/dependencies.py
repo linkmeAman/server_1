@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from app.modules.auth.services.token_service import verify_access_token
-from core.security import validate_token
+from app.core.security import validate_token
 
 
 class EmployeeEventsError(Exception):
