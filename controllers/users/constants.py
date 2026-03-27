@@ -1,11 +1,6 @@
-"""Constants for the user management module."""
+"""Compatibility wrapper.
 
-from __future__ import annotations
+Canonical module moved to app.modules.users.constants.
+"""
 
-# ── Error codes ──────────────────────────────────────────────
-USER_NOT_FOUND = "USER_NOT_FOUND"
-USER_ALREADY_EXISTS = "USER_ALREADY_EXISTS"
-USER_INVALID_USERNAME = "USER_INVALID_USERNAME"
-USER_INVALID_PASSWORD = "USER_INVALID_PASSWORD"
-USER_SESSION_NOT_FOUND = "USER_SESSION_NOT_FOUND"
-USER_SERVICE_UNAVAILABLE = "USER_SERVICE_UNAVAILABLE"
+from app.modules.users.constants import *  # noqa: F401,F403

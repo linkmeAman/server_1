@@ -19,6 +19,11 @@ backend/python/server_1/
         constants.py
         dependencies.py
         router.py
+      users/
+        handlers/
+        schemas/
+        constants.py
+        router.py
       prism/
         assignments.py
         attributes.py
@@ -67,8 +72,15 @@ backend/python/server_1/
 - Updated API v1 router to use canonical auth router:
   - `app/api/v1/router.py` now imports `app.modules.auth.router`
 
+### Phase 3
+- Migrated users module to canonical path:
+  - `app/modules/users/*` (handlers, schemas, router, constants)
+- Replaced runtime router import:
+  - `app/api/v1/router.py` now imports `app.modules.users.router`
+- Added compatibility wrappers:
+  - `controllers/users/**/*.py` -> imports from `app.modules.users.*`
+
 ## Next Phases
-- Phase 3: move `controllers/users` to `app/modules/users`.
 - Phase 4: move `controllers/employee_events_v1` and `controllers/google_calendar_v1` to `app/modules/*`.
 - Phase 5: move reusable runtime utilities from `core/` into `app/core/` (with compatibility wrappers).
 - Phase 6: retire legacy wrappers and remove deprecated import paths.
