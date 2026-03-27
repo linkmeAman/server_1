@@ -3,4 +3,7 @@
 Canonical module moved to app.modules.users.schemas.models.
 """
 
-from app.modules.users.schemas.models import *  # noqa: F401,F403
+from importlib import import_module
+import sys
+
+sys.modules[__name__] = import_module("app.modules.users.schemas.models")

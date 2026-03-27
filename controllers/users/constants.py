@@ -3,4 +3,7 @@
 Canonical module moved to app.modules.users.constants.
 """
 
-from app.modules.users.constants import *  # noqa: F401,F403
+from importlib import import_module
+import sys
+
+sys.modules[__name__] = import_module("app.modules.users.constants")

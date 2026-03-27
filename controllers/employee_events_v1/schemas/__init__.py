@@ -1,25 +1,9 @@
-"""Schema exports for Employee Events V1."""
+"""Compatibility wrapper.
 
-from .models import (
-    AllowanceItem,
-    ApproveEmployeeEventRequest,
-    CheckConflictRequest,
-    CreateEmployeeEventRequest,
-    DemoEventsBatchQueryRequest,
-    EmployeeLeaveCalendarBatchQueryRequest,
-    EmployeeWorkshiftCalendarBatchQueryRequest,
-    ParkEmployeeEventRequest,
-    UpdateEmployeeEventRequest,
-)
+Canonical module moved to app.modules.employee_events_v1.schemas.
+"""
 
-__all__ = [
-    "AllowanceItem",
-    "CheckConflictRequest",
-    "CreateEmployeeEventRequest",
-    "DemoEventsBatchQueryRequest",
-    "EmployeeLeaveCalendarBatchQueryRequest",
-    "EmployeeWorkshiftCalendarBatchQueryRequest",
-    "UpdateEmployeeEventRequest",
-    "ParkEmployeeEventRequest",
-    "ApproveEmployeeEventRequest",
-]
+from importlib import import_module
+import sys
+
+sys.modules[__name__] = import_module("app.modules.employee_events_v1.schemas")

@@ -1,9 +1,9 @@
-"""Schema exports for Google Calendar V1."""
+"""Compatibility wrapper.
 
-from .models import CreateCalendarEventRequest, DeleteMode, UpdateCalendarEventRequest
+Canonical module moved to app.modules.google_calendar_v1.schemas.
+"""
 
-__all__ = [
-    "CreateCalendarEventRequest",
-    "DeleteMode",
-    "UpdateCalendarEventRequest",
-]
+from importlib import import_module
+import sys
+
+sys.modules[__name__] = import_module("app.modules.google_calendar_v1.schemas")
