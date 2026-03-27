@@ -12,7 +12,7 @@ class QueryValidationError(ValueError):
     """Raised when an incoming SQL query violates explorer safety rules."""
 
 
-MAX_ROWS = int(os.getenv('MAX_QUERY_ROWS', '50000'))
+MAX_ROWS = int(os.getenv('MAX_QUERY_ROWS', '1000'))
 BLOCKED_KEYWORDS = (
     "insert",
     "update",
