@@ -58,7 +58,7 @@ class TestAuthV2InternalPasswordChanged(unittest.TestCase):
             settings.API_KEYS = [api_key]
 
         with patch(
-            "controllers.auth.handlers.internal_password_changed.revoke_all_sessions_for_user",
+            "app.modules.auth.handlers.internal_password_changed.revoke_all_sessions_for_user",
             new=AsyncMock(return_value=6),
         ) as revoke_mock:
             client = TestClient(main.app)
@@ -78,4 +78,5 @@ class TestAuthV2InternalPasswordChanged(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 

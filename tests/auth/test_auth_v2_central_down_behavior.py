@@ -106,10 +106,10 @@ class TestAuthV2CentralDownBehavior(unittest.TestCase):
         }
 
         with patch(
-            "controllers.auth.handlers.check_contact.apply_timing_floor",
+            "app.modules.auth.handlers.check_contact.apply_timing_floor",
             new=AsyncMock(),
         ), patch(
-            "controllers.auth.handlers.refresh.verify_v2_refresh_token",
+            "app.modules.auth.handlers.refresh.verify_v2_refresh_token",
             return_value={
                 "jti": "rj",
                 "user_id": 1,
@@ -118,7 +118,7 @@ class TestAuthV2CentralDownBehavior(unittest.TestCase):
                 "mobile": "9990001111",
             },
         ), patch(
-            "controllers.auth.dependencies.verify_v2_access_token",
+            "app.modules.auth.dependencies.verify_v2_access_token",
             return_value=claims,
         ):
             client = TestClient(main.app)
@@ -163,4 +163,5 @@ class TestAuthV2CentralDownBehavior(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 

@@ -59,13 +59,13 @@ class TestAuthV2Logout(unittest.TestCase):
         main.app.dependency_overrides[get_central_db_session] = _central_dep
 
         with patch(
-            "controllers.auth.handlers.logout.verify_v2_refresh_token",
+            "app.modules.auth.handlers.logout.verify_v2_refresh_token",
             return_value={"user_id": 1, "contact_id": 2, "employee_id": 3},
         ), patch(
-            "controllers.auth.handlers.logout.refresh_token_hash",
+            "app.modules.auth.handlers.logout.refresh_token_hash",
             return_value="hash",
         ), patch(
-            "controllers.auth.handlers.logout.revoke_session_family",
+            "app.modules.auth.handlers.logout.revoke_session_family",
             new=AsyncMock(return_value=4),
         ) as revoke_mock:
             client = TestClient(main.app)
@@ -85,4 +85,5 @@ class TestAuthV2Logout(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 

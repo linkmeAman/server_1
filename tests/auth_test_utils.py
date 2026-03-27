@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import main
-from controllers.auth.router import router as auth_v2_router
+from app.modules.auth.router import router as auth_v2_router
 from core.settings import get_settings
 
 
@@ -55,3 +55,4 @@ def build_headers(extra: dict | None = None) -> dict:
     if extra:
         headers.update(extra)
     return headers
+

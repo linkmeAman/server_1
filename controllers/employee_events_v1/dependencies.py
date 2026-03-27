@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from controllers.auth.services.token_service import verify_access_token
+from app.modules.auth.services.token_service import verify_access_token
 from core.security import validate_token
 
 
@@ -69,3 +69,4 @@ def require_app_access_claims(authorization_header: Optional[str]) -> Dict[str, 
                 "auth_v2_reason": str(exc),
             },
         ) from exc
+
