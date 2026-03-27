@@ -23,7 +23,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from core.database import central_session_context, main_session_context
+from core.database import central_session_context
+from core.prism_cache import load_employee_sync_attributes
 
 router = APIRouter(prefix="/prism/attributes", tags=["PRISM — ABAC Attributes"])
 
@@ -151,32 +152,13 @@ async def sync_user_attributes_from_employee(user_id: int, contact_id: int):
     manual re-sync by an admin.
     """
     # TODO: Guard — require supreme user session or internal service call only
-    EMPLOYEE_FIELDS = {
-        "department": "department",
-        "designation": "designation",
-        "cost_center": "cost_center",
-        "clearance_level": "clearance_level",
-        "employment_type": "employment_type",
-    }
-
-    async with main_session_context() as main_db:
-        emp = _row(await main_db.execute(
-            text(
-                "SELECT department, designation, cost_center, clearance_level, employment_type "
-                "FROM employee WHERE contact_id = :contact_id LIMIT 1"
-            ),
-            {"contact_id": contact_id},
-        ))
-
-    if not emp:
+    attrs = await load_employee_sync_attributes(contact_id)
+    if not attrs:
         raise HTTPException(status_code=404, detail=f"No employee record for contact_id={contact_id}")
 
     synced: list[str] = []
     async with central_session_context() as db:
-        for field, attr_key in EMPLOYEE_FIELDS.items():
-            val = emp.get(field)
-            if val is None:
-                continue
+        for attr_key, value in attrs.items():
             existing = _row(await db.execute(
                 text("SELECT id FROM prism_user_attributes WHERE user_id = :uid AND `key` = :key"),
                 {"uid": user_id, "key": attr_key},
@@ -187,7 +169,7 @@ async def sync_user_attributes_from_employee(user_id: int, contact_id: int):
                         "UPDATE prism_user_attributes SET value = :value, source = 'employee_table', updated_at = NOW() "
                         "WHERE user_id = :uid AND `key` = :key"
                     ),
-                    {"value": str(val), "uid": user_id, "key": attr_key},
+                    {"value": value, "uid": user_id, "key": attr_key},
                 )
             else:
                 await db.execute(
@@ -195,7 +177,7 @@ async def sync_user_attributes_from_employee(user_id: int, contact_id: int):
                         "INSERT INTO prism_user_attributes (user_id, `key`, value, source) "
                         "VALUES (:uid, :key, :value, 'employee_table')"
                     ),
-                    {"uid": user_id, "key": attr_key, "value": str(val)},
+                    {"uid": user_id, "key": attr_key, "value": value},
                 )
             synced.append(attr_key)
         await db.commit()
