@@ -169,6 +169,16 @@ backend/python/server_1/
 - Legacy wrapper folders still remain for backward compatibility, but they are no
   longer on the main runtime or test path.
 
+## Phase 8 Progress
+- Retired the `api/` compatibility package from the repo.
+- Retired the `core/` compatibility package from the repo.
+- Canonical runtime now depends on:
+  - `app/api/*`
+  - `app/core/*`
+  - `app/modules/*`
+- Remaining legacy surface:
+  - `controllers/` only, pending final retirement.
+
 ## Rules During Migration
 - New feature work should import from `app.*` only.
 - Legacy paths remain supported temporarily via wrappers.
