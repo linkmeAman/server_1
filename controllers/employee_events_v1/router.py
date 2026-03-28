@@ -14,6 +14,7 @@ from core.response import error_response, success_response
 from .dependencies import EmployeeEventsError, require_app_access_claims
 from .schemas.models import (
     ApproveEmployeeEventRequest,
+    BatchKidsPresentQueryRequest,
     CheckConflictRequest,
     CreateEmployeeEventRequest,
     DemoEventsBatchQueryRequest,
@@ -304,6 +305,60 @@ async def post_active_batches_by_venue_query(request: Request):
         return success_response(
             data=data,
             message="Active batches fetched successfully",
+        ).model_dump(mode="json")
+    except EmployeeEventsError as exc:
+        return _error_response(exc, request)
+
+
+@router.post("/batches/kids-present/query")
+async def post_batch_kids_present_query(request: Request):
+    try:
+        require_app_access_claims(request.headers.get("Authorization"))
+        try:
+            body = await request.json()
+        except Exception as exc:
+            raise EmployeeEventsError(
+                code="EMP_EVENT_INVALID_BATCH_KIDS_QUERY",
+                message="Request body must be valid JSON",
+                status_code=400,
+                data={"reason": "invalid_json"},
+            ) from exc
+
+        if not isinstance(body, dict):
+            raise EmployeeEventsError(
+                code="EMP_EVENT_INVALID_BATCH_KIDS_QUERY",
+                message="Request body must be a JSON object",
+                status_code=400,
+                data={"reason": "invalid_body_type"},
+            )
+
+        try:
+            payload = BatchKidsPresentQueryRequest.model_validate(body)
+        except ValidationError as exc:
+            raise EmployeeEventsError(
+                code="EMP_EVENT_INVALID_BATCH_KIDS_QUERY",
+                message="Invalid batch kids present query",
+                status_code=400,
+                data={"errors": exc.errors()},
+            ) from exc
+
+        try:
+            data = employee_events_service.get_batch_kids_present(
+                batch_id=payload.batch_id,
+            )
+        except EmployeeEventsError as exc:
+            if exc.status_code == 400 and exc.code != "EMP_EVENT_INVALID_BATCH_KIDS_QUERY":
+                raise EmployeeEventsError(
+                    code="EMP_EVENT_INVALID_BATCH_KIDS_QUERY",
+                    message=exc.message,
+                    status_code=400,
+                    data=exc.data,
+                ) from exc
+            raise
+
+        return success_response(
+            data=data,
+            message="Batch kids present fetched successfully",
         ).model_dump(mode="json")
     except EmployeeEventsError as exc:
         return _error_response(exc, request)

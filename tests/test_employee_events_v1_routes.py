@@ -139,6 +139,15 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
         self.assertEqual(401, response.status_code)
         self.assertEqual("EMP_EVENT_UNAUTHORIZED", response.json()["error"])
 
+    def test_batch_kids_query_missing_app_token_returns_401(self):
+        response = self.client.post(
+            "/api/employee-events/v1/batches/kids-present/query",
+            headers={**_middleware_headers()},
+            json={"batch_id": 700},
+        )
+        self.assertEqual(401, response.status_code)
+        self.assertEqual("EMP_EVENT_UNAUTHORIZED", response.json()["error"])
+
     def test_list_missing_app_token_returns_401(self):
         response = self.client.get(
             "/api/employee-events/v1/events",
@@ -238,6 +247,24 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
         self.assertEqual(400, response.status_code)
         self.assertEqual("EMP_EVENT_INVALID_BATCH_QUERY", response.json()["error"])
 
+    def test_batch_kids_query_invalid_json_returns_400(self):
+        with patch(
+            "controllers.employee_events_v1.dependencies.validate_token",
+            return_value={"sub": "100", "typ": "access"},
+        ):
+            response = self.client.post(
+                "/api/employee-events/v1/batches/kids-present/query",
+                headers={
+                    **_middleware_headers(),
+                    "Authorization": "Bearer ok",
+                    "Content-Type": "application/json",
+                },
+                data="{not-json",
+            )
+
+        self.assertEqual(400, response.status_code)
+        self.assertEqual("EMP_EVENT_INVALID_BATCH_KIDS_QUERY", response.json()["error"])
+
     def test_leave_calendar_query_invalid_payload_returns_400(self):
         cases = [
             [],
@@ -299,6 +326,34 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
                     self.assertEqual(400, response.status_code)
                     self.assertEqual(
                         "EMP_EVENT_INVALID_BATCH_QUERY",
+                        response.json()["error"],
+                    )
+
+    def test_batch_kids_query_invalid_payload_returns_400(self):
+        cases = [
+            [],
+            {},
+            {"batch_id": 0},
+            {"batch_id": -1},
+        ]
+
+        with patch(
+            "controllers.employee_events_v1.dependencies.validate_token",
+            return_value={"sub": "100", "typ": "access"},
+        ):
+            for payload in cases:
+                with self.subTest(payload=payload):
+                    response = self.client.post(
+                        "/api/employee-events/v1/batches/kids-present/query",
+                        headers={
+                            **_middleware_headers(),
+                            "Authorization": "Bearer ok",
+                        },
+                        json=payload,
+                    )
+                    self.assertEqual(400, response.status_code)
+                    self.assertEqual(
+                        "EMP_EVENT_INVALID_BATCH_KIDS_QUERY",
                         response.json()["error"],
                     )
 
@@ -634,6 +689,84 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
         self.assertTrue(body["success"])
         self.assertEqual(1, body["data"]["total_count"])
         mocked_batches.assert_called_once_with(venue_ids=[10, 20])
+
+    def test_batch_kids_query_success(self):
+        with patch(
+            "controllers.employee_events_v1.dependencies.validate_token",
+            return_value={"sub": "100", "typ": "access"},
+        ), patch(
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_batch_kids_present",
+            new=MagicMock(
+                return_value={
+                    "batch_id": 700,
+                    "from_date": "2026-03-20",
+                    "to_date": "2026-06-26",
+                    "total_count": 1,
+                    "kids": [
+                        {
+                            "invoice_id": 1001,
+                            "item_id": 11,
+                            "invoice": "INV-1001",
+                            "code_name": "A001 - Aarav",
+                            "sessions": 16,
+                            "sessions_used": 3,
+                            "dob": "2018-01-01",
+                            "counsellor_name": "Counsellor A",
+                            "balance": 10,
+                            "dropout": "0",
+                            "freeze": "0",
+                            "date": "2026-03-01",
+                        }
+                    ],
+                }
+            ),
+        ) as mocked_batch_kids:
+            response = self.client.post(
+                "/api/employee-events/v1/batches/kids-present/query",
+                headers={
+                    **_middleware_headers(),
+                    "Authorization": "Bearer ok",
+                },
+                json={"batch_id": 700},
+            )
+
+        self.assertEqual(200, response.status_code)
+        body = response.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(1, body["data"]["total_count"])
+        self.assertEqual(11, body["data"]["kids"][0]["item_id"])
+        mocked_batch_kids.assert_called_once_with(batch_id=700)
+
+    def test_batch_kids_query_empty_success(self):
+        with patch(
+            "controllers.employee_events_v1.dependencies.validate_token",
+            return_value={"sub": "100", "typ": "access"},
+        ), patch(
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_batch_kids_present",
+            new=MagicMock(
+                return_value={
+                    "batch_id": 700,
+                    "from_date": "2026-03-20",
+                    "to_date": "2026-06-26",
+                    "total_count": 0,
+                    "kids": [],
+                }
+            ),
+        ):
+            response = self.client.post(
+                "/api/employee-events/v1/batches/kids-present/query",
+                headers={
+                    **_middleware_headers(),
+                    "Authorization": "Bearer ok",
+                },
+                json={"batch_id": 700},
+            )
+
+        self.assertEqual(200, response.status_code)
+        body = response.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(0, body["data"]["total_count"])
+        self.assertEqual([], body["data"]["kids"])
 
     def test_trainer_calendar_events_success(self):
         response_data = {

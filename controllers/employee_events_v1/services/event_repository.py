@@ -979,6 +979,54 @@ class EmployeeEventsRepository:
             rows = conn.execute(text(sql), params).mappings().all()
         return [dict(row) for row in rows]
 
+    def list_batch_kids_present(
+        self,
+        batch_id: int,
+        from_date: str,
+        to_date: str,
+    ) -> List[Dict[str, Any]]:
+        engine = self._get_main_engine()
+        sql = text(
+            """
+            SELECT
+                invoice_id,
+                item_id,
+                invoice,
+                code_name,
+                sessions,
+                sessions_used,
+                dob,
+                counsellor_name,
+                balance,
+                dropout,
+                freeze,
+                date
+            FROM invoice_invoiceitem_view
+            WHERE start_date <= :to_date
+              AND end_date >= :from_date
+              AND batch_id = :batch_id
+              AND park = :park
+              AND renew = :renew
+              AND dropout = :dropout
+              AND freeze = :freeze
+            ORDER BY start_date ASC, end_date ASC, item_id ASC
+            """
+        )
+        with engine.connect() as conn:
+            rows = conn.execute(
+                sql,
+                {
+                    "batch_id": int(batch_id),
+                    "from_date": from_date,
+                    "to_date": to_date,
+                    "park": "0",
+                    "renew": "0",
+                    "dropout": "0",
+                    "freeze": "0",
+                },
+            ).mappings().all()
+        return [dict(row) for row in rows]
+
     def get_demo_events(
         self,
         employee_ids: List[int],

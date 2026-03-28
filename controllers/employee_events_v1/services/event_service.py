@@ -176,6 +176,30 @@ class EmployeeEventsService:
         )
 
     @staticmethod
+    def _invalid_batch_kids_query(
+        message: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> EmployeeEventsError:
+        return EmployeeEventsError(
+            code="EMP_EVENT_INVALID_BATCH_KIDS_QUERY",
+            message=message,
+            status_code=400,
+            data=data,
+        )
+
+    @staticmethod
+    def _batch_kids_query_failed(
+        message: str = "Could not fetch batch kids present",
+        data: Optional[Dict[str, Any]] = None,
+    ) -> EmployeeEventsError:
+        return EmployeeEventsError(
+            code="EMP_EVENT_BATCH_KIDS_QUERY_FAILED",
+            message=message,
+            status_code=500,
+            data=data,
+        )
+
+    @staticmethod
     def _venue_query_failed(
         message: str = "Could not fetch active venues",
         data: Optional[Dict[str, Any]] = None,
@@ -700,6 +724,34 @@ class EmployeeEventsService:
             )
 
         return normalized
+
+    @staticmethod
+    def _normalize_batch_id(value: Any) -> int:
+        if isinstance(value, bool):
+            raise EmployeeEventsService._invalid_batch_kids_query(
+                "batch_id must be a positive integer",
+                data={"field": "batch_id", "invalid_batch_id": value},
+            )
+
+        try:
+            batch_id = int(value)
+        except Exception as exc:
+            raise EmployeeEventsService._invalid_batch_kids_query(
+                "batch_id must be a positive integer",
+                data={"field": "batch_id", "invalid_batch_id": value},
+            ) from exc
+
+        if batch_id <= 0:
+            raise EmployeeEventsService._invalid_batch_kids_query(
+                "batch_id must be a positive integer",
+                data={"field": "batch_id", "invalid_batch_id": value},
+            )
+
+        return batch_id
+
+    def _current_date_in_workshift_timezone(self) -> date_value:
+        _timezone_name, timezone = self._workshift_timezone()
+        return datetime.now(timezone).date()
 
     @staticmethod
     def _normalize_employee_name(value: Any) -> Optional[str]:
@@ -1388,6 +1440,33 @@ class EmployeeEventsService:
         except Exception as exc:
             raise self._batch_query_failed(
                 message=f"Unexpected error fetching active batches: {exc}",
+            ) from exc
+
+    def get_batch_kids_present(self, batch_id: Any) -> Dict[str, Any]:
+        try:
+            normalized_batch_id = self._normalize_batch_id(batch_id)
+            today = self._current_date_in_workshift_timezone()
+            from_date_value = today - timedelta(days=8)
+            to_date_value = today + timedelta(days=90)
+            from_date = from_date_value.strftime("%Y-%m-%d")
+            to_date = to_date_value.strftime("%Y-%m-%d")
+            kids = self.event_repository.list_batch_kids_present(
+                batch_id=normalized_batch_id,
+                from_date=from_date,
+                to_date=to_date,
+            )
+            return {
+                "batch_id": normalized_batch_id,
+                "from_date": from_date,
+                "to_date": to_date,
+                "total_count": len(kids),
+                "kids": kids,
+            }
+        except EmployeeEventsError:
+            raise
+        except Exception as exc:
+            raise self._batch_kids_query_failed(
+                message=f"Unexpected error fetching batch kids present: {exc}",
             ) from exc
 
     def get_employee_workshift_calendar_batch(

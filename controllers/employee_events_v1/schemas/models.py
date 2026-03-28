@@ -87,3 +87,7 @@ class DemoEventsBatchQueryRequest(BaseModel):
 
 class VenueBatchesQueryRequest(BaseModel):
     venue_ids: List[Any] = Field(...)
+
+
+class BatchKidsPresentQueryRequest(BaseModel):
+    batch_id: int = Field(..., ge=1)

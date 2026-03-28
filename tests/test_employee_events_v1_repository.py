@@ -60,6 +60,27 @@ class TestEmployeeEventsV1Repository(unittest.TestCase):
             Column("park", String(8), nullable=False),
             Column("status", String(8), nullable=False),
         )
+        invoice_invoiceitem_source = Table(
+            "invoice_invoiceitem_source",
+            metadata,
+            Column("invoice_id", Integer, nullable=False),
+            Column("item_id", Integer, primary_key=True),
+            Column("invoice", String(255), nullable=True),
+            Column("code_name", String(255), nullable=True),
+            Column("sessions", Integer, nullable=True),
+            Column("sessions_used", Integer, nullable=True),
+            Column("dob", String(32), nullable=True),
+            Column("counsellor_name", String(255), nullable=True),
+            Column("balance", Integer, nullable=True),
+            Column("dropout", String(8), nullable=False),
+            Column("freeze", String(8), nullable=False),
+            Column("date", String(32), nullable=True),
+            Column("start_date", String(32), nullable=True),
+            Column("end_date", String(32), nullable=True),
+            Column("batch_id", Integer, nullable=False),
+            Column("park", String(8), nullable=False),
+            Column("renew", String(8), nullable=False),
+        )
         metadata.create_all(self.engine)
         with self.engine.begin() as conn:
             conn.execute(
@@ -203,6 +224,163 @@ class TestEmployeeEventsV1Repository(unittest.TestCase):
                     },
                 ],
             )
+            conn.execute(
+                invoice_invoiceitem_source.insert(),
+                [
+                    {
+                        "invoice_id": 1001,
+                        "item_id": 11,
+                        "invoice": "INV-1001",
+                        "code_name": "A001 - Aarav",
+                        "sessions": 16,
+                        "sessions_used": 3,
+                        "dob": "2018-01-01",
+                        "counsellor_name": "Counsellor A",
+                        "balance": 10,
+                        "dropout": "0",
+                        "freeze": "0",
+                        "date": "2026-03-01",
+                        "start_date": "2026-03-01",
+                        "end_date": "2026-06-30",
+                        "batch_id": 700,
+                        "park": "0",
+                        "renew": "0",
+                    },
+                    {
+                        "invoice_id": 1002,
+                        "item_id": 12,
+                        "invoice": "INV-1002",
+                        "code_name": "A002 - Diya",
+                        "sessions": 12,
+                        "sessions_used": 4,
+                        "dob": "2017-05-03",
+                        "counsellor_name": "Counsellor B",
+                        "balance": 8,
+                        "dropout": "0",
+                        "freeze": "0",
+                        "date": "2026-03-02",
+                        "start_date": "2026-03-10",
+                        "end_date": "2026-07-15",
+                        "batch_id": 700,
+                        "park": "0",
+                        "renew": "0",
+                    },
+                    {
+                        "invoice_id": 1003,
+                        "item_id": 13,
+                        "invoice": "INV-1003",
+                        "code_name": "Filtered Park",
+                        "sessions": 12,
+                        "sessions_used": 1,
+                        "dob": "2017-06-03",
+                        "counsellor_name": "Counsellor B",
+                        "balance": 11,
+                        "dropout": "0",
+                        "freeze": "0",
+                        "date": "2026-03-02",
+                        "start_date": "2026-03-10",
+                        "end_date": "2026-07-15",
+                        "batch_id": 700,
+                        "park": "1",
+                        "renew": "0",
+                    },
+                    {
+                        "invoice_id": 1004,
+                        "item_id": 14,
+                        "invoice": "INV-1004",
+                        "code_name": "Filtered Renew",
+                        "sessions": 12,
+                        "sessions_used": 1,
+                        "dob": "2017-07-03",
+                        "counsellor_name": "Counsellor C",
+                        "balance": 11,
+                        "dropout": "0",
+                        "freeze": "0",
+                        "date": "2026-03-02",
+                        "start_date": "2026-03-10",
+                        "end_date": "2026-07-15",
+                        "batch_id": 700,
+                        "park": "0",
+                        "renew": "1",
+                    },
+                    {
+                        "invoice_id": 1005,
+                        "item_id": 15,
+                        "invoice": "INV-1005",
+                        "code_name": "Filtered Dropout",
+                        "sessions": 12,
+                        "sessions_used": 1,
+                        "dob": "2017-08-03",
+                        "counsellor_name": "Counsellor C",
+                        "balance": 11,
+                        "dropout": "1",
+                        "freeze": "0",
+                        "date": "2026-03-02",
+                        "start_date": "2026-03-10",
+                        "end_date": "2026-07-15",
+                        "batch_id": 700,
+                        "park": "0",
+                        "renew": "0",
+                    },
+                    {
+                        "invoice_id": 1006,
+                        "item_id": 16,
+                        "invoice": "INV-1006",
+                        "code_name": "Filtered Freeze",
+                        "sessions": 12,
+                        "sessions_used": 1,
+                        "dob": "2017-09-03",
+                        "counsellor_name": "Counsellor C",
+                        "balance": 11,
+                        "dropout": "0",
+                        "freeze": "1",
+                        "date": "2026-03-02",
+                        "start_date": "2026-03-10",
+                        "end_date": "2026-07-15",
+                        "batch_id": 700,
+                        "park": "0",
+                        "renew": "0",
+                    },
+                    {
+                        "invoice_id": 1007,
+                        "item_id": 17,
+                        "invoice": "INV-1007",
+                        "code_name": "Filtered Batch",
+                        "sessions": 12,
+                        "sessions_used": 1,
+                        "dob": "2017-10-03",
+                        "counsellor_name": "Counsellor D",
+                        "balance": 11,
+                        "dropout": "0",
+                        "freeze": "0",
+                        "date": "2026-03-02",
+                        "start_date": "2026-03-10",
+                        "end_date": "2026-07-15",
+                        "batch_id": 701,
+                        "park": "0",
+                        "renew": "0",
+                    },
+                    {
+                        "invoice_id": 1008,
+                        "item_id": 18,
+                        "invoice": "INV-1008",
+                        "code_name": "Filtered Overlap",
+                        "sessions": 12,
+                        "sessions_used": 1,
+                        "dob": "2017-11-03",
+                        "counsellor_name": "Counsellor E",
+                        "balance": 11,
+                        "dropout": "0",
+                        "freeze": "0",
+                        "date": "2026-01-01",
+                        "start_date": "2026-01-01",
+                        "end_date": "2026-01-15",
+                        "batch_id": 700,
+                        "park": "0",
+                        "renew": "0",
+                    },
+                ],
+            )
             conn.exec_driver_sql(
                 """
                 CREATE VIEW emp_cont_view AS
@@ -217,6 +395,30 @@ class TestEmployeeEventsV1Repository(unittest.TestCase):
                     park,
                     status
                 FROM employee_source
+                """
+            )
+            conn.exec_driver_sql(
+                """
+                CREATE VIEW invoice_invoiceitem_view AS
+                SELECT
+                    invoice_id,
+                    item_id,
+                    invoice,
+                    code_name,
+                    sessions,
+                    sessions_used,
+                    dob,
+                    counsellor_name,
+                    balance,
+                    dropout,
+                    freeze,
+                    date,
+                    start_date,
+                    end_date,
+                    batch_id,
+                    park,
+                    renew
+                FROM invoice_invoiceitem_source
                 """
             )
 
@@ -270,6 +472,43 @@ class TestEmployeeEventsV1Repository(unittest.TestCase):
             [{"id": 10, "venue": "Andheri Center", "display_name": "Andheri Center"}],
             result,
         )
+
+    def test_list_batch_kids_present_applies_filters_and_overlap(self):
+        result = self.repository.list_batch_kids_present(
+            batch_id=700,
+            from_date="2026-03-20",
+            to_date="2026-06-26",
+        )
+
+        self.assertEqual([11, 12], [row["item_id"] for row in result])
+        self.assertTrue(all(row["dropout"] == "0" for row in result))
+        self.assertTrue(all(row["freeze"] == "0" for row in result))
+
+    def test_list_batch_kids_present_returns_only_curated_columns_in_order(self):
+        result = self.repository.list_batch_kids_present(
+            batch_id=700,
+            from_date="2026-03-20",
+            to_date="2026-06-26",
+        )
+
+        self.assertEqual(
+            [
+                "invoice_id",
+                "item_id",
+                "invoice",
+                "code_name",
+                "sessions",
+                "sessions_used",
+                "dob",
+                "counsellor_name",
+                "balance",
+                "dropout",
+                "freeze",
+                "date",
+            ],
+            list(result[0].keys()),
+        )
+        self.assertEqual([11, 12], [row["item_id"] for row in result])
 
     def test_get_employee_leave_requests_applies_overlap_and_active_filters(self):
         result = self.repository.get_employee_leave_requests(
