@@ -939,11 +939,28 @@ class EmployeeEventsRepository:
             b.batch,
             b.display_name,
             b.venue_id,
-            b.venue,
             b.parent_id,
+            b.date,
+            b.start_date,
+            b.end_date,
+            b.start_time,
+            b.end_time,
+            b.day_code,
+            b.title,
+            b.venue,
+            b.timezone_id,
+            b.contact_id,
+            b.code,
+            b.category,
             b.branch,
-            b.bid
+            b.bid,
+            b.employee_id,
+            b.associate_fullname,
+            b.modified_at,
+            p.batch AS parent_batch_name
         FROM batch_employee_time_view b
+        LEFT JOIN batch_employee_time_view p
+            ON p.id = b.parent_id
         WHERE b.venue_id IN ({", ".join(venue_placeholders)})
           AND COALESCE(b.park, 0) = 0
           AND COALESCE(b.inactive, 0) = 0

@@ -1373,7 +1373,11 @@ class EmployeeEventsService:
     def get_active_batches_by_venue(self, venue_ids: List[Any]) -> Dict[str, Any]:
         try:
             normalized_venue_ids = self._normalize_batch_venue_ids(venue_ids)
-            batches = self.event_repository.list_active_batches_by_venue_ids(normalized_venue_ids)
+            batch_rows = self.event_repository.list_active_batches_by_venue_ids(normalized_venue_ids)
+            batches = [
+                self._map_active_batch_row_for_ui(dict(row))
+                for row in batch_rows
+            ]
             return {
                 "venue_ids": normalized_venue_ids,
                 "total_count": len(batches),
@@ -1783,6 +1787,65 @@ class EmployeeEventsService:
         if is_original == 1:
             return "original"
         return "prescheduled"
+
+    def _map_active_batch_row_for_ui(self, source_row: Dict[str, Any]) -> Dict[str, Any]:
+        mapped_row = dict(source_row)
+        trainer_id = self._as_int(source_row.get("id"), default=0)
+        parent_batch_id = self._as_int(source_row.get("parent_id"), default=0)
+        is_child_batch = parent_batch_id != 0
+        title = self._trainer_event_title(source_row)
+
+        event_start_text: Optional[str] = None
+        event_end_text: Optional[str] = None
+        effective_date = (
+            self._parse_calendar_date_value(source_row.get("date"))
+            or self._parse_calendar_date_value(source_row.get("start_date"))
+        )
+        if effective_date is not None:
+            start_time_value = self._parse_calendar_time_value(source_row.get("start_time"))
+            end_time_value = self._parse_calendar_time_value(source_row.get("end_time"))
+            event_start_dt = self._localize_batch_occurrence(
+                effective_date,
+                start_time_value,
+                source_row.get("timezone_id"),
+            )
+            event_end_dt = self._localize_batch_occurrence(
+                effective_date,
+                end_time_value,
+                source_row.get("timezone_id"),
+            )
+            event_start_text = event_start_dt.strftime("%Y-%m-%d %H:%M:%S")
+            event_end_text = event_end_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+        mapped_row["event_id"] = None
+        mapped_row["batch_id"] = trainer_id if trainer_id > 0 else None
+        mapped_row["demo_id"] = None
+        mapped_row["batch_name"] = source_row.get("batch")
+        mapped_row["summary"] = title
+        mapped_row["location"] = source_row.get("venue")
+        mapped_row["event_timezone"] = (
+            "" if source_row.get("timezone_id") is None else str(source_row.get("timezone_id"))
+        )
+        mapped_row["event_start"] = event_start_text
+        mapped_row["event_end"] = event_end_text
+        mapped_row["attendees"] = "[]"
+        mapped_row["parent_batch_id"] = int(parent_batch_id) if parent_batch_id != 0 else None
+        mapped_row["parent_batch_name"] = source_row.get("parent_batch_name")
+
+        if is_child_batch:
+            mapped_row["batch_type"] = "prescheduled"
+            mapped_row["batch_status"] = "prescheduled"
+            mapped_row["is_original"] = 0
+            mapped_row["is_scheduled"] = 1
+            mapped_row["is_recurring"] = 0
+        else:
+            mapped_row["batch_type"] = "original"
+            mapped_row["batch_status"] = "original"
+            mapped_row["is_original"] = 1
+            mapped_row["is_scheduled"] = 0
+            mapped_row["is_recurring"] = 1
+
+        return mapped_row
 
     def get_trainer_calendar_events(
         self,

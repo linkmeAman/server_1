@@ -212,8 +212,16 @@ class TestEmployeeEventsV1Service(unittest.IsolatedAsyncioTestCase):
                 "venue_id": 10,
                 "venue": "Andheri Center",
                 "parent_id": 0,
+                "date": "2026-03-10",
+                "start_date": "2026-03-10",
+                "end_date": "2026-03-10",
+                "start_time": "10:00:00",
+                "end_time": "11:00:00",
+                "title": "Offline B87",
+                "timezone_id": "Asia/Kolkata",
                 "branch": "Mumbai",
                 "bid": 7,
+                "parent_batch_name": None,
             }
         ]
 
@@ -221,6 +229,12 @@ class TestEmployeeEventsV1Service(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([10, 20], result["venue_ids"])
         self.assertEqual(1, result["total_count"])
+        self.assertEqual(123, result["batches"][0]["batch_id"])
+        self.assertEqual("Offline B87", result["batches"][0]["batch_name"])
+        self.assertEqual("Offline B87", result["batches"][0]["summary"])
+        self.assertEqual("Andheri Center", result["batches"][0]["location"])
+        self.assertEqual("original", result["batches"][0]["batch_type"])
+        self.assertEqual("2026-03-10 10:00:00", result["batches"][0]["event_start"])
         self.event_repo.list_active_batches_by_venue_ids.assert_called_once_with([10, 20])
 
     def test_get_active_batches_by_venue_rejects_invalid_ids(self):
