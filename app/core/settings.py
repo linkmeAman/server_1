@@ -3,13 +3,21 @@ Core settings and configuration management
 """
 import json
 import os
+from pathlib import Path
 from typing import Any, Dict, List
+
+from dotenv import load_dotenv
 from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, EnvSettingsSource, PydanticBaseSettingsSource
-from dotenv import load_dotenv
-from pathlib import Path
-BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR / ".env")
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+APP_ROOT = Path(__file__).resolve().parents[1]
+
+# Prefer the repository-root .env after the app/ migration, but still accept
+# an app-local .env as a fallback for older local setups.
+for dotenv_path in (PROJECT_ROOT / ".env", APP_ROOT / ".env"):
+    if dotenv_path.exists():
+        load_dotenv(dotenv_path, override=False)
 
 
 class ListFriendlyEnvSource(EnvSettingsSource):
@@ -196,7 +204,7 @@ class Settings(BaseSettings):
     SQLGW_ADMIN_REQUIRE_RBAC: bool = True
     
     class Config:
-        env_file = ".env"
+        env_file = str(PROJECT_ROOT / ".env")
         case_sensitive = True
         extra = "ignore"  # Ignore extra fields from environment
 
