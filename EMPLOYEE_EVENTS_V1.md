@@ -46,7 +46,113 @@ Branch columns:
 
 - `id`, `branch`, `type`
 
-### 2) Workshift Calendar Batch Query
+### 2) Active Venue Selectors
+
+- `GET /api/employee-events/v1/venues`
+
+Returns active venues from `venue` using fixed filters:
+
+- `park = 0`
+- `status = 0`
+
+Venue columns:
+
+- `id`, `venue`, `display_name`
+
+Response data:
+
+- `venues`
+- `total_count`
+
+Sample response:
+
+```json
+{
+  "success": true,
+  "message": "Active venues fetched successfully",
+  "data": {
+    "venues": [
+      {
+        "id": 10,
+        "venue": "Andheri Center",
+        "display_name": "Andheri Center"
+      }
+    ],
+    "total_count": 1
+  }
+}
+```
+
+### 3) Active Batches by Venue
+
+- `POST /api/employee-events/v1/batches/query`
+
+Request:
+
+```json
+{
+  "venue_ids": [10, 20]
+}
+```
+
+Rules:
+
+- `venue_ids` is required
+- accepts `1..25` unique venue ids after first-seen dedupe
+- values must be positive integers
+- reads from `batch_employee_time_view`
+- active batch filters are fixed:
+  - `park = 0`
+  - `inactive = 0`
+  - `hide = 0`
+  - `cont_park = 0`
+  - when present in the view schema:
+    - `demo_class = 0`
+    - `training_assign = 0`
+
+Response data:
+
+- `venue_ids`
+- `total_count`
+- `batches`
+
+Per batch:
+
+- `id`
+- `batch`
+- `display_name`
+- `venue_id`
+- `venue`
+- `parent_id`
+- `branch`
+- `bid`
+
+Sample response:
+
+```json
+{
+  "success": true,
+  "message": "Active batches fetched successfully",
+  "data": {
+    "venue_ids": [10, 20],
+    "total_count": 2,
+    "batches": [
+      {
+        "id": 123,
+        "batch": "Offline B87",
+        "display_name": "Offline B87",
+        "venue_id": 10,
+        "venue": "Andheri Center",
+        "parent_id": 0,
+        "branch": "Mumbai",
+        "bid": 7
+      }
+    ]
+  }
+}
+```
+
+### 4) Workshift Calendar Batch Query
 
 - `POST /api/employee-events/v1/employees/workshift-calendar/query`
 
@@ -120,7 +226,7 @@ Behavior:
 - missing employees are returned as `result_status="not_found"` inside the batch, not as `404`
 - invalid `week_off_code` tokens are ignored for expansion and surfaced in `warnings`
 
-### 3) Leave Calendar Batch Query
+### 5) Leave Calendar Batch Query
 
 - `POST /api/employee-events/v1/employees/leave-calendar/query`
 
@@ -213,7 +319,7 @@ Result status examples:
 - `no_events`: employee exists but no leave rows matched after filters
 - `not_found`: employee id is not active/matched
 
-### 4) Unified Calendar Events (Employee + Trainer Batch/Demo)
+### 6) Unified Calendar Events (Employee + Trainer Batch/Demo)
 
 - `GET /api/employee-events/v1/calendar/events`
 - Breaking change: this endpoint now returns a unified schema (`source`, `source_event_id`, `title`, `start`, `end`, `is_read_only`, `raw`) instead of trainer-only rows.
@@ -317,7 +423,7 @@ Sample response:
 }
 ```
 
-### 5) List Events
+### 7) List Events
 
 - `GET /api/employee-events/v1/events`
 
@@ -342,7 +448,7 @@ Each event includes:
 - `contact` object from `contact` table
 - `sync` object from `employee_event_google_link` (if sync enabled)
 
-### 6) Check Conflict
+### 8) Check Conflict
 
 - `POST /api/employee-events/v1/events/check-conflict`
 
@@ -363,7 +469,7 @@ Response data:
 - `conflict` boolean
 - `conflict_event_ids` list
 
-### 7) Create Event
+### 9) Create Event
 
 - `POST /api/employee-events/v1/events`
 
@@ -396,7 +502,7 @@ Behavior:
 - Creates/updates sync mapping row with `pending_approval`.
 - Does not call Google here.
 
-### 8) Update Event
+### 10) Update Event
 
 - `PUT /api/employee-events/v1/events/{event_id}`
 
@@ -408,7 +514,7 @@ Behavior:
 - If event is approved and not parked, syncs update/create to Google.
 - On sync failure, local update remains and mapping row stores sync failure.
 
-### 9) Park / Unpark Event
+### 11) Park / Unpark Event
 
 - `PATCH /api/employee-events/v1/events/{event_id}/park`
 
@@ -426,7 +532,7 @@ Behavior:
 - If `park_value=1` and linked Google event exists, attempts Google delete.
 - On delete failure, keeps local park and records sync error.
 
-### 10) Approve Event
+### 12) Approve Event
 
 - `POST /api/employee-events/v1/events/{event_id}/approve`
 

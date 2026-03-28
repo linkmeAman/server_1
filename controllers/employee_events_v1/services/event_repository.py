@@ -894,6 +894,74 @@ class EmployeeEventsRepository:
             ).mappings().all()
         return [dict(row) for row in rows]
 
+    def list_active_venues(self) -> List[Dict[str, Any]]:
+        """
+        Fetch venue selector options from venue table using fixed business filters.
+
+        Filters:
+        - park = 0
+        - status = 0
+        """
+        engine = self._get_main_engine()
+        sql = text(
+            """
+            SELECT id, venue, display_name
+            FROM venue
+            WHERE park = :park
+              AND status = :status
+            ORDER BY venue ASC, id ASC
+            """
+        )
+        with engine.connect() as conn:
+            rows = conn.execute(
+                sql,
+                {"park": "0", "status": "0"},
+            ).mappings().all()
+        return [dict(row) for row in rows]
+
+    def list_active_batches_by_venue_ids(self, venue_ids: List[int]) -> List[Dict[str, Any]]:
+        if not venue_ids:
+            return []
+
+        engine = self._get_main_engine()
+        view_columns = self._get_table_columns("batch_employee_time_view")
+
+        venue_placeholders = []
+        params: Dict[str, Any] = {}
+        for idx, venue_id in enumerate(venue_ids):
+            key = f"venue_id_{idx}"
+            venue_placeholders.append(f":{key}")
+            params[key] = int(venue_id)
+
+        sql = f"""
+        SELECT
+            b.id,
+            b.batch,
+            b.display_name,
+            b.venue_id,
+            b.venue,
+            b.parent_id,
+            b.branch,
+            b.bid
+        FROM batch_employee_time_view b
+        WHERE b.venue_id IN ({", ".join(venue_placeholders)})
+          AND COALESCE(b.park, 0) = 0
+          AND COALESCE(b.inactive, 0) = 0
+          AND COALESCE(b.hide, 0) = 0
+          AND COALESCE(b.cont_park, 0) = 0
+        """
+
+        if "demo_class" in view_columns:
+            sql += " AND COALESCE(b.demo_class, 0) = 0"
+        if "training_assign" in view_columns:
+            sql += " AND COALESCE(b.training_assign, 0) = 0"
+
+        sql += " ORDER BY b.venue_id ASC, b.batch ASC, b.id ASC"
+
+        with engine.connect() as conn:
+            rows = conn.execute(text(sql), params).mappings().all()
+        return [dict(row) for row in rows]
+
     def get_demo_events(
         self,
         employee_ids: List[int],

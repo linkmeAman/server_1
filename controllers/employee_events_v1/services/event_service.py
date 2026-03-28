@@ -140,12 +140,48 @@ class EmployeeEventsService:
         )
 
     @staticmethod
+    def _invalid_batch_query(
+        message: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> EmployeeEventsError:
+        return EmployeeEventsError(
+            code="EMP_EVENT_INVALID_BATCH_QUERY",
+            message=message,
+            status_code=400,
+            data=data,
+        )
+
+    @staticmethod
     def _demo_query_failed(
         message: str = "Could not fetch demo events",
         data: Optional[Dict[str, Any]] = None,
     ) -> EmployeeEventsError:
         return EmployeeEventsError(
             code="EMP_EVENT_DEMO_QUERY_FAILED",
+            message=message,
+            status_code=500,
+            data=data,
+        )
+
+    @staticmethod
+    def _batch_query_failed(
+        message: str = "Could not fetch active batches",
+        data: Optional[Dict[str, Any]] = None,
+    ) -> EmployeeEventsError:
+        return EmployeeEventsError(
+            code="EMP_EVENT_BATCH_QUERY_FAILED",
+            message=message,
+            status_code=500,
+            data=data,
+        )
+
+    @staticmethod
+    def _venue_query_failed(
+        message: str = "Could not fetch active venues",
+        data: Optional[Dict[str, Any]] = None,
+    ) -> EmployeeEventsError:
+        return EmployeeEventsError(
+            code="EMP_EVENT_VENUE_QUERY_FAILED",
             message=message,
             status_code=500,
             data=data,
@@ -613,6 +649,55 @@ class EmployeeEventsService:
             if normalized_value not in seen:
                 seen.add(normalized_value)
                 normalized.append(normalized_value)
+
+        return normalized
+
+    @classmethod
+    def _normalize_batch_venue_ids(cls, venue_ids: List[Any]) -> List[int]:
+        if not isinstance(venue_ids, list):
+            raise cls._invalid_batch_query(
+                "venue_ids must be an array of positive integers",
+                data={"field": "venue_ids"},
+            )
+
+        seen: set[int] = set()
+        normalized: List[int] = []
+
+        for raw_value in venue_ids:
+            if isinstance(raw_value, bool):
+                raise cls._invalid_batch_query(
+                    "venue_ids must contain positive integers",
+                    data={"field": "venue_ids", "invalid_venue_id": raw_value},
+                )
+
+            try:
+                venue_id = int(raw_value)
+            except Exception as exc:
+                raise cls._invalid_batch_query(
+                    "venue_ids must contain positive integers",
+                    data={"field": "venue_ids", "invalid_venue_id": raw_value},
+                ) from exc
+
+            if venue_id <= 0:
+                raise cls._invalid_batch_query(
+                    "venue_ids must contain positive integers",
+                    data={"field": "venue_ids", "invalid_venue_id": raw_value},
+                )
+
+            if venue_id not in seen:
+                seen.add(venue_id)
+                normalized.append(venue_id)
+
+        if not normalized:
+            raise cls._invalid_batch_query(
+                "venue_ids must contain at least one unique venue id",
+            )
+
+        if len(normalized) > 25:
+            raise cls._invalid_batch_query(
+                "venue_ids may contain at most 25 unique venue ids",
+                data={"venue_count": len(normalized)},
+            )
 
         return normalized
 
@@ -1270,6 +1355,36 @@ class EmployeeEventsService:
             "employee_count": len(employees),
             "branch_count": len(branches),
         }
+
+    def get_active_venues(self) -> Dict[str, Any]:
+        try:
+            venues = self.event_repository.list_active_venues()
+            return {
+                "venues": venues,
+                "total_count": len(venues),
+            }
+        except EmployeeEventsError:
+            raise
+        except Exception as exc:
+            raise self._venue_query_failed(
+                message=f"Unexpected error fetching active venues: {exc}",
+            ) from exc
+
+    def get_active_batches_by_venue(self, venue_ids: List[Any]) -> Dict[str, Any]:
+        try:
+            normalized_venue_ids = self._normalize_batch_venue_ids(venue_ids)
+            batches = self.event_repository.list_active_batches_by_venue_ids(normalized_venue_ids)
+            return {
+                "venue_ids": normalized_venue_ids,
+                "total_count": len(batches),
+                "batches": batches,
+            }
+        except EmployeeEventsError:
+            raise
+        except Exception as exc:
+            raise self._batch_query_failed(
+                message=f"Unexpected error fetching active batches: {exc}",
+            ) from exc
 
     def get_employee_workshift_calendar_batch(
         self,

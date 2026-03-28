@@ -191,6 +191,54 @@ class TestEmployeeEventsV1Service(unittest.IsolatedAsyncioTestCase):
         self.event_repo.list_realtime_employees.assert_called_once()
         self.event_repo.list_active_branches.assert_called_once()
 
+    def test_get_active_venues(self):
+        self.event_repo.list_active_venues.return_value = [
+            {"id": 10, "venue": "Andheri Center", "display_name": "Andheri Center"},
+            {"id": 20, "venue": "Bandra Center", "display_name": "Bandra Center"},
+        ]
+
+        result = self.service.get_active_venues()
+
+        self.assertEqual(2, result["total_count"])
+        self.assertEqual("Andheri Center", result["venues"][0]["venue"])
+        self.event_repo.list_active_venues.assert_called_once()
+
+    def test_get_active_batches_by_venue_dedupes_ids_and_returns_rows(self):
+        self.event_repo.list_active_batches_by_venue_ids.return_value = [
+            {
+                "id": 123,
+                "batch": "Offline B87",
+                "display_name": "Offline B87",
+                "venue_id": 10,
+                "venue": "Andheri Center",
+                "parent_id": 0,
+                "branch": "Mumbai",
+                "bid": 7,
+            }
+        ]
+
+        result = self.service.get_active_batches_by_venue([10, "10", 20, 20])
+
+        self.assertEqual([10, 20], result["venue_ids"])
+        self.assertEqual(1, result["total_count"])
+        self.event_repo.list_active_batches_by_venue_ids.assert_called_once_with([10, 20])
+
+    def test_get_active_batches_by_venue_rejects_invalid_ids(self):
+        invalid_cases = [
+            [],
+            [0],
+            [-1],
+            [True],
+            ["bad"],
+            list(range(1, 27)),
+        ]
+
+        for venue_ids in invalid_cases:
+            with self.subTest(venue_ids=venue_ids):
+                with self.assertRaises(EmployeeEventsError) as ctx:
+                    self.service.get_active_batches_by_venue(venue_ids)
+                self.assertEqual("EMP_EVENT_INVALID_BATCH_QUERY", ctx.exception.code)
+
     def test_get_trainer_calendar_events_returns_unified_merged_events(self):
         self.event_repo.list_events.return_value = [
             {

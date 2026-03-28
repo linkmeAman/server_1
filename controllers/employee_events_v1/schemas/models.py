@@ -83,3 +83,7 @@ class DemoEventsBatchQueryRequest(BaseModel):
     types: Optional[List[Any]] = Field(default=None)
     venue_ids: Optional[List[Any]] = Field(default=None)
     batch_ids: Optional[List[Any]] = Field(default=None)
+
+
+class VenueBatchesQueryRequest(BaseModel):
+    venue_ids: List[Any] = Field(...)

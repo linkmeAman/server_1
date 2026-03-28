@@ -51,6 +51,15 @@ class TestEmployeeEventsV1Repository(unittest.TestCase):
             Column("start_time", String(32), nullable=True),
             Column("end_time", String(32), nullable=True),
         )
+        venue = Table(
+            "venue",
+            metadata,
+            Column("id", Integer, primary_key=True),
+            Column("venue", String(255), nullable=True),
+            Column("display_name", String(255), nullable=True),
+            Column("park", String(8), nullable=False),
+            Column("status", String(8), nullable=False),
+        )
         metadata.create_all(self.engine)
         with self.engine.begin() as conn:
             conn.execute(
@@ -168,6 +177,32 @@ class TestEmployeeEventsV1Repository(unittest.TestCase):
                     {"id": 6, "workshift_id": 9, "day_code": 3, "start_time": "22:00:00", "end_time": "06:00:00"},
                 ],
             )
+            conn.execute(
+                venue.insert(),
+                [
+                    {
+                        "id": 10,
+                        "venue": "Andheri Center",
+                        "display_name": "Andheri Center",
+                        "park": "0",
+                        "status": "0",
+                    },
+                    {
+                        "id": 20,
+                        "venue": "Bandra Center",
+                        "display_name": "Bandra Center",
+                        "park": "1",
+                        "status": "0",
+                    },
+                    {
+                        "id": 30,
+                        "venue": "Closed Center",
+                        "display_name": "Closed Center",
+                        "park": "0",
+                        "status": "1",
+                    },
+                ],
+            )
             conn.exec_driver_sql(
                 """
                 CREATE VIEW emp_cont_view AS
@@ -227,6 +262,14 @@ class TestEmployeeEventsV1Repository(unittest.TestCase):
 
         self.assertEqual([1, 4], [row["employee_id"] for row in result])
         self.assertEqual([10, 11], [row["department_id"] for row in result])
+
+    def test_list_active_venues_applies_active_filters(self):
+        result = self.repository.list_active_venues()
+
+        self.assertEqual(
+            [{"id": 10, "venue": "Andheri Center", "display_name": "Andheri Center"}],
+            result,
+        )
 
     def test_get_employee_leave_requests_applies_overlap_and_active_filters(self):
         result = self.repository.get_employee_leave_requests(
@@ -396,6 +439,7 @@ class TestEmployeeEventsV1RepositoryTrainerCalendarEvents(unittest.TestCase):
             Column("id", Integer, primary_key=True),
             Column("batch", String(255), nullable=True),
             Column("display_name", String(255), nullable=True),
+            Column("venue_id", Integer, nullable=True),
             Column("parent_id", Integer, nullable=True),
             Column("date", String(32), nullable=True),
             Column("start_date", String(32), nullable=True),
@@ -418,6 +462,8 @@ class TestEmployeeEventsV1RepositoryTrainerCalendarEvents(unittest.TestCase):
             Column("inactive", Integer, nullable=True),
             Column("hide", Integer, nullable=True),
             Column("cont_park", Integer, nullable=True),
+            Column("demo_class", Integer, nullable=True),
+            Column("training_assign", Integer, nullable=True),
         )
         metadata.create_all(self.engine)
 
@@ -429,6 +475,7 @@ class TestEmployeeEventsV1RepositoryTrainerCalendarEvents(unittest.TestCase):
                         "id": 100,
                         "batch": "Batch A",
                         "display_name": "Batch A Display",
+                        "venue_id": 10,
                         "parent_id": None,
                         "date": "2026-03-01",
                         "start_date": "2026-03-01",
@@ -451,11 +498,14 @@ class TestEmployeeEventsV1RepositoryTrainerCalendarEvents(unittest.TestCase):
                         "inactive": 0,
                         "hide": 0,
                         "cont_park": 0,
+                        "demo_class": 0,
+                        "training_assign": 0,
                     },
                     {
                         "id": 101,
                         "batch": "Batch A Reschedule",
                         "display_name": "Rescheduled A",
+                        "venue_id": 10,
                         "parent_id": 100,
                         "date": "2026-03-12",
                         "start_date": "2026-03-12",
@@ -478,11 +528,14 @@ class TestEmployeeEventsV1RepositoryTrainerCalendarEvents(unittest.TestCase):
                         "inactive": 0,
                         "hide": 0,
                         "cont_park": 0,
+                        "demo_class": 0,
+                        "training_assign": 0,
                     },
                     {
                         "id": 200,
                         "batch": "Other Trainer Batch",
                         "display_name": "Other Trainer",
+                        "venue_id": 20,
                         "parent_id": None,
                         "date": "2026-03-05",
                         "start_date": "2026-03-01",
@@ -505,11 +558,14 @@ class TestEmployeeEventsV1RepositoryTrainerCalendarEvents(unittest.TestCase):
                         "inactive": 0,
                         "hide": 0,
                         "cont_park": 0,
+                        "demo_class": 0,
+                        "training_assign": 0,
                     },
                     {
                         "id": 300,
                         "batch": "Hidden Batch",
                         "display_name": "Hidden",
+                        "venue_id": 10,
                         "parent_id": None,
                         "date": "2026-03-10",
                         "start_date": "2026-03-10",
@@ -532,6 +588,98 @@ class TestEmployeeEventsV1RepositoryTrainerCalendarEvents(unittest.TestCase):
                         "inactive": 0,
                         "hide": 1,
                         "cont_park": 0,
+                        "demo_class": 0,
+                        "training_assign": 0,
+                    },
+                    {
+                        "id": 400,
+                        "batch": "Inactive Batch",
+                        "display_name": "Inactive Batch",
+                        "venue_id": 10,
+                        "parent_id": None,
+                        "date": "2026-03-10",
+                        "start_date": "2026-03-10",
+                        "end_date": "2026-03-10",
+                        "start_time": "10:00:00",
+                        "end_time": "11:00:00",
+                        "day_code": "2",
+                        "title": "Inactive",
+                        "venue": "Centre A",
+                        "timezone_id": "Asia/Kolkata",
+                        "contact_id": 100,
+                        "code": "I-400",
+                        "category": "Offline",
+                        "branch": "Main",
+                        "bid": 3,
+                        "employee_id": 701,
+                        "associate_fullname": "Trainer Hidden",
+                        "modified_at": "2026-03-10 09:00:00",
+                        "park": 0,
+                        "inactive": 1,
+                        "hide": 0,
+                        "cont_park": 0,
+                        "demo_class": 0,
+                        "training_assign": 0,
+                    },
+                    {
+                        "id": 500,
+                        "batch": "Demo Class Batch",
+                        "display_name": "Demo Class Batch",
+                        "venue_id": 10,
+                        "parent_id": None,
+                        "date": "2026-03-10",
+                        "start_date": "2026-03-10",
+                        "end_date": "2026-03-10",
+                        "start_time": "10:00:00",
+                        "end_time": "11:00:00",
+                        "day_code": "2",
+                        "title": "Demo Class",
+                        "venue": "Centre A",
+                        "timezone_id": "Asia/Kolkata",
+                        "contact_id": 100,
+                        "code": "D-500",
+                        "category": "Offline",
+                        "branch": "Main",
+                        "bid": 3,
+                        "employee_id": 701,
+                        "associate_fullname": "Trainer Hidden",
+                        "modified_at": "2026-03-10 09:00:00",
+                        "park": 0,
+                        "inactive": 0,
+                        "hide": 0,
+                        "cont_park": 0,
+                        "demo_class": 1,
+                        "training_assign": 0,
+                    },
+                    {
+                        "id": 600,
+                        "batch": "Training Assign Batch",
+                        "display_name": "Training Assign Batch",
+                        "venue_id": 20,
+                        "parent_id": None,
+                        "date": "2026-03-10",
+                        "start_date": "2026-03-10",
+                        "end_date": "2026-03-10",
+                        "start_time": "10:00:00",
+                        "end_time": "11:00:00",
+                        "day_code": "2",
+                        "title": "Training Assign",
+                        "venue": "Centre C",
+                        "timezone_id": "Asia/Kolkata",
+                        "contact_id": 200,
+                        "code": "T-600",
+                        "category": "Offline",
+                        "branch": "West",
+                        "bid": 2,
+                        "employee_id": 601,
+                        "associate_fullname": "Trainer Two",
+                        "modified_at": "2026-03-10 09:00:00",
+                        "park": 0,
+                        "inactive": 0,
+                        "hide": 0,
+                        "cont_park": 0,
+                        "demo_class": 0,
+                        "training_assign": 1,
                     },
                 ],
             )
@@ -578,6 +726,18 @@ class TestEmployeeEventsV1RepositoryTrainerCalendarEvents(unittest.TestCase):
             ],
             ordering,
         )
+
+    def test_list_active_batches_by_venue_ids_filters_by_venue_and_active_flags(self):
+        rows = self.repository.list_active_batches_by_venue_ids([10])
+
+        self.assertEqual([100, 101], [row["id"] for row in rows])
+        self.assertTrue(all(row["venue_id"] == 10 for row in rows))
+
+    def test_list_active_batches_by_venue_ids_supports_multiple_venues(self):
+        rows = self.repository.list_active_batches_by_venue_ids([20, 10])
+
+        self.assertEqual([100, 101, 200], [row["id"] for row in rows])
+        self.assertEqual([10, 10, 20], [row["venue_id"] for row in rows])
 
 
     def test_get_workshift_day_rows_returns_empty_for_empty_input(self):
