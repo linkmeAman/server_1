@@ -5,8 +5,8 @@ import unittest
 from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, event
 from sqlalchemy.pool import StaticPool
 
-from controllers.employee_events_v1.services.event_repository import EmployeeEventsRepository
-from core.database import engines
+from app.modules.employee_events_v1.services.event_repository import EmployeeEventsRepository
+from app.core.database import engines
 
 
 class TestDemoEventsRepository(unittest.TestCase):

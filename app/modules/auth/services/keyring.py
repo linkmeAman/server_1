@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-from core.settings import get_settings
+from app.core.settings import get_settings
 
 
 @dataclass(frozen=True)

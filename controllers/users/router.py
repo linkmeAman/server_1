@@ -1,10 +1,9 @@
-"""Router registry for user management endpoints."""
+"""Compatibility wrapper.
 
-from __future__ import annotations
+Canonical module moved to app.modules.users.router.
+"""
 
-from fastapi import APIRouter
+from importlib import import_module
+import sys
 
-from controllers.users.handlers.manage import router as manage_router
-
-router = APIRouter()
-router.include_router(manage_router)
+sys.modules[__name__] = import_module("app.modules.users.router")

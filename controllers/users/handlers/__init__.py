@@ -1,1 +1,9 @@
-# controllers/users/handlers package
+"""Compatibility wrapper.
+
+Canonical module moved to app.modules.users.handlers.
+"""
+
+from importlib import import_module
+import sys
+
+sys.modules[__name__] = import_module("app.modules.users.handlers")

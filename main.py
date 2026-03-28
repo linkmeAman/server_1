@@ -14,13 +14,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 # Add the dynamic_api directory to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from core.settings import get_settings
-from core.router import router as dynamic_router
-from core.middleware import setup_middleware
-from core.response import error_response
-from core.exceptions import DynamicAPIException
-from core.database import init_database
-from core.prism_cache import init_redis, close_redis
+from app.core.settings import get_settings
+from app.core.router import router as dynamic_router
+from app.core.middleware import setup_middleware
+from app.core.response import error_response
+from app.core.exceptions import DynamicAPIException
+from app.core.database import init_database
+from app.core.prism_cache import init_redis, close_redis
 from app.api.v1.router import api_router
 from app.modules.auth.services.common import AuthError
 from routes.tables import router as explorer_tables_router

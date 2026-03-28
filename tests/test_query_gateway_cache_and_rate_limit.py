@@ -11,10 +11,10 @@ from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine
 from sqlalchemy.pool import StaticPool
 
 import main
-from controllers.api.query_gateway import reset_query_gateway_rate_limiter
-from core.database import engines
-from core.settings import get_settings
-from core.sql_gateway import (
+from app.modules.query_gateway.router import reset_query_gateway_rate_limiter
+from app.core.database import engines
+from app.core.settings import get_settings
+from app.core.sql_gateway import (
     clear_metadata_cache,
     execute_gateway_request,
     metadata_cache_size,
@@ -154,7 +154,7 @@ class TestQueryGatewayCacheAndRateLimit(unittest.TestCase):
             "columns": ["id"],
         }
 
-        with patch("controllers.api.query_gateway.validate_token", return_value={"sub": "1", "typ": "access"}):
+        with patch("app.modules.query_gateway.router.validate_token", return_value={"sub": "1", "typ": "access"}):
             client = TestClient(main.app)
             try:
                 first = client.post(

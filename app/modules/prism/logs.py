@@ -9,7 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, Query
 from sqlalchemy import text
 
-from core.database import central_session_context
+from app.core.database import central_session_context
 
 router = APIRouter(prefix="/prism/logs", tags=["PRISM — Access Logs"])
 

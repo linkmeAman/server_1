@@ -1,0 +1,1 @@
+"""SQL gateway admin module."""
