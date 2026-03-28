@@ -5,9 +5,9 @@ import unittest
 from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine
 from sqlalchemy.pool import StaticPool
 
-from app.core.database import engines
-from app.core.settings import get_settings
-from app.core.sqlgw_policy_store import (
+from core.database import engines
+from core.settings import get_settings
+from core.sqlgw_policy_store import (
     SQLGWPolicyError,
     activate_policy,
     approve_policy,
@@ -16,7 +16,7 @@ from app.core.sqlgw_policy_store import (
     get_active_policy,
     list_policy_versions,
 )
-from app.core.sqlgw_schema import clear_schema_cache
+from core.sqlgw_schema import clear_schema_cache
 
 
 class TestSQLGWPolicyStore(unittest.TestCase):

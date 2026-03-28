@@ -2,18 +2,18 @@
 
 from fastapi import APIRouter
 
-from app.modules.auth.legacy_router import router as auth_router
+from controllers.api.auth import router as auth_router
 from app.modules.auth.router import router as auth_v2_router
-from app.modules.employee_events_v1.router import router as employee_events_v1_router
-from app.modules.example.router import router as example_router
-from app.modules.geosearch.router import router as geosearch_router
-from app.modules.google_calendar_v1.router import router as google_calendar_v1_router
-from app.modules.llm.router import router as llm_router
-from app.modules.orders.router import router as orders_router
+from controllers.users.router import router as users_router
+from controllers.api.example import router as example_router
+from controllers.api.geosearch import router as geosearch_router
+from controllers.api.llm import router as llm_router
+from controllers.api.query_gateway import router as query_gateway_router
+from controllers.employee_events_v1 import router as employee_events_v1_router
+from controllers.google_calendar_v1 import router as google_calendar_v1_router
+from controllers.internal.sqlgw_admin import router as sqlgw_admin_router
+from controllers.orders import router as orders_router
 from app.modules.prism.router import router as prism_router
-from app.modules.query_gateway.router import router as query_gateway_router
-from app.modules.sqlgw_admin.router import router as sqlgw_admin_router
-from app.modules.users.router import router as users_router
 
 api_router = APIRouter()
 

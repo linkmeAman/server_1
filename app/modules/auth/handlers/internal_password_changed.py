@@ -27,8 +27,8 @@ from app.modules.auth.services.common import (
     user_agent,
 )
 from app.modules.auth.services.session_revocation import revoke_all_sessions_for_user
-from app.core.database import get_central_db_session
-from app.core.settings import get_settings
+from core.database import get_central_db_session
+from core.settings import get_settings
 
 router = APIRouter(prefix="/internal/auth/events", tags=["auth-internal"])
 

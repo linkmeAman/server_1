@@ -41,8 +41,8 @@ from app.modules.auth.services.common import (
 from app.modules.auth.services.device_fingerprint import compute_device_fingerprint
 from app.modules.auth.services.session_revocation import revoke_session_family
 from app.modules.auth.services.token_service import issue_token_pair, verify_refresh_token
-from app.core.database import get_central_db_session, get_main_db_session
-from app.core.settings import get_settings
+from core.database import get_central_db_session, get_main_db_session
+from core.settings import get_settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

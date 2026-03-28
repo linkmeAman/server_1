@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.modules.google_calendar_v1.dependencies import GoogleCalendarError
+from controllers.google_calendar_v1.dependencies import GoogleCalendarError
 import main
-from app.core.settings import get_settings
+from core.settings import get_settings
 
 
 def _middleware_headers():
@@ -75,7 +75,7 @@ class TestGoogleCalendarV1Routes(unittest.TestCase):
 
     def test_create_invalid_app_token_returns_401(self):
         with patch(
-            "app.modules.google_calendar_v1.dependencies.validate_token",
+            "controllers.google_calendar_v1.dependencies.validate_token",
             side_effect=ValueError("expired"),
         ):
             headers = {
@@ -94,10 +94,10 @@ class TestGoogleCalendarV1Routes(unittest.TestCase):
 
     def test_create_token_error_returns_503(self):
         with patch(
-            "app.modules.google_calendar_v1.dependencies.validate_token",
+            "controllers.google_calendar_v1.dependencies.validate_token",
             return_value={"sub": "123", "typ": "access"},
         ), patch(
-            "app.modules.google_calendar_v1.router.event_service.create_event",
+            "controllers.google_calendar_v1.router.event_service.create_event",
             new=AsyncMock(
                 side_effect=GoogleCalendarError(
                     code="GCAL_TOKEN_UNAVAILABLE",
@@ -122,10 +122,10 @@ class TestGoogleCalendarV1Routes(unittest.TestCase):
 
     def test_create_success_response_shape(self):
         with patch(
-            "app.modules.google_calendar_v1.dependencies.validate_token",
+            "controllers.google_calendar_v1.dependencies.validate_token",
             return_value={"sub": "123", "typ": "access"},
         ), patch(
-            "app.modules.google_calendar_v1.router.event_service.create_event",
+            "controllers.google_calendar_v1.router.event_service.create_event",
             new=AsyncMock(
                 return_value={
                     "google_event": {"id": "evt_1", "summary": "Demo"},
@@ -151,10 +151,10 @@ class TestGoogleCalendarV1Routes(unittest.TestCase):
 
     def test_delete_next_instance_forwards_mode(self):
         with patch(
-            "app.modules.google_calendar_v1.dependencies.validate_token",
+            "controllers.google_calendar_v1.dependencies.validate_token",
             return_value={"sub": "123", "typ": "access"},
         ), patch(
-            "app.modules.google_calendar_v1.router.event_service.delete_event",
+            "controllers.google_calendar_v1.router.event_service.delete_event",
             new=AsyncMock(
                 return_value={
                     "delete_mode": "next_instance",

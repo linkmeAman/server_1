@@ -14,8 +14,8 @@ from app.modules.auth.constants import (
 from app.modules.auth.schemas.models import CurrentV2User
 from app.modules.auth.services.common import AuthError
 from app.modules.auth.services.token_service import verify_access_token
-from app.core.database import central_session_context
-from app.core.settings import get_settings
+from core.database import central_session_context
+from core.settings import get_settings
 
 
 def _normalize_roles(raw_roles: object) -> list[dict]:

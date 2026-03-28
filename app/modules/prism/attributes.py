@@ -23,8 +23,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from app.core.database import central_session_context
-from app.core.prism_cache import load_employee_sync_attributes
+from core.database import central_session_context
+from core.prism_cache import load_employee_sync_attributes
 
 router = APIRouter(prefix="/prism/attributes", tags=["PRISM — ABAC Attributes"])
 

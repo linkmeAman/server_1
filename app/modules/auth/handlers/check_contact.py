@@ -34,8 +34,8 @@ from app.modules.auth.services.common import (
     user_agent,
     utcnow,
 )
-from app.core.database import get_central_db_session, get_main_db_session
-from app.core.settings import get_settings
+from core.database import get_central_db_session, get_main_db_session
+from core.settings import get_settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)

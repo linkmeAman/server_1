@@ -17,8 +17,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.core.database import central_session_context
-from app.core.prism_guard import CallerContext, require_prism_caller, require_any_caller
+from core.database import central_session_context
+from core.prism_guard import CallerContext, require_prism_caller, require_any_caller
 from sqlalchemy import text
 
 router = APIRouter(prefix="/prism/sidenav", tags=["PRISM · Sidenav"])

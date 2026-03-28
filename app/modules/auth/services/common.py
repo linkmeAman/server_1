@@ -13,8 +13,8 @@ from uuid import uuid4
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-from app.core.response import error_response, success_response
-from app.core.settings import get_settings
+from core.response import error_response, success_response
+from core.settings import get_settings
 
 from app.modules.auth.constants import (
     HEADER_RATE_LIMIT_LIMIT,

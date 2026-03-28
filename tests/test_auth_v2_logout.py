@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 import main
-from app.core.database import get_central_db_session
+from core.database import get_central_db_session
 from tests.auth_test_utils import build_headers, ensure_auth_v2_routes, testclient_requests_work
 
 

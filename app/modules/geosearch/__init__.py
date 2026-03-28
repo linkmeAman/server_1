@@ -1,1 +1,0 @@
-"""Geosearch module."""

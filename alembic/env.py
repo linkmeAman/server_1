@@ -9,7 +9,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from app.core.database import get_central_async_engine
+from core.database import get_central_async_engine
 
 config = context.config
 

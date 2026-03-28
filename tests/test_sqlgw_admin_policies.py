@@ -11,10 +11,10 @@ from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine
 from sqlalchemy.pool import StaticPool
 
 import main
-from app.core.database import engines
-from app.core.settings import get_settings
-from app.core.sqlgw_policy_store import clear_policy_cache
-from app.core.sqlgw_schema import clear_schema_cache
+from core.database import engines
+from core.settings import get_settings
+from core.sqlgw_policy_store import clear_policy_cache
+from core.sqlgw_schema import clear_schema_cache
 
 
 def _testclient_requests_work() -> bool:
@@ -118,7 +118,7 @@ class TestSQLGWAdminPolicies(unittest.TestCase):
             self.skipTest("TestClient request execution is not responsive in this runtime")
 
         with patch(
-            "app.modules.sqlgw_admin.router.validate_token",
+            "controllers.internal.sqlgw_admin.validate_token",
             side_effect=lambda token, expected_type=None: self._claims_for_token(token),
         ):
             client = TestClient(main.app)

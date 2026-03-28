@@ -16,8 +16,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from sqlalchemy import text
 
-from app.core.database import central_session_context
-from app.core.security import hash_password
+from core.database import central_session_context
+from core.security import hash_password
 
 
 @dataclass

@@ -67,7 +67,7 @@ class TestQueryGatewayAuth(unittest.TestCase):
         if not _testclient_requests_work():
             self.skipTest("TestClient request execution is not responsive in this runtime")
 
-        with patch("app.modules.query_gateway.router.validate_token", side_effect=ValueError("invalid token")):
+        with patch("controllers.api.query_gateway.validate_token", side_effect=ValueError("invalid token")):
             client = TestClient(main.app)
             try:
                 response = client.post(
@@ -86,7 +86,7 @@ class TestQueryGatewayAuth(unittest.TestCase):
         if not _testclient_requests_work():
             self.skipTest("TestClient request execution is not responsive in this runtime")
 
-        with patch("app.modules.query_gateway.router.validate_token", side_effect=ValueError("Token expired")):
+        with patch("controllers.api.query_gateway.validate_token", side_effect=ValueError("Token expired")):
             client = TestClient(main.app)
             try:
                 response = client.post(

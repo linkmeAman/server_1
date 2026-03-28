@@ -1,9 +1,22 @@
-"""Compatibility wrapper.
+"""Response normalization helpers for explicit routers."""
 
-Canonical module moved to app.shared.response_normalization.
-"""
+from typing import Any
 
-from importlib import import_module
-import sys
+from fastapi import Response
 
-sys.modules[__name__] = import_module("app.shared.response_normalization")
+from core.response import APIResponse, success_response
+
+
+def normalize_result(result: Any) -> Any:
+    """Mirror legacy dynamic response wrapping for explicit routes."""
+    if isinstance(result, Response):
+        return result
+
+    if isinstance(result, APIResponse):
+        return result.model_dump(mode="json")
+
+    if isinstance(result, dict) and "success" in result:
+        return result
+
+    return success_response(data=result).model_dump(mode="json")
+

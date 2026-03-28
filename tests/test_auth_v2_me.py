@@ -39,7 +39,7 @@ class TestAuthV2Me(unittest.TestCase):
             "app.modules.auth.dependencies.verify_v2_access_token",
             return_value=claims,
         ), patch(
-            "app.core.database.get_central_db_session",
+            "core.database.get_central_db_session",
             side_effect=RuntimeError("db should not be used"),
         ):
             client = TestClient(main.app)
@@ -82,7 +82,7 @@ class TestAuthV2Me(unittest.TestCase):
             "app.modules.auth.dependencies.verify_v2_access_token",
             return_value=claims,
         ), patch(
-            "app.core.database.get_central_async_engine",
+            "core.database.get_central_async_engine",
             side_effect=RuntimeError("central down"),
         ):
             client = TestClient(main.app)

@@ -1,9 +1,7 @@
-"""Compatibility wrapper.
+"""Compatibility wrapper for API v1 router.
 
 Canonical module moved to app.api.v1.router.
 """
 
-from importlib import import_module
-import sys
+from app.api.v1.router import *  # noqa: F401,F403
 
-sys.modules[__name__] = import_module("app.api.v1.router")

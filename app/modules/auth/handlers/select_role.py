@@ -83,9 +83,9 @@ from app.modules.auth.services.common import (
 )
 from app.modules.auth.services.device_fingerprint import compute_device_fingerprint
 from app.modules.auth.services.token_service import issue_token_pair, verify_identity_token
-from app.core.database import get_central_db_session, get_main_db_session
-from app.core.prism_cache import build_prism_cache, sync_prism_employee_attrs
-from app.core.settings import get_settings
+from core.database import get_central_db_session, get_main_db_session
+from core.prism_cache import build_prism_cache, sync_prism_employee_attrs
+from core.settings import get_settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)

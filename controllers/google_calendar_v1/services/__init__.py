@@ -1,9 +1,11 @@
-"""Compatibility wrapper.
+"""Service exports for Google Calendar V1."""
 
-Canonical module moved to app.modules.google_calendar_v1.services.
-"""
+from .event_service import GoogleCalendarEventService
+from .google_client import GoogleCalendarClient
+from .token_manager import GoogleCalendarTokenManager
 
-from importlib import import_module
-import sys
-
-sys.modules[__name__] = import_module("app.modules.google_calendar_v1.services")
+__all__ = [
+    "GoogleCalendarClient",
+    "GoogleCalendarEventService",
+    "GoogleCalendarTokenManager",
+]

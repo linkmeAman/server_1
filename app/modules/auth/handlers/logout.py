@@ -25,7 +25,7 @@ from app.modules.auth.services.common import (
 )
 from app.modules.auth.services.session_revocation import revoke_session_family
 from app.modules.auth.services.token_service import verify_refresh_token
-from app.core.database import get_central_db_session
+from core.database import get_central_db_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

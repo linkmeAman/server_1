@@ -1,9 +1,26 @@
-"""Compatibility wrapper.
+"""Pydantic request models for Google Calendar V1 endpoints."""
 
-Canonical module moved to app.modules.google_calendar_v1.schemas.models.
-"""
+from __future__ import annotations
 
-from importlib import import_module
-import sys
+from enum import Enum
+from typing import Any, Dict, Optional
 
-sys.modules[__name__] = import_module("app.modules.google_calendar_v1.schemas.models")
+from pydantic import BaseModel, Field
+
+
+class DeleteMode(str, Enum):
+    full = "full"
+    next_instance = "next_instance"
+
+
+class CreateCalendarEventRequest(BaseModel):
+    actor_name: str = Field(..., min_length=1, max_length=255)
+    actor_email: str = Field(..., min_length=3, max_length=255)
+    event: Dict[str, Any] = Field(default_factory=dict)
+
+
+class UpdateCalendarEventRequest(BaseModel):
+    actor_name: str = Field(..., min_length=1, max_length=255)
+    actor_email: str = Field(..., min_length=3, max_length=255)
+    event: Dict[str, Any] = Field(default_factory=dict)
+    log_row_id: Optional[int] = Field(default=None, ge=1)

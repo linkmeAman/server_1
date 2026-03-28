@@ -1,9 +1,5 @@
-"""Compatibility wrapper.
+"""Google Calendar V1 isolated module."""
 
-Canonical module moved to app.modules.google_calendar_v1.
-"""
+from .router import router
 
-from importlib import import_module
-import sys
-
-sys.modules[__name__] = import_module("app.modules.google_calendar_v1")
+__all__ = ["router"]

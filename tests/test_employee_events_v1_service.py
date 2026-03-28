@@ -1,13 +1,13 @@
 """Service-level tests for Employee Events V1 workflows."""
 
-from datetime import datetime
+from datetime import date, datetime
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.modules.employee_events_v1.dependencies import EmployeeEventsError
-from app.modules.employee_events_v1.services.event_service import EmployeeEventsService
-from app.modules.employee_events_v1.services.google_payload_builder import (
+from controllers.employee_events_v1.dependencies import EmployeeEventsError
+from controllers.employee_events_v1.services.event_service import EmployeeEventsService
+from controllers.employee_events_v1.services.google_payload_builder import (
     build_google_event_payload,
 )
 
@@ -27,7 +27,7 @@ class TestEmployeeEventsV1Service(unittest.IsolatedAsyncioTestCase):
         self.token_manager.get_valid_access_token = AsyncMock(return_value="google-token")
 
         self.settings_patcher = patch(
-            "app.modules.employee_events_v1.services.event_service.get_settings",
+            "controllers.employee_events_v1.services.event_service.get_settings",
             return_value=SimpleNamespace(
                 EMP_EVENT_APPROVED_STATUS=1,
                 EMP_EVENT_PARKED_VALUE=1,
@@ -190,6 +190,124 @@ class TestEmployeeEventsV1Service(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("Bandra", result["branches"][0]["branch"])
         self.event_repo.list_realtime_employees.assert_called_once()
         self.event_repo.list_active_branches.assert_called_once()
+
+    def test_get_active_venues(self):
+        self.event_repo.list_active_venues.return_value = [
+            {"id": 10, "venue": "Andheri Center", "display_name": "Andheri Center"},
+            {"id": 20, "venue": "Bandra Center", "display_name": "Bandra Center"},
+        ]
+
+        result = self.service.get_active_venues()
+
+        self.assertEqual(2, result["total_count"])
+        self.assertEqual("Andheri Center", result["venues"][0]["venue"])
+        self.event_repo.list_active_venues.assert_called_once()
+
+    def test_get_active_batches_by_venue_dedupes_ids_and_returns_rows(self):
+        self.event_repo.list_active_batches_by_venue_ids.return_value = [
+            {
+                "id": 123,
+                "batch": "Offline B87",
+                "display_name": "Offline B87",
+                "venue_id": 10,
+                "venue": "Andheri Center",
+                "parent_id": 0,
+                "date": "2026-03-10",
+                "start_date": "2026-03-10",
+                "end_date": "2026-03-10",
+                "start_time": "10:00:00",
+                "end_time": "11:00:00",
+                "title": "Offline B87",
+                "timezone_id": "Asia/Kolkata",
+                "branch": "Mumbai",
+                "bid": 7,
+                "parent_batch_name": None,
+            }
+        ]
+
+        result = self.service.get_active_batches_by_venue([10, "10", 20, 20])
+
+        self.assertEqual([10, 20], result["venue_ids"])
+        self.assertEqual(1, result["total_count"])
+        self.assertEqual(123, result["batches"][0]["batch_id"])
+        self.assertEqual("Offline B87", result["batches"][0]["batch_name"])
+        self.assertEqual("Offline B87", result["batches"][0]["summary"])
+        self.assertEqual("Andheri Center", result["batches"][0]["location"])
+        self.assertEqual("original", result["batches"][0]["batch_type"])
+        self.assertEqual("2026-03-10 10:00:00", result["batches"][0]["event_start"])
+        self.event_repo.list_active_batches_by_venue_ids.assert_called_once_with([10, 20])
+
+    def test_get_active_batches_by_venue_rejects_invalid_ids(self):
+        invalid_cases = [
+            [],
+            [0],
+            [-1],
+            [True],
+            ["bad"],
+            list(range(1, 27)),
+        ]
+
+        for venue_ids in invalid_cases:
+            with self.subTest(venue_ids=venue_ids):
+                with self.assertRaises(EmployeeEventsError) as ctx:
+                    self.service.get_active_batches_by_venue(venue_ids)
+                self.assertEqual("EMP_EVENT_INVALID_BATCH_QUERY", ctx.exception.code)
+
+    def test_get_batch_kids_present_returns_window_and_rows(self):
+        self.event_repo.list_batch_kids_present.return_value = [
+            {
+                "invoice_id": 1001,
+                "item_id": 11,
+                "invoice": "INV-1001",
+                "code_name": "A001 - Aarav",
+                "sessions": 16,
+                "sessions_used": 3,
+                "dob": "2018-01-01",
+                "counsellor_name": "Counsellor A",
+                "balance": 10,
+                "dropout": "0",
+                "freeze": "0",
+                "date": "2026-03-01",
+            }
+        ]
+
+        with patch.object(
+            self.service,
+            "_current_date_in_workshift_timezone",
+            return_value=date(2026, 3, 28),
+        ):
+            result = self.service.get_batch_kids_present(700)
+
+        self.assertEqual(700, result["batch_id"])
+        self.assertEqual("2026-03-20", result["from_date"])
+        self.assertEqual("2026-06-26", result["to_date"])
+        self.assertEqual(1, result["total_count"])
+        self.assertEqual(11, result["kids"][0]["item_id"])
+        self.event_repo.list_batch_kids_present.assert_called_once_with(
+            batch_id=700,
+            from_date="2026-03-20",
+            to_date="2026-06-26",
+        )
+
+    def test_get_batch_kids_present_rejects_invalid_batch_id(self):
+        for invalid_value in (0, -1, True, "bad"):
+            with self.subTest(invalid_value=invalid_value):
+                with self.assertRaises(EmployeeEventsError) as ctx:
+                    self.service.get_batch_kids_present(invalid_value)
+                self.assertEqual("EMP_EVENT_INVALID_BATCH_KIDS_QUERY", ctx.exception.code)
+
+    def test_get_batch_kids_present_wraps_repository_errors(self):
+        self.event_repo.list_batch_kids_present.side_effect = RuntimeError("db exploded")
+
+        with patch.object(
+            self.service,
+            "_current_date_in_workshift_timezone",
+            return_value=date(2026, 3, 28),
+        ):
+            with self.assertRaises(EmployeeEventsError) as ctx:
+                self.service.get_batch_kids_present(700)
+
+        self.assertEqual("EMP_EVENT_BATCH_KIDS_QUERY_FAILED", ctx.exception.code)
 
     def test_get_trainer_calendar_events_returns_unified_merged_events(self):
         self.event_repo.list_events.return_value = [
@@ -550,7 +668,7 @@ class TestEmployeeEventsV1Service(unittest.IsolatedAsyncioTestCase):
         self.event_repo.get_employee_workshifts.return_value = []
 
         with patch(
-            "app.modules.employee_events_v1.services.event_service.get_settings",
+            "controllers.employee_events_v1.services.event_service.get_settings",
             return_value=SimpleNamespace(
                 EMP_EVENT_APPROVED_STATUS=1,
                 EMP_EVENT_PARKED_VALUE=1,
@@ -932,7 +1050,7 @@ class TestEmployeeEventsV1Service(unittest.IsolatedAsyncioTestCase):
         self.google_client.create_event.return_value = (201, {"id": "g_evt_1"})
 
         with patch(
-            "app.modules.employee_events_v1.services.event_service.build_google_event_payload",
+            "controllers.employee_events_v1.services.event_service.build_google_event_payload",
             return_value={"summary": "S"},
         ):
             result = await self.service.approve_event(event_id=10, requested_status=1)
@@ -971,7 +1089,7 @@ class TestEmployeeEventsV1Service(unittest.IsolatedAsyncioTestCase):
         )
 
         with patch(
-            "app.modules.employee_events_v1.services.event_service.build_google_event_payload",
+            "controllers.employee_events_v1.services.event_service.build_google_event_payload",
             return_value={"summary": "S"},
         ):
             with self.assertRaises(EmployeeEventsError) as ctx:
@@ -1031,7 +1149,7 @@ class TestEmployeeEventsV1Service(unittest.IsolatedAsyncioTestCase):
         self.google_client.update_event.return_value = (200, {"id": "g_evt_1"})
 
         with patch(
-            "app.modules.employee_events_v1.services.event_service.build_google_event_payload",
+            "controllers.employee_events_v1.services.event_service.build_google_event_payload",
             return_value={"summary": "S"},
         ):
             result = await self.service.update_event(
@@ -1055,7 +1173,7 @@ class TestEmployeeEventsV1Service(unittest.IsolatedAsyncioTestCase):
         self.google_client.create_event.return_value = (201, {"id": "g_new"})
 
         with patch(
-            "app.modules.employee_events_v1.services.event_service.build_google_event_payload",
+            "controllers.employee_events_v1.services.event_service.build_google_event_payload",
             return_value={"summary": "S"},
         ):
             result = await self.service.update_event(
@@ -1108,7 +1226,7 @@ class TestEmployeeEventsV1Service(unittest.IsolatedAsyncioTestCase):
 class TestEmployeeEventsPayloadBuilder(unittest.TestCase):
     def test_attendee_is_set_when_contact_email_exists(self):
         with patch(
-            "app.modules.employee_events_v1.services.google_payload_builder.get_settings",
+            "controllers.employee_events_v1.services.google_payload_builder.get_settings",
             return_value=SimpleNamespace(EMP_EVENT_TIMEZONE="Asia/Kolkata"),
         ):
             payload = build_google_event_payload(

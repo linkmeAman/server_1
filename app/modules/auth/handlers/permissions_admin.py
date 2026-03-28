@@ -18,7 +18,7 @@ from app.modules.auth.dependencies import require_super_auth
 from app.modules.auth.schemas.models import CurrentV2User
 from app.modules.auth.services.authorization import AuthorizationResolver
 from app.modules.auth.services.common import AuthError, request_id, success_json_response
-from app.core.database import get_central_db_session, get_main_db_session
+from core.database import get_central_db_session, get_main_db_session
 
 router = APIRouter(prefix="/internal/auth/permissions", tags=["auth-permissions-admin"])
 logger = logging.getLogger(__name__)

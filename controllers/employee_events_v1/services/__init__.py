@@ -1,9 +1,13 @@
-"""Compatibility wrapper.
+"""Service exports for Employee Events V1."""
 
-Canonical module moved to app.modules.employee_events_v1.services.
-"""
+from .event_repository import EmployeeEventsRepository
+from .event_service import EmployeeEventsService
+from .google_payload_builder import build_google_event_payload
+from .google_sync_repository import EmployeeEventGoogleSyncRepository
 
-from importlib import import_module
-import sys
-
-sys.modules[__name__] = import_module("app.modules.employee_events_v1.services")
+__all__ = [
+    "EmployeeEventsRepository",
+    "EmployeeEventsService",
+    "EmployeeEventGoogleSyncRepository",
+    "build_google_event_payload",
+]

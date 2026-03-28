@@ -20,7 +20,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from app.core.database import central_session_context
+from core.database import central_session_context
 
 router = APIRouter(prefix="/prism/registry", tags=["PRISM — Registry"])
 

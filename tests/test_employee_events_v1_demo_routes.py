@@ -8,9 +8,9 @@ from unittest.mock import patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.modules.employee_events_v1.dependencies import EmployeeEventsError
+from controllers.employee_events_v1.dependencies import EmployeeEventsError
 import main
-from app.core.settings import get_settings
+from core.settings import get_settings
 
 
 def _middleware_headers():
@@ -72,7 +72,7 @@ class TestDemoEventsQueryRoute(unittest.TestCase):
 
     def test_demo_query_invalid_json_returns_400(self):
         with patch(
-            "app.modules.employee_events_v1.dependencies.validate_token",
+            "controllers.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ):
             response = self.client.post(
@@ -102,7 +102,7 @@ class TestDemoEventsQueryRoute(unittest.TestCase):
         ]
 
         with patch(
-            "app.modules.employee_events_v1.dependencies.validate_token",
+            "controllers.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ):
             for payload in cases:
@@ -153,7 +153,7 @@ class TestDemoEventsQueryRoute(unittest.TestCase):
         ]
 
         with patch(
-            "app.modules.employee_events_v1.dependencies.validate_token",
+            "controllers.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ):
             for payload in cases:
@@ -193,10 +193,10 @@ class TestDemoEventsQueryRoute(unittest.TestCase):
         }
 
         with patch(
-            "app.modules.employee_events_v1.dependencies.validate_token",
+            "controllers.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "app.modules.employee_events_v1.services.event_service.EmployeeEventsService.get_demo_events_batch",
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_demo_events_batch",
             return_value=mock_result,
         ):
             response = self.client.post(
@@ -232,10 +232,10 @@ class TestDemoEventsQueryRoute(unittest.TestCase):
         }
 
         with patch(
-            "app.modules.employee_events_v1.dependencies.validate_token",
+            "controllers.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "app.modules.employee_events_v1.services.event_service.EmployeeEventsService.get_demo_events_batch",
+            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_demo_events_batch",
             return_value=mock_result,
         ) as mock_batch:
             response = self.client.post(
