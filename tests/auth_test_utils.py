@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 import main
 from app.modules.auth.router import router as auth_v2_router
-from core.settings import get_settings
+from app.core.settings import get_settings
 
 
 def testclient_requests_work() -> bool:

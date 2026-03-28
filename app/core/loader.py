@@ -29,6 +29,16 @@ SAFE_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
 # Cache for loaded modules to improve performance
 _module_cache = {}
 
+# Canonical controller modules for the legacy dynamic /py/{controller}/{function}
+# surface. Keep this mapping explicit so runtime behavior no longer depends on
+# the deprecated controllers/ directory layout.
+CANONICAL_CONTROLLER_MODULES: dict[str, str] = {
+    "example": "app.modules.example.service",
+    "geosearch": "app.modules.geosearch.service",
+    "llm": "app.modules.llm.service",
+    "orders": "app.modules.orders.router",
+}
+
 
 def validate_name(name: str, name_type: str = "name") -> bool:
     """Validate controller or function name for security"""
@@ -84,7 +94,9 @@ def load_controller_module(controller_name: str):
         return _module_cache[controller_name]
     
     try:
-        module_path = f"controllers.{controller_name}"
+        module_path = CANONICAL_CONTROLLER_MODULES.get(controller_name)
+        if module_path is None:
+            raise ControllerNotFoundException(controller_name)
         module = importlib.import_module(module_path)
         
         # Cache the module
@@ -96,6 +108,11 @@ def load_controller_module(controller_name: str):
     except ImportError as e:
         logger.error(f"Failed to import controller '{controller_name}': {e}")
         raise ControllerNotFoundException(controller_name)
+
+
+def list_registered_controllers() -> list[str]:
+    """Return the controller names available to the dynamic router."""
+    return sorted(CANONICAL_CONTROLLER_MODULES.keys())
 
 
 def get_function_from_module(module, function_name: str, controller_name: str):

@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import main
-from core.settings import get_settings
+from app.core.settings import get_settings
 
 
 def _build_headers():

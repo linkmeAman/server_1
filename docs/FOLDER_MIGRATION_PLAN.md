@@ -157,6 +157,18 @@ backend/python/server_1/
 ## Next Phases
 - Phase 7: retire legacy wrappers and remove deprecated import paths.
 
+## Phase 7 Progress
+- Migrated test suite consumers to canonical imports and patch targets:
+  - `controllers.*` -> `app.modules.*`
+  - `core.*` -> `app.core.*`
+- Decoupled the dynamic runtime from the legacy `controllers/` directory:
+  - `app/core/loader.py` now resolves dynamic controllers only from the explicit
+    canonical registry.
+  - `app/core/router.py` lists controllers from the canonical registry instead of
+    scanning the old filesystem layout.
+- Legacy wrapper folders still remain for backward compatibility, but they are no
+  longer on the main runtime or test path.
+
 ## Rules During Migration
 - New feature work should import from `app.*` only.
 - Legacy paths remain supported temporarily via wrappers.

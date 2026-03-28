@@ -9,7 +9,7 @@ from typing import Optional, Dict, Any
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
 
-from .loader import call_function, get_controller_functions
+from .loader import call_function, get_controller_functions, list_registered_controllers
 from .response import success_response, error_response, APIResponse
 from .exceptions import (
     DynamicAPIException,
@@ -266,19 +266,7 @@ async def health_check():
 async def list_controllers():
     """List all available controllers (for development/debugging)"""
     try:
-        import os
-        import glob
-        
-        # Get all controller files
-        controllers_path = os.path.join(os.path.dirname(__file__), "..", "controllers")
-        controller_files = glob.glob(os.path.join(controllers_path, "*.py"))
-        
-        controllers = []
-        for file_path in controller_files:
-            filename = os.path.basename(file_path)
-            if filename != "__init__.py" and filename.endswith(".py"):
-                controller_name = filename[:-3]  # Remove .py extension
-                controllers.append(controller_name)
+        controllers = list_registered_controllers()
         
         return success_response(
             data={"controllers": controllers},
