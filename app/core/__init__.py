@@ -1,2 +1,1 @@
-# Core framework components
-# Contains the dynamic routing engine and system utilities
+# Core runtime services for the MARKX Python backend

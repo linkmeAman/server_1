@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from dotenv import load_dotenv
-from pydantic import Field, ValidationInfo, field_validator
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, EnvSettingsSource, PydanticBaseSettingsSource
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -48,9 +48,9 @@ class Settings(BaseSettings):
     """Application settings with environment variable support"""
     
     # API Configuration
-    APP_NAME: str = "Dynamic Multi-Project API"
+    APP_NAME: str = "MARKX Python API"
     APP_VERSION: str = "1.0.0"
-    DEBUG: bool = True
+    DEBUG: bool = False
     
     # Server Configuration
     HOST: str = "127.0.0.1"
@@ -58,18 +58,14 @@ class Settings(BaseSettings):
     RELOAD: bool = False
     
     # Security
-    SECRET_KEY: str = "your-super-secret-key-here"
+    SECRET_KEY: str = ""
     ALLOWED_HOSTS: List[str] = ["*"]
     CORS_ORIGINS: List[str] = ["*"]
     CORS_MANAGED_BY_PROXY: bool = False
     
     # API Key Authentication (optional)
-    API_KEY_ENABLED: bool = True
-    API_KEYS: List[str] = [
-        "tr_live_key_2025_a1b2c3d4e5f6",  # Production key
-        "tr_test_key_2025_x9y8z7w6v5u4",  # Testing key
-        "tr_admin_key_2025_p0o9i8u7y6t5"  # Admin key
-    ]
+    API_KEY_ENABLED: bool = False
+    API_KEYS: List[str] = []
     
     # Rate Limiting
     RATE_LIMIT_ENABLED: bool = False
@@ -97,7 +93,7 @@ class Settings(BaseSettings):
     )
 
     # Authentication / Token Settings
-    PASETO_SECRET_KEY: str = os.getenv("PASETO_SECRET_KEY", "change-this-paseto-secret-key")
+    PASETO_SECRET_KEY: str = os.getenv("PASETO_SECRET_KEY", "")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 480))
     REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", 7))
     RESET_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("RESET_TOKEN_EXPIRE_MINUTES", 30))
@@ -170,11 +166,6 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "logs/app.log"
     
-    # Controller Security
-    ALLOW_PRIVATE_METHODS: bool = False
-    MAX_CONTROLLER_NAME_LENGTH: int = 50
-    MAX_FUNCTION_NAME_LENGTH: int = 50
-
     # SQL Gateway
     SQL_GATEWAY_ALLOWLIST: Dict[str, Any] = Field(
         default_factory=dict,
@@ -303,6 +294,36 @@ class Settings(BaseSettings):
         if source not in {"auto", "env", "file", "db"}:
             return "auto"
         return source
+
+    @model_validator(mode="after")
+    def validate_security_posture(self):
+        if self.API_KEY_ENABLED and not self.API_KEYS:
+            raise ValueError("API_KEY_ENABLED requires at least one API key")
+
+        if self.DEBUG:
+            return self
+
+        if not self.SECRET_KEY:
+            raise ValueError("SECRET_KEY must be configured when DEBUG=False")
+
+        if not self.PASETO_SECRET_KEY:
+            raise ValueError("PASETO_SECRET_KEY must be configured when DEBUG=False")
+
+        if not self.ALLOWED_HOSTS or self.ALLOWED_HOSTS == ["*"]:
+            raise ValueError("ALLOWED_HOSTS must be explicitly configured when DEBUG=False")
+
+        if not self.CORS_MANAGED_BY_PROXY and (
+            not self.CORS_ORIGINS or self.CORS_ORIGINS == ["*"]
+        ):
+            raise ValueError(
+                "CORS_ORIGINS must be explicitly configured when DEBUG=False "
+                "unless CORS is managed by the reverse proxy"
+            )
+
+        if self.AUTH_V2_SIGNING_KEYS_JSON.strip() in {"", "[]"}:
+            raise ValueError("AUTH_V2_SIGNING_KEYS_JSON must be configured when DEBUG=False")
+
+        return self
 
 
 # Global settings instance

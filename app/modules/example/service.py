@@ -3,12 +3,12 @@ Example controller demonstrating various API patterns
 This shows different types of functions and parameter handling
 
 Available endpoints:
-- GET /py/example/hello - Simple hello world
-- GET /py/example/echo/{message} - Echo a message
-- POST /py/example/calculate - Perform calculations
-- GET /py/example/users - List users (with pagination)
-- GET /py/example/users/{id} - Get specific user
-- POST /py/example/users - Create new user
+- GET /api/example/hello - Simple hello world
+- GET /api/example/echo - Echo a message
+- POST /api/example/calculate - Perform calculations
+- GET /api/example/users - List users (with pagination)
+- GET /api/example/user/{id} - Get specific user
+- POST /api/example/create_user - Create new user
 """
 import logging
 from typing import Optional, List, Dict, Any, Union
@@ -29,7 +29,7 @@ SAMPLE_USERS = [
 def hello(name: str = "World") -> Dict[str, Any]:
     """
     Simple hello world function
-    GET /py/example/hello?name=John
+    GET /api/example/hello?name=John
     """
     logger.info(f"Hello called with name: {name}")
     return {
@@ -41,8 +41,8 @@ def hello(name: str = "World") -> Dict[str, Any]:
 
 def echo(message: str) -> Dict[str, Any]:
     """
-    Echo a message from URL path
-    GET /py/example/echo/your-message-here
+    Echo a message from query parameter
+    GET /api/example/echo?message=your-message-here
     """
     logger.info(f"Echo called with message: {message}")
     return {
@@ -60,7 +60,7 @@ def calculate(
 ) -> Dict[str, Any]:
     """
     Perform mathematical calculations
-    POST /py/example/calculate
+    POST /api/example/calculate
     {
         "operation": "add",
         "a": 10.5,
@@ -115,7 +115,7 @@ def users(
 ) -> Dict[str, Any]:
     """
     List users with pagination and filtering
-    GET /py/example/users?page=1&per_page=10&status=active
+    GET /api/example/users?page=1&per_page=10&status=active
     """
     logger.info(f"Users list called - page: {page}, per_page: {per_page}, status: {status}")
     
@@ -150,7 +150,7 @@ def users(
 def user(id: int) -> Dict[str, Any]:
     """
     Get specific user by ID
-    GET /py/example/user/123
+    GET /api/example/user/123
     """
     logger.info(f"Getting user with ID: {id}")
     
@@ -176,7 +176,7 @@ def create_user(
 ) -> Dict[str, Any]:
     """
     Create a new user
-    POST /py/example/create_user
+    POST /api/example/create_user
     {
         "name": "New User",
         "email": "newuser@example.com",
@@ -209,7 +209,7 @@ def create_user(
 def random_data(count: int = 5) -> Dict[str, Any]:
     """
     Generate random test data
-    GET /py/example/random_data?count=10
+    GET /api/example/random_data?count=10
     """
     logger.info(f"Generating {count} random data items")
     
@@ -233,7 +233,7 @@ def random_data(count: int = 5) -> Dict[str, Any]:
 async def async_task(duration: float = 1.0) -> Dict[str, Any]:
     """
     Demonstrate async function handling
-    POST /py/example/async_task {"duration": 2.5}
+    POST /api/example/async_task {"duration": 2.5}
     """
     import asyncio
     
@@ -258,7 +258,7 @@ async def async_task(duration: float = 1.0) -> Dict[str, Any]:
 def status() -> Dict[str, Any]:
     """
     Controller status and statistics
-    GET /py/example/status
+    GET /api/example/status
     """
     return {
         "controller": "example",
