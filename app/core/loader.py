@@ -30,8 +30,8 @@ SAFE_NAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
 _module_cache = {}
 
 # Canonical controller modules for the legacy dynamic /py/{controller}/{function}
-# surface. Keep this mapping explicit so runtime behavior no longer depends on
-# the deprecated controllers/ directory layout.
+# surface. Keep this mapping explicit so runtime behavior stays independent of
+# any historical package layout.
 CANONICAL_CONTROLLER_MODULES: dict[str, str] = {
     "example": "app.modules.example.service",
     "geosearch": "app.modules.geosearch.service",

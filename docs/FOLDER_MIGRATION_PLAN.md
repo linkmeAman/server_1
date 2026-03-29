@@ -3,7 +3,7 @@
 ## Goal
 Move from mixed legacy layout (`controllers/`, `api/`, `routes/`, `core/`) to a clear application package rooted at `app/` while keeping production-safe compatibility during migration.
 
-## Canonical Structure (Target)
+## Canonical Structure
 
 ```
 backend/python/server_1/
@@ -68,8 +68,6 @@ backend/python/server_1/
       sqlgw_schema.py
     shared/
       response_normalization.py
-  controllers/             # temporary compatibility layer (to be removed)
-  api/                     # temporary compatibility layer (to be removed)
 ```
 
 ## Migration Strategy
@@ -154,9 +152,6 @@ backend/python/server_1/
 - Updated router imports to explicit module paths where needed:
   - `app/api/v1/router.py` now imports `employee_events_v1.router` and `google_calendar_v1.router` directly
 
-## Next Phases
-- Phase 7: retire legacy wrappers and remove deprecated import paths.
-
 ## Phase 7 Progress
 - Migrated test suite consumers to canonical imports and patch targets:
   - `controllers.*` -> `app.modules.*`
@@ -176,10 +171,13 @@ backend/python/server_1/
   - `app/api/*`
   - `app/core/*`
   - `app/modules/*`
-- Remaining legacy surface:
-  - `controllers/` only, pending final retirement.
+
+## Phase 9 Progress
+- Retired the `controllers/` compatibility package from the repo.
+- Canonical runtime and tests now depend only on `app.*` imports.
+- Dynamic controller discovery no longer depends on filesystem compatibility
+  directories.
 
 ## Rules During Migration
 - New feature work should import from `app.*` only.
-- Legacy paths remain supported temporarily via wrappers.
-- Do not remove wrapper files until all imports are migrated and verified.
+- Do not reintroduce legacy import paths.
