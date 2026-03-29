@@ -52,15 +52,12 @@ backend/python/server_1/
         router.py
     core/
       database.py
-      exceptions.py
-      loader.py
       middleware.py
       models.py
       prism_cache.py
       prism_guard.py
       prism_pdp.py
       response.py
-      router.py
       security.py
       settings.py
       sql_gateway.py
@@ -177,6 +174,11 @@ backend/python/server_1/
 - Canonical runtime and tests now depend only on `app.*` imports.
 - Dynamic controller discovery no longer depends on filesystem compatibility
   directories.
+- Removed the dynamic `/py/*` routing methodology entirely:
+  - deleted `app/core/router.py`
+  - deleted `app/core/loader.py`
+  - deleted `app/core/exceptions.py`
+  - added static `/health` in `main.py`
 
 ## Rules During Migration
 - New feature work should import from `app.*` only.
