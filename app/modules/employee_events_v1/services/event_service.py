@@ -140,12 +140,72 @@ class EmployeeEventsService:
         )
 
     @staticmethod
+    def _invalid_batch_query(
+        message: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> EmployeeEventsError:
+        return EmployeeEventsError(
+            code="EMP_EVENT_INVALID_BATCH_QUERY",
+            message=message,
+            status_code=400,
+            data=data,
+        )
+
+    @staticmethod
     def _demo_query_failed(
         message: str = "Could not fetch demo events",
         data: Optional[Dict[str, Any]] = None,
     ) -> EmployeeEventsError:
         return EmployeeEventsError(
             code="EMP_EVENT_DEMO_QUERY_FAILED",
+            message=message,
+            status_code=500,
+            data=data,
+        )
+
+    @staticmethod
+    def _batch_query_failed(
+        message: str = "Could not fetch active batches",
+        data: Optional[Dict[str, Any]] = None,
+    ) -> EmployeeEventsError:
+        return EmployeeEventsError(
+            code="EMP_EVENT_BATCH_QUERY_FAILED",
+            message=message,
+            status_code=500,
+            data=data,
+        )
+
+    @staticmethod
+    def _invalid_batch_kids_query(
+        message: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> EmployeeEventsError:
+        return EmployeeEventsError(
+            code="EMP_EVENT_INVALID_BATCH_KIDS_QUERY",
+            message=message,
+            status_code=400,
+            data=data,
+        )
+
+    @staticmethod
+    def _batch_kids_query_failed(
+        message: str = "Could not fetch batch kids present",
+        data: Optional[Dict[str, Any]] = None,
+    ) -> EmployeeEventsError:
+        return EmployeeEventsError(
+            code="EMP_EVENT_BATCH_KIDS_QUERY_FAILED",
+            message=message,
+            status_code=500,
+            data=data,
+        )
+
+    @staticmethod
+    def _venue_query_failed(
+        message: str = "Could not fetch active venues",
+        data: Optional[Dict[str, Any]] = None,
+    ) -> EmployeeEventsError:
+        return EmployeeEventsError(
+            code="EMP_EVENT_VENUE_QUERY_FAILED",
             message=message,
             status_code=500,
             data=data,
@@ -615,6 +675,132 @@ class EmployeeEventsService:
                 normalized.append(normalized_value)
 
         return normalized
+
+    @classmethod
+    def _normalize_batch_venue_ids(cls, venue_ids: List[Any]) -> List[int]:
+        if not isinstance(venue_ids, list):
+            raise cls._invalid_batch_query(
+                "venue_ids must be an array of positive integers",
+                data={"field": "venue_ids"},
+            )
+
+        seen: set[int] = set()
+        normalized: List[int] = []
+
+        for raw_value in venue_ids:
+            if isinstance(raw_value, bool):
+                raise cls._invalid_batch_query(
+                    "venue_ids must contain positive integers",
+                    data={"field": "venue_ids", "invalid_venue_id": raw_value},
+                )
+
+            try:
+                venue_id = int(raw_value)
+            except Exception as exc:
+                raise cls._invalid_batch_query(
+                    "venue_ids must contain positive integers",
+                    data={"field": "venue_ids", "invalid_venue_id": raw_value},
+                ) from exc
+
+            if venue_id <= 0:
+                raise cls._invalid_batch_query(
+                    "venue_ids must contain positive integers",
+                    data={"field": "venue_ids", "invalid_venue_id": raw_value},
+                )
+
+            if venue_id not in seen:
+                seen.add(venue_id)
+                normalized.append(venue_id)
+
+        if not normalized:
+            raise cls._invalid_batch_query(
+                "venue_ids must contain at least one unique venue id",
+            )
+
+        if len(normalized) > 25:
+            raise cls._invalid_batch_query(
+                "venue_ids may contain at most 25 unique venue ids",
+                data={"venue_count": len(normalized)},
+            )
+
+        return normalized
+
+    @classmethod
+    def _normalize_demo_venue_ids(cls, venue_ids: List[Any]) -> List[int]:
+        if not isinstance(venue_ids, list):
+            raise cls._invalid_demo_query(
+                "venue_ids must be an array of positive integers",
+                data={"field": "venue_ids"},
+            )
+
+        seen: set[int] = set()
+        normalized: List[int] = []
+
+        for raw_value in venue_ids:
+            if isinstance(raw_value, bool):
+                raise cls._invalid_demo_query(
+                    "venue_ids must contain positive integers",
+                    data={"field": "venue_ids", "invalid_venue_id": raw_value},
+                )
+
+            try:
+                venue_id = int(raw_value)
+            except Exception as exc:
+                raise cls._invalid_demo_query(
+                    "venue_ids must contain positive integers",
+                    data={"field": "venue_ids", "invalid_venue_id": raw_value},
+                ) from exc
+
+            if venue_id <= 0:
+                raise cls._invalid_demo_query(
+                    "venue_ids must contain positive integers",
+                    data={"field": "venue_ids", "invalid_venue_id": raw_value},
+                )
+
+            if venue_id not in seen:
+                seen.add(venue_id)
+                normalized.append(venue_id)
+
+        if not normalized:
+            raise cls._invalid_demo_query(
+                "venue_ids must contain at least one unique venue id",
+            )
+
+        if len(normalized) > 25:
+            raise cls._invalid_demo_query(
+                "venue_ids may contain at most 25 unique venue ids",
+                data={"venue_count": len(normalized)},
+            )
+
+        return normalized
+
+    @staticmethod
+    def _normalize_batch_id(value: Any) -> int:
+        if isinstance(value, bool):
+            raise EmployeeEventsService._invalid_batch_kids_query(
+                "batch_id must be a positive integer",
+                data={"field": "batch_id", "invalid_batch_id": value},
+            )
+
+        try:
+            batch_id = int(value)
+        except Exception as exc:
+            raise EmployeeEventsService._invalid_batch_kids_query(
+                "batch_id must be a positive integer",
+                data={"field": "batch_id", "invalid_batch_id": value},
+            ) from exc
+
+        if batch_id <= 0:
+            raise EmployeeEventsService._invalid_batch_kids_query(
+                "batch_id must be a positive integer",
+                data={"field": "batch_id", "invalid_batch_id": value},
+            )
+
+        return batch_id
+
+    def _current_date_in_workshift_timezone(self) -> date_value:
+        _timezone_name, timezone = self._workshift_timezone()
+        return datetime.now(timezone).date()
 
     @staticmethod
     def _normalize_employee_name(value: Any) -> Optional[str]:
@@ -1271,6 +1457,67 @@ class EmployeeEventsService:
             "branch_count": len(branches),
         }
 
+    def get_active_venues(self) -> Dict[str, Any]:
+        try:
+            venues = self.event_repository.list_active_venues()
+            return {
+                "venues": venues,
+                "total_count": len(venues),
+            }
+        except EmployeeEventsError:
+            raise
+        except Exception as exc:
+            raise self._venue_query_failed(
+                message=f"Unexpected error fetching active venues: {exc}",
+            ) from exc
+
+    def get_active_batches_by_venue(self, venue_ids: List[Any]) -> Dict[str, Any]:
+        try:
+            normalized_venue_ids = self._normalize_batch_venue_ids(venue_ids)
+            batch_rows = self.event_repository.list_active_batches_by_venue_ids(normalized_venue_ids)
+            batches = [
+                self._map_active_batch_row_for_ui(dict(row))
+                for row in batch_rows
+            ]
+            return {
+                "venue_ids": normalized_venue_ids,
+                "total_count": len(batches),
+                "batches": batches,
+            }
+        except EmployeeEventsError:
+            raise
+        except Exception as exc:
+            raise self._batch_query_failed(
+                message=f"Unexpected error fetching active batches: {exc}",
+            ) from exc
+
+    def get_batch_kids_present(self, batch_id: Any) -> Dict[str, Any]:
+        try:
+            normalized_batch_id = self._normalize_batch_id(batch_id)
+            today = self._current_date_in_workshift_timezone()
+            from_date_value = today - timedelta(days=8)
+            to_date_value = today + timedelta(days=90)
+            from_date = from_date_value.strftime("%Y-%m-%d")
+            to_date = to_date_value.strftime("%Y-%m-%d")
+            kids = self.event_repository.list_batch_kids_present(
+                batch_id=normalized_batch_id,
+                from_date=from_date,
+                to_date=to_date,
+            )
+            return {
+                "batch_id": normalized_batch_id,
+                "from_date": from_date,
+                "to_date": to_date,
+                "total_count": len(kids),
+                "kids": kids,
+            }
+        except EmployeeEventsError:
+            raise
+        except Exception as exc:
+            raise self._batch_kids_query_failed(
+                message=f"Unexpected error fetching batch kids present: {exc}",
+            ) from exc
+
     def get_employee_workshift_calendar_batch(
         self,
         employee_ids: List[Any],
@@ -1668,6 +1915,65 @@ class EmployeeEventsService:
         if is_original == 1:
             return "original"
         return "prescheduled"
+
+    def _map_active_batch_row_for_ui(self, source_row: Dict[str, Any]) -> Dict[str, Any]:
+        mapped_row = dict(source_row)
+        trainer_id = self._as_int(source_row.get("id"), default=0)
+        parent_batch_id = self._as_int(source_row.get("parent_id"), default=0)
+        is_child_batch = parent_batch_id != 0
+        title = self._trainer_event_title(source_row)
+
+        event_start_text: Optional[str] = None
+        event_end_text: Optional[str] = None
+        effective_date = (
+            self._parse_calendar_date_value(source_row.get("date"))
+            or self._parse_calendar_date_value(source_row.get("start_date"))
+        )
+        if effective_date is not None:
+            start_time_value = self._parse_calendar_time_value(source_row.get("start_time"))
+            end_time_value = self._parse_calendar_time_value(source_row.get("end_time"))
+            event_start_dt = self._localize_batch_occurrence(
+                effective_date,
+                start_time_value,
+                source_row.get("timezone_id"),
+            )
+            event_end_dt = self._localize_batch_occurrence(
+                effective_date,
+                end_time_value,
+                source_row.get("timezone_id"),
+            )
+            event_start_text = event_start_dt.strftime("%Y-%m-%d %H:%M:%S")
+            event_end_text = event_end_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+        mapped_row["event_id"] = None
+        mapped_row["batch_id"] = trainer_id if trainer_id > 0 else None
+        mapped_row["demo_id"] = None
+        mapped_row["batch_name"] = source_row.get("batch")
+        mapped_row["summary"] = title
+        mapped_row["location"] = source_row.get("venue")
+        mapped_row["event_timezone"] = (
+            "" if source_row.get("timezone_id") is None else str(source_row.get("timezone_id"))
+        )
+        mapped_row["event_start"] = event_start_text
+        mapped_row["event_end"] = event_end_text
+        mapped_row["attendees"] = "[]"
+        mapped_row["parent_batch_id"] = int(parent_batch_id) if parent_batch_id != 0 else None
+        mapped_row["parent_batch_name"] = source_row.get("parent_batch_name")
+
+        if is_child_batch:
+            mapped_row["batch_type"] = "prescheduled"
+            mapped_row["batch_status"] = "prescheduled"
+            mapped_row["is_original"] = 0
+            mapped_row["is_scheduled"] = 1
+            mapped_row["is_recurring"] = 0
+        else:
+            mapped_row["batch_type"] = "original"
+            mapped_row["batch_status"] = "original"
+            mapped_row["is_original"] = 1
+            mapped_row["is_scheduled"] = 0
+            mapped_row["is_recurring"] = 1
+
+        return mapped_row
 
     def get_trainer_calendar_events(
         self,
@@ -2602,4 +2908,91 @@ class EmployeeEventsService:
         except Exception as exc:
             raise self._demo_query_failed(
                 message=f"Unexpected error fetching demo events: {exc}",
+            ) from exc
+
+    def get_demo_events_by_venue_batch(
+        self,
+        venue_ids: List[Any],
+        from_date: str,
+        to_date: str,
+        statuses: Optional[List[Any]] = None,
+        types: Optional[List[Any]] = None,
+        batch_ids: Optional[List[Any]] = None,
+    ) -> Dict[str, Any]:
+        try:
+            normalized_venue_ids = self._normalize_demo_venue_ids(venue_ids)
+            from_date_value = self._parse_demo_query_date(from_date, "from_date")
+            to_date_value = self._parse_demo_query_date(to_date, "to_date")
+
+            if from_date_value > to_date_value:
+                raise self._invalid_demo_query(
+                    "from_date must be less than or equal to to_date",
+                )
+
+            range_day_count = (to_date_value - from_date_value).days + 1
+            if range_day_count > 62:
+                raise self._invalid_demo_query(
+                    "Date range may not exceed 62 days",
+                    data={"range_day_count": range_day_count},
+                )
+
+            normalized_statuses = self._normalize_demo_filter_values(
+                statuses,
+                field_name="statuses",
+                min_value=0,
+            )
+            normalized_types = self._normalize_demo_filter_values(
+                types,
+                field_name="types",
+                min_value=0,
+            )
+            normalized_batch_ids = self._normalize_demo_filter_values(
+                batch_ids,
+                field_name="batch_ids",
+                min_value=1,
+            )
+
+            rows = self.event_repository.get_demo_events_by_venue_ids(
+                venue_ids=normalized_venue_ids,
+                from_date=from_date_value.isoformat(),
+                to_date=to_date_value.isoformat(),
+                statuses=normalized_statuses or None,
+                types=normalized_types or None,
+                batch_ids=normalized_batch_ids or None,
+            )
+
+            demos_by_venue: Dict[int, List[Dict[str, Any]]] = {
+                venue_id: [] for venue_id in normalized_venue_ids
+            }
+            venue_id_set = set(normalized_venue_ids)
+            for row in rows:
+                venue_id = self._as_int(row.get("venue_id"))
+                if venue_id in venue_id_set:
+                    demos_by_venue[venue_id].append(row)
+
+            venues = []
+            for venue_id in normalized_venue_ids:
+                venues.append({
+                    "venue_id": venue_id,
+                    "demos": demos_by_venue.get(venue_id, []),
+                    "demo_count": len(demos_by_venue.get(venue_id, [])),
+                })
+
+            return {
+                "from_date": from_date_value.isoformat(),
+                "to_date": to_date_value.isoformat(),
+                "range_day_count": range_day_count,
+                "venue_count": len(normalized_venue_ids),
+                "matched_count": sum(
+                    1 for venue_id in normalized_venue_ids
+                    if demos_by_venue.get(venue_id)
+                ),
+                "total_demos": len(rows),
+                "venues": venues,
+            }
+        except EmployeeEventsError:
+            raise
+        except Exception as exc:
+            raise self._demo_query_failed(
+                message=f"Unexpected error fetching demo events by venue: {exc}",
             ) from exc
