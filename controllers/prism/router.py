@@ -3,5 +3,7 @@
 Canonical module moved to app.modules.prism.router.
 """
 
-from app.modules.prism.router import *  # noqa: F401,F403
+from importlib import import_module
+import sys
 
+sys.modules[__name__] = import_module("app.modules.prism.router")

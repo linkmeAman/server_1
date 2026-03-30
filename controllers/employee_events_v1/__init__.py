@@ -1,5 +1,9 @@
-"""Employee Events V1 isolated module."""
+"""Compatibility wrapper.
 
-from .router import router
+Canonical module moved to app.modules.employee_events_v1.
+"""
 
-__all__ = ["router"]
+from importlib import import_module
+import sys
+
+sys.modules[__name__] = import_module("app.modules.employee_events_v1")

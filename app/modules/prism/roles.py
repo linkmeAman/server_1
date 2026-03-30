@@ -17,8 +17,8 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from core.database import central_session_context
-from core.prism_cache import invalidate_prism_cache_for_role
+from app.core.database import central_session_context
+from app.core.prism_cache import invalidate_prism_cache_for_role
 
 router = APIRouter(prefix="/prism/roles", tags=["PRISM — Roles"])
 

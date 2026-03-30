@@ -16,7 +16,7 @@ from app.modules.auth.constants import (
 )
 from app.modules.auth.services.common import AuthError, random_jti, utcnow
 from app.modules.auth.services.keyring import get_current_key, get_key_for_kid
-from core.settings import get_settings
+from app.core.settings import get_settings
 
 
 def _load_pyseto():

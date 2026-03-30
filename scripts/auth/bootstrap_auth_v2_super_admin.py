@@ -18,7 +18,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.modules.auth.services.authorization import AuthorizationResolver
-from core.database import central_session_context, main_session_context
+from app.core.database import central_session_context, main_session_context
 
 GLOBAL_RESOURCE_CODE = "global"
 

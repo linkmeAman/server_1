@@ -46,229 +46,7 @@ Branch columns:
 
 - `id`, `branch`, `type`
 
-### 2) Active Venue Selectors
-
-- `GET /api/employee-events/v1/venues`
-
-Returns active venues from `venue` using fixed filters:
-
-- `park = 0`
-- `status = 0`
-
-Venue columns:
-
-- `id`, `venue`, `display_name`
-
-Response data:
-
-- `venues`
-- `total_count`
-
-Sample response:
-
-```json
-{
-  "success": true,
-  "message": "Active venues fetched successfully",
-  "data": {
-    "venues": [
-      {
-        "id": 10,
-        "venue": "Andheri Center",
-        "display_name": "Andheri Center"
-      }
-    ],
-    "total_count": 1
-  }
-}
-```
-
-### 3) Active Batches by Venue
-
-- `POST /api/employee-events/v1/batches/query`
-
-Request:
-
-```json
-{
-  "venue_ids": [10, 20]
-}
-```
-
-Rules:
-
-- `venue_ids` is required
-- accepts `1..25` unique venue ids after first-seen dedupe
-- values must be positive integers
-- reads from `batch_employee_time_view`
-- active batch filters are fixed:
-  - `park = 0`
-  - `inactive = 0`
-  - `hide = 0`
-  - `cont_park = 0`
-  - when present in the view schema:
-    - `demo_class = 0`
-    - `training_assign = 0`
-
-Response data:
-
-- `venue_ids`
-- `total_count`
-- `batches`
-
-Per batch:
-
-- `id`
-- `batch`
-- `display_name`
-- `venue_id`
-- `venue`
-- `parent_id`
-- `date`
-- `start_date`
-- `end_date`
-- `start_time`
-- `end_time`
-- `day_code`
-- `title`
-- `timezone_id`
-- `contact_id`
-- `code`
-- `category`
-- `branch`
-- `bid`
-- `employee_id`
-- `associate_fullname`
-- `modified_at`
-- `parent_batch_name`
-
-Additional mapped fields for UI compatibility with `/calendar/events` batch rows:
-
-- `event_id`
-- `batch_id`
-- `demo_id`
-- `batch_name`
-- `summary`
-- `location`
-- `event_timezone`
-- `event_start`
-- `event_end`
-- `attendees`
-- `parent_batch_id`
-- `batch_type`
-- `batch_status`
-- `is_original`
-- `is_scheduled`
-- `is_recurring`
-
-Sample response:
-
-```json
-{
-  "success": true,
-  "message": "Active batches fetched successfully",
-  "data": {
-    "venue_ids": [10, 20],
-    "total_count": 2,
-    "batches": [
-      {
-        "id": 123,
-        "batch": "Offline B87",
-        "display_name": "Offline B87",
-        "venue_id": 10,
-        "venue": "Andheri Center",
-        "parent_id": 0,
-        "date": "2026-03-10",
-        "start_date": "2026-03-10",
-        "end_date": "2026-03-10",
-        "start_time": "12:00:00",
-        "end_time": "13:30:00",
-        "day_code": "2,4",
-        "title": "Offline B87",
-        "timezone_id": "Asia/Kolkata",
-        "contact_id": 72313,
-        "code": "B87",
-        "category": "Offline",
-        "branch": "Mumbai",
-        "bid": 7,
-        "employee_id": 501,
-        "associate_fullname": "Trainer One",
-        "modified_at": "2026-03-10 09:00:00",
-        "parent_batch_name": null,
-        "event_id": null,
-        "batch_id": 123,
-        "demo_id": null,
-        "batch_name": "Offline B87",
-        "summary": "Offline B87",
-        "location": "Andheri Center",
-        "event_timezone": "Asia/Kolkata",
-        "event_start": "2026-03-10 12:00:00",
-        "event_end": "2026-03-10 13:30:00",
-        "attendees": "[]",
-        "parent_batch_id": null,
-        "batch_type": "original",
-        "batch_status": "original",
-        "is_original": 1,
-        "is_scheduled": 0,
-        "is_recurring": 1
-      }
-    ]
-  }
-}
-```
-
-### 4) Batch Kids Present Query
-
-- `POST /api/employee-events/v1/batches/kids-present/query`
-
-Request:
-
-```json
-{
-  "batch_id": 123
-}
-```
-
-Rules:
-
-- `batch_id` is required and must be a positive integer
-- reads from `invoice_invoiceitem_view`
-- effective date window is computed server-side using `EMP_EVENT_TIMEZONE`:
-  - `from_date = today - 8 days`
-  - `to_date = today + 90 days`
-- fixed filters:
-  - `start_date <= to_date`
-  - `end_date >= from_date`
-  - `batch_id = request.batch_id`
-  - `park = 0`
-  - `renew = 0`
-  - `dropout = 0`
-  - `freeze = 0`
-
-Response data:
-
-- `batch_id`
-- `from_date`
-- `to_date`
-- `total_count`
-- `kids`
-
-Per row:
-
-- `invoice_id`
-- `item_id`
-- `invoice`
-- `code_name`
-- `sessions`
-- `sessions_used`
-- `dob`
-- `counsellor_name`
-- `balance`
-- `dropout`
-- `freeze`
-- `date`
-
-### 5) Workshift Calendar Batch Query
+### 2) Workshift Calendar Batch Query
 
 - `POST /api/employee-events/v1/employees/workshift-calendar/query`
 
@@ -342,7 +120,7 @@ Behavior:
 - missing employees are returned as `result_status="not_found"` inside the batch, not as `404`
 - invalid `week_off_code` tokens are ignored for expansion and surfaced in `warnings`
 
-### 6) Leave Calendar Batch Query
+### 3) Leave Calendar Batch Query
 
 - `POST /api/employee-events/v1/employees/leave-calendar/query`
 
@@ -435,7 +213,7 @@ Result status examples:
 - `no_events`: employee exists but no leave rows matched after filters
 - `not_found`: employee id is not active/matched
 
-### 7) Unified Calendar Events (Employee + Trainer Batch/Demo)
+### 4) Unified Calendar Events (Employee + Trainer Batch/Demo)
 
 - `GET /api/employee-events/v1/calendar/events`
 - Breaking change: this endpoint now returns a unified schema (`source`, `source_event_id`, `title`, `start`, `end`, `is_read_only`, `raw`) instead of trainer-only rows.
@@ -539,7 +317,7 @@ Sample response:
 }
 ```
 
-### 8) List Events
+### 5) List Events
 
 - `GET /api/employee-events/v1/events`
 
@@ -564,7 +342,7 @@ Each event includes:
 - `contact` object from `contact` table
 - `sync` object from `employee_event_google_link` (if sync enabled)
 
-### 9) Check Conflict
+### 6) Check Conflict
 
 - `POST /api/employee-events/v1/events/check-conflict`
 
@@ -585,7 +363,7 @@ Response data:
 - `conflict` boolean
 - `conflict_event_ids` list
 
-### 10) Create Event
+### 7) Create Event
 
 - `POST /api/employee-events/v1/events`
 
@@ -618,7 +396,7 @@ Behavior:
 - Creates/updates sync mapping row with `pending_approval`.
 - Does not call Google here.
 
-### 11) Update Event
+### 8) Update Event
 
 - `PUT /api/employee-events/v1/events/{event_id}`
 
@@ -630,7 +408,7 @@ Behavior:
 - If event is approved and not parked, syncs update/create to Google.
 - On sync failure, local update remains and mapping row stores sync failure.
 
-### 12) Park / Unpark Event
+### 9) Park / Unpark Event
 
 - `PATCH /api/employee-events/v1/events/{event_id}/park`
 
@@ -648,7 +426,7 @@ Behavior:
 - If `park_value=1` and linked Google event exists, attempts Google delete.
 - On delete failure, keeps local park and records sync error.
 
-### 13) Approve Event
+### 10) Approve Event
 
 - `POST /api/employee-events/v1/events/{event_id}/approve`
 

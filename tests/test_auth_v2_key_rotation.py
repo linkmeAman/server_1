@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from core.settings import get_settings
+from app.core.settings import get_settings
 
 
 class TestAuthV2KeyRotation(unittest.TestCase):

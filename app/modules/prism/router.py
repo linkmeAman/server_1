@@ -20,7 +20,7 @@ from app.modules.prism.policies import router as policies_router
 from app.modules.prism.registry import router as registry_router
 from app.modules.prism.roles import router as roles_router
 from app.modules.prism.sidenav import router as sidenav_router
-from core.prism_guard import require_prism_caller
+from app.core.prism_guard import require_prism_caller
 
 # Shared guard dependency for management-only endpoints
 _guard = [Depends(require_prism_caller)]

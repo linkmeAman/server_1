@@ -4,8 +4,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, patch
 
-from controllers.employee_events_v1.dependencies import EmployeeEventsError
-from controllers.employee_events_v1.services.event_service import EmployeeEventsService
+from app.modules.employee_events_v1.dependencies import EmployeeEventsError
+from app.modules.employee_events_v1.services.event_service import EmployeeEventsService
 
 
 class TestDemoEventsBatchService(unittest.TestCase):
@@ -14,7 +14,7 @@ class TestDemoEventsBatchService(unittest.TestCase):
         self.sync_repo = MagicMock()
 
         self.settings_patcher = patch(
-            "controllers.employee_events_v1.services.event_service.get_settings",
+            "app.modules.employee_events_v1.services.event_service.get_settings",
             return_value=SimpleNamespace(
                 EMP_EVENT_APPROVED_STATUS=1,
                 EMP_EVENT_PARKED_VALUE=1,

@@ -38,11 +38,11 @@ class TestLegacyLoginRegression(unittest.TestCase):
         if not testclient_requests_work():
             self.skipTest("TestClient request execution is not responsive in this runtime")
 
-        with patch("controllers.api.auth.get_db_session", return_value=_FakeDb()), patch(
-            "controllers.api.auth.authenticate_user",
+        with patch("app.modules.auth.legacy_router.get_db_session", return_value=_FakeDb()), patch(
+            "app.modules.auth.legacy_router.authenticate_user",
             return_value=(_FakeUser(), _FakeIdentity()),
-        ), patch("controllers.api.auth.create_access_token", return_value="legacy-access"), patch(
-            "controllers.api.auth.create_refresh_token", return_value="legacy-refresh"
+        ), patch("app.modules.auth.legacy_router.create_access_token", return_value="legacy-access"), patch(
+            "app.modules.auth.legacy_router.create_refresh_token", return_value="legacy-refresh"
         ):
             client = TestClient(main.app)
             try:

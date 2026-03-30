@@ -5,9 +5,9 @@ import unittest
 from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, select
 from sqlalchemy.pool import StaticPool
 
-from core.database import engines
-from core.settings import get_settings
-from core.sql_gateway import SQLGatewayError, clear_metadata_cache, execute_gateway_request, parse_gateway_payload
+from app.core.database import engines
+from app.core.settings import get_settings
+from app.core.sql_gateway import SQLGatewayError, clear_metadata_cache, execute_gateway_request, parse_gateway_payload
 
 
 class TestQueryGatewayInserts(unittest.TestCase):

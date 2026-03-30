@@ -11,9 +11,9 @@ from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine
 from sqlalchemy.pool import StaticPool
 
 import main
-from core.database import engines
-from core.settings import get_settings
-from core.sqlgw_schema import clear_schema_cache
+from app.core.database import engines
+from app.core.settings import get_settings
+from app.core.sqlgw_schema import clear_schema_cache
 
 
 def _testclient_requests_work() -> bool:
@@ -101,7 +101,7 @@ class TestSQLGWAdminSchema(unittest.TestCase):
         if not _testclient_requests_work():
             self.skipTest("TestClient request execution is not responsive in this runtime")
 
-        with patch("controllers.internal.sqlgw_admin.validate_token", return_value={"sub": "1", "roles": ["viewer"]}):
+        with patch("app.modules.sqlgw_admin.router.validate_token", return_value={"sub": "1", "roles": ["viewer"]}):
             client = TestClient(main.app)
             try:
                 response = client.get(
@@ -118,7 +118,7 @@ class TestSQLGWAdminSchema(unittest.TestCase):
         if not _testclient_requests_work():
             self.skipTest("TestClient request execution is not responsive in this runtime")
 
-        with patch("controllers.internal.sqlgw_admin.validate_token", return_value={"sub": "1", "is_admin": True}):
+        with patch("app.modules.sqlgw_admin.router.validate_token", return_value={"sub": "1", "is_admin": True}):
             client = TestClient(main.app)
             try:
                 databases = client.get(
@@ -153,7 +153,7 @@ class TestSQLGWAdminSchema(unittest.TestCase):
             self.skipTest("TestClient request execution is not responsive in this runtime")
 
         self.settings.SQLGW_ADMIN_REQUIRE_RBAC = False
-        with patch("controllers.internal.sqlgw_admin.validate_token", return_value={"sub": "1", "roles": ["viewer"]}):
+        with patch("app.modules.sqlgw_admin.router.validate_token", return_value={"sub": "1", "roles": ["viewer"]}):
             client = TestClient(main.app)
             try:
                 response = client.get(
