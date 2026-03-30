@@ -63,8 +63,8 @@ class WorkforceRepository:
         status: int | None = None,
         department_id: int | None = None,
         position_id: int | None = None,
-        limit: int = 25,
-        offset: int = 0,
+        limit: int | None = 25,
+        offset: int | None = 0,
     ) -> list[dict[str, Any]]:
         query, params = self._employee_base_query(
             select_sql="""

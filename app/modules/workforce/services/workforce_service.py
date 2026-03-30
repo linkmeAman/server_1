@@ -95,6 +95,48 @@ class WorkforceService:
             "future_scope": FUTURE_SCOPE_EMPLOYEE,
         }
 
+    async def list_attendance_employee_index(
+        self,
+        main_db: AsyncSession,
+        central_db: AsyncSession,
+    ) -> dict[str, Any]:
+        rows = await self.repo.list_employees(
+            main_db,
+            q=None,
+            status=None,
+            department_id=None,
+            position_id=None,
+            limit=None,
+            offset=None,
+        )
+        departments = await self.repo.list_departments(central_db)
+        positions = await self.repo.list_positions(central_db)
+        department_map = self._map_lookup_by_id(departments)
+        position_map = self._map_lookup_by_id(positions)
+
+        employees = [
+            self._serialize_employee_row(
+                row,
+                department_map=department_map,
+                position_map=position_map,
+            )
+            for row in rows
+        ]
+        return {
+            "employee_ids": [
+                int(employee["employee_id"])
+                for employee in employees
+                if employee.get("employee_id") is not None
+            ],
+            "employees": employees,
+            "total": len(employees),
+            "filter_options": {
+                "departments": departments,
+                "positions": positions,
+                "statuses": self.STATUS_OPTIONS,
+            },
+        }
+
     async def get_employee(
         self,
         main_db: AsyncSession,

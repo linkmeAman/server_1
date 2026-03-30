@@ -149,6 +149,16 @@ async def get_workforce_attendance_overview(
     return success_response(data=data, message="Attendance overview fetched").model_dump(mode="json")
 
 
+@router.get("/attendance/employees")
+async def list_workforce_attendance_employees(
+    _: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+    central_db: AsyncSession = Depends(get_central_db_session),
+):
+    data = await service.list_attendance_employee_index(main_db, central_db)
+    return success_response(data=data, message="Attendance employee index fetched").model_dump(mode="json")
+
+
 @router.get("/attendance/records")
 async def list_workforce_attendance_records(
     employee_id: int | None = Query(default=None),
