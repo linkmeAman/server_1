@@ -518,6 +518,50 @@ class WorkforceService:
             raise HTTPException(status_code=404, detail="Attendance request not found after update")
         return {"row": self._serialize_attendance_request_row(refreshed)}
 
+    async def create_attendance_request(
+        self,
+        main_db: AsyncSession,
+        *,
+        payload: dict[str, Any],
+        created_by: int,
+    ) -> dict[str, Any]:
+        normalized = self._normalize_attendance_request_payload(payload)
+        today = date.today().isoformat()
+        defaults: dict[str, Any] = {
+            "parent_id": 0,
+            "date": today,
+            "action_date": today,
+            "request_type": 1,
+            "no_of_days": "1",
+            "start_date": today,
+            "in_time": "09:30:00",
+            "end_date": today,
+            "out_time": "18:30:00",
+            "status": 0,
+            "request_comment": "",
+            "parent_comment": "",
+            "bid": 0,
+            "park": 0,
+        }
+        merged = {**defaults, **normalized}
+        emp_id = self._as_int(merged.get("emp_id"))
+        if emp_id is None or emp_id <= 0:
+            raise HTTPException(status_code=400, detail="emp_id is required to create attendance request")
+        merged["emp_id"] = int(emp_id)
+
+        request_id = await self.repo.create_attendance_request(
+            main_db,
+            payload=merged,
+            created_by=created_by,
+        )
+        await main_db.commit()
+        if request_id <= 0:
+            raise HTTPException(status_code=500, detail="Failed to create attendance request")
+        created = await self.repo.get_attendance_request(main_db, request_id)
+        if created is None:
+            raise HTTPException(status_code=500, detail="Created attendance request could not be loaded")
+        return {"row": self._serialize_attendance_request_row(created)}
+
     def _serialize_employee_row(
         self,
         row: dict[str, Any],
