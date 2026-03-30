@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from controllers.employee_events_v1.dependencies import EmployeeEventsError
+from app.modules.employee_events_v1.dependencies import EmployeeEventsError
 import main
-from core.settings import get_settings
+from app.core.settings import get_settings
 
 
 def _middleware_headers():
@@ -132,7 +132,7 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
 
     def test_workshift_calendar_query_invalid_json_returns_400(self):
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ):
             response = self.client.post(
@@ -165,7 +165,7 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
         ]
 
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ):
             for payload in cases:
@@ -186,7 +186,7 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
 
     def test_leave_calendar_query_invalid_json_returns_400(self):
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ):
             response = self.client.post(
@@ -216,7 +216,7 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
         ]
 
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ):
             for payload in cases:
@@ -275,10 +275,10 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
             )
 
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_employee_leave_calendar_batch",
+            "app.modules.employee_events_v1.services.event_service.EmployeeEventsService.get_employee_leave_calendar_batch",
             new=MagicMock(side_effect=_semantic_error),
         ):
             for payload in cases:
@@ -296,10 +296,10 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
 
     def test_invalid_app_token_returns_401(self):
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             side_effect=ValueError("expired"),
         ), patch(
-            "controllers.employee_events_v1.dependencies.verify_v2_access_token",
+            "app.modules.employee_events_v1.dependencies.verify_v2_access_token",
             side_effect=ValueError("invalid_v2"),
         ):
             response = self.client.post(
@@ -325,10 +325,10 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
 
     def test_v2_access_token_is_accepted_when_legacy_validation_fails(self):
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             side_effect=ValueError("legacy_rejected"),
         ), patch(
-            "controllers.employee_events_v1.dependencies.verify_v2_access_token",
+            "app.modules.employee_events_v1.dependencies.verify_v2_access_token",
             return_value={
                 "sub": "200",
                 "user_id": 200,
@@ -345,7 +345,7 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
                 "typ": "access",
             },
         ), patch(
-            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.list_events",
+            "app.modules.employee_events_v1.services.event_service.EmployeeEventsService.list_events",
             new=MagicMock(return_value={"events": [], "count": 0}),
         ) as mocked_list:
             response = self.client.get(
@@ -362,10 +362,10 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
 
     def test_conflict_check_success(self):
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.check_conflict",
+            "app.modules.employee_events_v1.services.event_service.EmployeeEventsService.check_conflict",
             new=MagicMock(return_value={"conflict": False, "conflict_event_ids": []}),
         ) as mocked_check:
             response = self.client.post(
@@ -388,10 +388,10 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
 
     def test_create_forwards_description(self):
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.create_event",
+            "app.modules.employee_events_v1.services.event_service.EmployeeEventsService.create_event",
             new=MagicMock(return_value={"event_id": 55, "sync_status": "pending_approval"}),
         ) as mocked_create:
             response = self.client.post(
@@ -425,10 +425,10 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
 
     def test_list_events_success(self):
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.list_events",
+            "app.modules.employee_events_v1.services.event_service.EmployeeEventsService.list_events",
             new=MagicMock(
                 return_value={
                     "events": [
@@ -462,10 +462,10 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
 
     def test_realtime_data_success(self):
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_realtime_employee_data",
+            "app.modules.employee_events_v1.services.event_service.EmployeeEventsService.get_realtime_employee_data",
             new=MagicMock(
                 return_value={
                     "employees": [
@@ -525,10 +525,10 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
         }
 
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_trainer_calendar_events",
+            "app.modules.employee_events_v1.services.event_service.EmployeeEventsService.get_trainer_calendar_events",
             new=MagicMock(return_value=response_data),
         ) as mocked_list:
             response = self.client.get(
@@ -555,10 +555,10 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
 
     def test_trainer_calendar_events_invalid_date_returns_400(self):
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_trainer_calendar_events",
+            "app.modules.employee_events_v1.services.event_service.EmployeeEventsService.get_trainer_calendar_events",
             new=MagicMock(
                 side_effect=EmployeeEventsError(
                     code="EMP_EVENT_INVALID_CALENDAR_QUERY",
@@ -580,10 +580,10 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
 
     def test_trainer_calendar_events_invalid_range_returns_400(self):
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_trainer_calendar_events",
+            "app.modules.employee_events_v1.services.event_service.EmployeeEventsService.get_trainer_calendar_events",
             new=MagicMock(
                 side_effect=EmployeeEventsError(
                     code="EMP_EVENT_INVALID_CALENDAR_QUERY",
@@ -606,10 +606,10 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
 
     def test_trainer_calendar_events_service_error_passthrough(self):
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_trainer_calendar_events",
+            "app.modules.employee_events_v1.services.event_service.EmployeeEventsService.get_trainer_calendar_events",
             new=MagicMock(
                 side_effect=EmployeeEventsError(
                     code="EMP_EVENT_CALENDAR_QUERY_FAILED",
@@ -668,10 +668,10 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
         }
 
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_employee_workshift_calendar_batch",
+            "app.modules.employee_events_v1.services.event_service.EmployeeEventsService.get_employee_workshift_calendar_batch",
             new=MagicMock(return_value=response_data),
         ) as mocked_query:
             response = self.client.post(
@@ -700,10 +700,10 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
 
     def test_workshift_calendar_query_service_error_passthrough(self):
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_employee_workshift_calendar_batch",
+            "app.modules.employee_events_v1.services.event_service.EmployeeEventsService.get_employee_workshift_calendar_batch",
             new=MagicMock(
                 side_effect=EmployeeEventsError(
                     code="EMP_EVENT_SERVICE_MISCONFIGURED",
@@ -778,10 +778,10 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
             ],
         }
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_employee_leave_calendar_batch",
+            "app.modules.employee_events_v1.services.event_service.EmployeeEventsService.get_employee_leave_calendar_batch",
             new=MagicMock(return_value=response_data),
         ) as mocked_query:
             response = self.client.post(
@@ -816,10 +816,10 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
 
     def test_leave_calendar_query_service_error_passthrough(self):
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.get_employee_leave_calendar_batch",
+            "app.modules.employee_events_v1.services.event_service.EmployeeEventsService.get_employee_leave_calendar_batch",
             new=MagicMock(
                 side_effect=EmployeeEventsError(
                     code="EMP_EVENT_LEAVE_QUERY_FAILED",
@@ -846,10 +846,10 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
 
     def test_approve_forwards_status(self):
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.approve_event",
+            "app.modules.employee_events_v1.services.event_service.EmployeeEventsService.approve_event",
             new=AsyncMock(
                 return_value={
                     "event_id": 10,
@@ -876,10 +876,10 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
 
     def test_park_sync_error_returns_success_with_status(self):
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.park_event",
+            "app.modules.employee_events_v1.services.event_service.EmployeeEventsService.park_event",
             new=AsyncMock(
                 return_value={
                     "event_id": 10,
@@ -907,10 +907,10 @@ class TestEmployeeEventsV1Routes(unittest.TestCase):
 
     def test_domain_error_passthrough(self):
         with patch(
-            "controllers.employee_events_v1.dependencies.validate_token",
+            "app.modules.employee_events_v1.dependencies.validate_token",
             return_value={"sub": "100", "typ": "access"},
         ), patch(
-            "controllers.employee_events_v1.services.event_service.EmployeeEventsService.approve_event",
+            "app.modules.employee_events_v1.services.event_service.EmployeeEventsService.approve_event",
             new=AsyncMock(
                 side_effect=EmployeeEventsError(
                     code="EMP_EVENT_INVALID_STATE",

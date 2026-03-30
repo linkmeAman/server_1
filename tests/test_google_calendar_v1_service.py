@@ -5,11 +5,11 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from controllers.google_calendar_v1.dependencies import GoogleCalendarError
-from controllers.google_calendar_v1.services.datetime_utils import normalize_google_event_for_log
-from controllers.google_calendar_v1.services.event_log_repository import LogPersistenceError
-from controllers.google_calendar_v1.services.event_service import GoogleCalendarEventService
-from controllers.google_calendar_v1.services.token_manager import GoogleCalendarTokenManager
+from app.modules.google_calendar_v1.dependencies import GoogleCalendarError
+from app.modules.google_calendar_v1.services.datetime_utils import normalize_google_event_for_log
+from app.modules.google_calendar_v1.services.event_log_repository import LogPersistenceError
+from app.modules.google_calendar_v1.services.event_service import GoogleCalendarEventService
+from app.modules.google_calendar_v1.services.token_manager import GoogleCalendarTokenManager
 
 
 class TestGoogleCalendarV1Service(unittest.IsolatedAsyncioTestCase):
@@ -25,7 +25,7 @@ class TestGoogleCalendarV1Service(unittest.IsolatedAsyncioTestCase):
         self.token_manager.get_valid_access_token = AsyncMock(return_value="google-token")
 
         self.settings_patcher = patch(
-            "controllers.google_calendar_v1.services.event_service.get_settings",
+            "app.modules.google_calendar_v1.services.event_service.get_settings",
             return_value=SimpleNamespace(
                 GOOGLE_CALENDAR_ID="primary",
                 GOOGLE_CALENDAR_COMPARE_TIMEZONE="Asia/Kolkata",
@@ -223,7 +223,7 @@ class TestGoogleCalendarV1Service(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_calendar_id_configuration_raises(self):
         with patch(
-            "controllers.google_calendar_v1.services.event_service.get_settings",
+            "app.modules.google_calendar_v1.services.event_service.get_settings",
             return_value=SimpleNamespace(
                 GOOGLE_CALENDAR_ID="",
                 GOOGLE_CALENDAR_COMPARE_TIMEZONE="Asia/Kolkata",

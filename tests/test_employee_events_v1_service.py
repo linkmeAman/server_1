@@ -5,9 +5,9 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from controllers.employee_events_v1.dependencies import EmployeeEventsError
-from controllers.employee_events_v1.services.event_service import EmployeeEventsService
-from controllers.employee_events_v1.services.google_payload_builder import (
+from app.modules.employee_events_v1.dependencies import EmployeeEventsError
+from app.modules.employee_events_v1.services.event_service import EmployeeEventsService
+from app.modules.employee_events_v1.services.google_payload_builder import (
     build_google_event_payload,
 )
 
@@ -27,7 +27,7 @@ class TestEmployeeEventsV1Service(unittest.IsolatedAsyncioTestCase):
         self.token_manager.get_valid_access_token = AsyncMock(return_value="google-token")
 
         self.settings_patcher = patch(
-            "controllers.employee_events_v1.services.event_service.get_settings",
+            "app.modules.employee_events_v1.services.event_service.get_settings",
             return_value=SimpleNamespace(
                 EMP_EVENT_APPROVED_STATUS=1,
                 EMP_EVENT_PARKED_VALUE=1,
@@ -550,7 +550,7 @@ class TestEmployeeEventsV1Service(unittest.IsolatedAsyncioTestCase):
         self.event_repo.get_employee_workshifts.return_value = []
 
         with patch(
-            "controllers.employee_events_v1.services.event_service.get_settings",
+            "app.modules.employee_events_v1.services.event_service.get_settings",
             return_value=SimpleNamespace(
                 EMP_EVENT_APPROVED_STATUS=1,
                 EMP_EVENT_PARKED_VALUE=1,
@@ -932,7 +932,7 @@ class TestEmployeeEventsV1Service(unittest.IsolatedAsyncioTestCase):
         self.google_client.create_event.return_value = (201, {"id": "g_evt_1"})
 
         with patch(
-            "controllers.employee_events_v1.services.event_service.build_google_event_payload",
+            "app.modules.employee_events_v1.services.event_service.build_google_event_payload",
             return_value={"summary": "S"},
         ):
             result = await self.service.approve_event(event_id=10, requested_status=1)
@@ -971,7 +971,7 @@ class TestEmployeeEventsV1Service(unittest.IsolatedAsyncioTestCase):
         )
 
         with patch(
-            "controllers.employee_events_v1.services.event_service.build_google_event_payload",
+            "app.modules.employee_events_v1.services.event_service.build_google_event_payload",
             return_value={"summary": "S"},
         ):
             with self.assertRaises(EmployeeEventsError) as ctx:
@@ -1031,7 +1031,7 @@ class TestEmployeeEventsV1Service(unittest.IsolatedAsyncioTestCase):
         self.google_client.update_event.return_value = (200, {"id": "g_evt_1"})
 
         with patch(
-            "controllers.employee_events_v1.services.event_service.build_google_event_payload",
+            "app.modules.employee_events_v1.services.event_service.build_google_event_payload",
             return_value={"summary": "S"},
         ):
             result = await self.service.update_event(
@@ -1055,7 +1055,7 @@ class TestEmployeeEventsV1Service(unittest.IsolatedAsyncioTestCase):
         self.google_client.create_event.return_value = (201, {"id": "g_new"})
 
         with patch(
-            "controllers.employee_events_v1.services.event_service.build_google_event_payload",
+            "app.modules.employee_events_v1.services.event_service.build_google_event_payload",
             return_value={"summary": "S"},
         ):
             result = await self.service.update_event(
@@ -1108,7 +1108,7 @@ class TestEmployeeEventsV1Service(unittest.IsolatedAsyncioTestCase):
 class TestEmployeeEventsPayloadBuilder(unittest.TestCase):
     def test_attendee_is_set_when_contact_email_exists(self):
         with patch(
-            "controllers.employee_events_v1.services.google_payload_builder.get_settings",
+            "app.modules.employee_events_v1.services.google_payload_builder.get_settings",
             return_value=SimpleNamespace(EMP_EVENT_TIMEZONE="Asia/Kolkata"),
         ):
             payload = build_google_event_payload(

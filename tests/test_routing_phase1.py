@@ -1,4 +1,4 @@
-"""Phase 1 routing regression tests: centralized registry + shadowing guard."""
+"""Routing regression tests for the explicit API surface."""
 
 import unittest
 from queue import Queue
@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import main
-from core.settings import get_settings
+from app.core.settings import get_settings
 
 
 def _build_headers():
@@ -56,7 +56,7 @@ def _testclient_requests_work() -> bool:
 
 
 class TestRoutingPhase1(unittest.TestCase):
-    """Lock route inventory/order and prevent known shadowing regression."""
+    """Lock route inventory for the explicit API surface."""
 
     @classmethod
     def setUpClass(cls):
@@ -64,10 +64,6 @@ class TestRoutingPhase1(unittest.TestCase):
         cls.path_to_indices = {}
         for idx, route in enumerate(cls.routes):
             cls.path_to_indices.setdefault(route.path, []).append(idx)
-
-    def _first_index(self, path: str) -> int:
-        self.assertIn(path, self.path_to_indices, f"Missing route path: {path}")
-        return self.path_to_indices[path][0]
 
     def test_route_snapshot_and_relative_order(self):
         required_paths = [
@@ -115,90 +111,12 @@ class TestRoutingPhase1(unittest.TestCase):
             "/orders/list",
             "/orders/get/{id}",
             "/orders/create",
-            "/{controller}/{function}",
-            "/{controller}/{function}/{item_id}",
             "/health",
-            "/controllers",
-            "/controllers/{controller_name}/functions",
             "/",
         ]
 
         for path in required_paths:
             self.assertIn(path, self.path_to_indices, f"Expected route path not found: {path}")
-
-        dynamic_no_id_idx = self._first_index("/{controller}/{function}")
-        dynamic_with_id_idx = self._first_index("/{controller}/{function}/{item_id}")
-
-        explicit_paths = [
-            "/login",
-            "/refresh",
-            "/logout",
-            "/forgot-password",
-            "/reset-password",
-            "/api/example/hello",
-            "/api/example/echo",
-            "/api/example/calculate",
-            "/api/example/users",
-            "/api/example/user/{id}",
-            "/api/example/create_user",
-            "/api/example/random_data",
-            "/api/example/async_task",
-            "/api/example/status",
-            "/api/geosearch/search",
-            "/api/geosearch/health",
-            "/api/llm/health",
-            "/api/llm/models",
-            "/api/llm/chat",
-            "/api/llm/complete",
-            "/api/llm/conversation",
-            "/api/query/gateway",
-            "/api/employee-events/v1/employees/realtime-data",
-            "/api/employee-events/v1/calendar/events",
-            "/api/employee-events/v1/employees/workshift-calendar/query",
-            "/api/employee-events/v1/employees/leave-calendar/query",
-            "/api/employee-events/v1/events/check-conflict",
-            "/api/employee-events/v1/events",
-            "/api/employee-events/v1/events/{event_id}",
-            "/api/employee-events/v1/events/{event_id}/park",
-            "/api/employee-events/v1/events/{event_id}/approve",
-            "/api/google-calendar/v1/events",
-            "/api/google-calendar/v1/events/{event_id}",
-            "/internal/sqlgw/schema/databases",
-            "/internal/sqlgw/schema/tables",
-            "/internal/sqlgw/schema/columns",
-            "/internal/sqlgw/policies",
-            "/internal/sqlgw/policies/{policy_id}",
-            "/internal/sqlgw/policies/{policy_id}/approve",
-            "/internal/sqlgw/policies/{policy_id}/activate",
-            "/internal/sqlgw/policies/{policy_id}/archive",
-            "/orders/list",
-            "/orders/get/{id}",
-            "/orders/create",
-            "/health",
-            "/controllers",
-            "/controllers/{controller_name}/functions",
-            "/",
-        ]
-
-        for path in explicit_paths:
-            idx = self._first_index(path)
-            self.assertLess(
-                idx,
-                dynamic_no_id_idx,
-                f"Explicit route must be before dynamic fallback: {path}",
-            )
-            self.assertLess(
-                idx,
-                dynamic_with_id_idx,
-                f"Explicit route must be before dynamic fallback: {path}",
-            )
-
-        self.assertLess(
-            self._first_index("/controllers/{controller_name}/functions"),
-            dynamic_with_id_idx,
-            "Shadowing guard failed: /controllers/{controller_name}/functions "
-            "must be registered before /{controller}/{function}/{item_id}",
-        )
 
         self.assertNotIn(
             "/api/v1/api/query/gateway",
@@ -206,24 +124,26 @@ class TestRoutingPhase1(unittest.TestCase):
             "Query gateway must not be mounted under /api/v1 prefix",
         )
 
-    def test_shadowing_regression_controllers_functions_uses_explicit_route(self):
+        self.assertNotIn("/{controller}/{function}", self.path_to_indices)
+        self.assertNotIn("/{controller}/{function}/{item_id}", self.path_to_indices)
+        self.assertNotIn("/controllers", self.path_to_indices)
+        self.assertNotIn("/controllers/{controller_name}/functions", self.path_to_indices)
+
+    def test_health_endpoint_responds(self):
         if not _testclient_requests_work():
             self.skipTest("TestClient request execution is not responsive in this runtime")
 
         with patch("main.init_database", return_value=False):
             client = TestClient(main.app)
             try:
-                response = client.get("/controllers/example/functions", headers=_build_headers())
+                response = client.get("/health", headers=_build_headers())
             finally:
                 client.close()
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertTrue(payload.get("success"))
-        self.assertIsInstance(payload.get("data"), dict)
-        self.assertEqual(payload["data"].get("controller"), "example")
-        self.assertIn("functions", payload["data"])
-        self.assertIn("hello", payload["data"]["functions"])
+        self.assertEqual(payload["data"].get("status"), "healthy")
 
 
 if __name__ == "__main__":

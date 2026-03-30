@@ -11,7 +11,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field as PydanticField
 
-from controllers import llm as local_llm
+from app.modules.llm import service as local_llm
 from db.connection import db_cursor
 from db.query_validator import QueryValidationError, apply_row_limit, validate_query
 

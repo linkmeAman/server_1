@@ -1,79 +1,73 @@
-# Python Backend Folder Migration Plan
+# Python Backend Folder Migration Status
 
 ## Goal
-Move from mixed legacy layout (`controllers/`, `api/`, `routes/`, `core/`) to a clear application package rooted at `app/` while keeping production-safe compatibility during migration.
+Move the Python backend from the old mixed layout into a single canonical `app/`
+package with explicit routers and no dynamic controller discovery.
 
-## Canonical Structure (Target)
+## Final Canonical Structure
 
-```
+```text
 backend/python/server_1/
   app/
     api/
       v1/
         router.py
+    core/
+      database.py
+      middleware.py
+      models.py
+      prism_cache.py
+      prism_guard.py
+      prism_pdp.py
+      response.py
+      security.py
+      settings.py
+      sql_gateway.py
+      sqlgw_policy_store.py
+      sqlgw_schema.py
     modules/
       auth/
-        handlers/
-        schemas/
-        services/
-        constants.py
-        dependencies.py
-        router.py
+      employee_events_v1/
+      example/
+      geosearch/
+      google_calendar_v1/
+      llm/
+      orders/
       prism/
-        assignments.py
-        attributes.py
-        evaluate.py
-        logs.py
-        policies.py
-        registry.py
-        roles.py
-        sidenav.py
-        router.py
-    core/                  # planned migration target for current core/
-    shared/                # planned for common DTO/helpers
-  controllers/             # temporary compatibility layer (to be removed)
-  api/                     # temporary compatibility layer (to be removed)
+      query_gateway/
+      sqlgw_admin/
+      users/
+      workforce/
+    shared/
+      response_normalization.py
+  routes/
+  scripts/
+  tests/
+  main.py
 ```
 
-## Migration Strategy
-1. Create canonical files under `app/`.
-2. Move one bounded module at a time.
-3. Replace legacy files with thin wrappers importing canonical modules.
-4. Switch runtime imports (`main.py`) to canonical paths.
-5. Remove wrappers only after all internal imports are migrated and tested.
+## Completed Migration
 
-## Completed
-### Phase 1
-- Created canonical package roots:
-  - `app/`
-  - `app/api/v1/`
-  - `app/modules/prism/`
-- Migrated PRISM module to canonical path:
-  - `app/modules/prism/*`
-- Migrated API router to canonical path:
-  - `app/api/v1/router.py`
-- Updated runtime imports to canonical paths in `main.py`.
-- Added compatibility wrappers:
-  - `controllers/prism/*.py` -> imports from `app.modules.prism.*`
-  - `api/v1/router.py` -> imports from `app.api.v1.router`
+1. Moved API routing to `app/api/v1/router.py`.
+2. Moved reusable runtime utilities to `app/core/*`.
+3. Moved feature areas to `app/modules/*`.
+4. Removed legacy `api/`, `controllers/`, and `core/` compatibility packages.
+5. Removed the dynamic `/py/*` controller routing methodology.
+6. Standardized the backend on explicit FastAPI routers only.
+7. Added the `workforce` module as the neutral employee-management namespace.
 
-### Phase 2
-- Migrated auth-v2 module to canonical path:
-  - `app/modules/auth/*` (handlers, schemas, services, router, constants, dependencies)
-- Replaced auth imports across Python codebase:
-  - `controllers.auth.*` -> `app.modules.auth.*`
-- Added recursive compatibility wrappers:
-  - `controllers/auth/**/*.py` -> imports from `app.modules.auth.*`
-- Updated API v1 router to use canonical auth router:
-  - `app/api/v1/router.py` now imports `app.modules.auth.router`
+## Rules Going Forward
 
-## Next Phases
-- Phase 3: move `controllers/users` to `app/modules/users`.
-- Phase 4: move `controllers/employee_events_v1` and `controllers/google_calendar_v1` to `app/modules/*`.
-- Phase 5: move reusable runtime utilities from `core/` into `app/core/` (with compatibility wrappers).
-- Phase 6: retire legacy wrappers and remove deprecated import paths.
+1. Import from `app.*` only.
+2. Do not recreate `api/`, `controllers/`, or `core/` at repo root.
+3. Do not reintroduce dynamic controller loading or `/py/*` routes.
+4. New backend features should live under `app/modules/<feature>/`.
 
-## Rules During Migration
-- New feature work should import from `app.*` only.
-- Legacy paths remain supported temporarily via wrappers.
-- Do not remove wrapper files until all imports are migrated and verified.
+## Validation Checklist
+
+Run these after structural changes:
+
+```bash
+python -m compileall app tests main.py routes scripts alembic
+python -m pytest tests -q
+```

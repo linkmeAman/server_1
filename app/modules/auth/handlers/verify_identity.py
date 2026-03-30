@@ -43,9 +43,9 @@ from app.modules.auth.services.common import (
     utcnow,
 )
 from app.modules.auth.services.token_service import issue_identity_token
-from core.database import get_central_db_session, get_main_db_session
-from core.security import verify_password
-from core.settings import get_settings
+from app.core.database import get_central_db_session, get_main_db_session
+from app.core.security import verify_password
+from app.core.settings import get_settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)

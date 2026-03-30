@@ -27,9 +27,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from core.database import central_session_context, main_session_context
-from core.settings import get_settings
-from core.prism_cache import (
+from app.core.database import central_session_context, main_session_context
+from app.core.settings import get_settings
+from app.core.prism_cache import (
     invalidate_prism_cache,
     invalidate_prism_cache_for_policy,
     invalidate_prism_cache_for_role,

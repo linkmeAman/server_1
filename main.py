@@ -1,6 +1,4 @@
-"""
-Main FastAPI application for the dynamic multi-project API system
-"""
+"""Main FastAPI application for the MARKX Python backend."""
 import logging
 import os
 import sys
@@ -11,16 +9,14 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-# Add the dynamic_api directory to Python path
+# Add the project root directory to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from core.settings import get_settings
-from core.router import router as dynamic_router
-from core.middleware import setup_middleware
-from core.response import error_response
-from core.exceptions import DynamicAPIException
-from core.database import init_database
-from core.prism_cache import init_redis, close_redis
+from app.core.settings import get_settings
+from app.core.middleware import setup_middleware
+from app.core.response import error_response, success_response
+from app.core.database import init_database
+from app.core.prism_cache import init_redis, close_redis
 from app.api.v1.router import api_router
 from app.modules.auth.services.common import AuthError
 from routes.tables import router as explorer_tables_router
@@ -80,7 +76,7 @@ async def lifespan(app: FastAPI):
     logger = logging.getLogger(__name__)
     
     # Startup
-    logger.info("Starting Dynamic Multi-Project API")
+    logger.info("Starting %s", get_settings().APP_NAME)
     
     # Initialize database
     db_initialized = init_database()
@@ -98,7 +94,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     await close_redis()
-    logger.info("Shutting down Dynamic Multi-Project API")
+    logger.info("Shutting down %s", get_settings().APP_NAME)
 
 
 # Initialize settings and logging
@@ -109,7 +105,7 @@ logger = setup_logging()
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="Dynamic multi-project API system with automatic controller routing",
+    description="MARKX Python backend API",
     debug=settings.DEBUG,
     lifespan=lifespan,
     docs_url="/docs" if settings.DEBUG else None,
@@ -118,26 +114,6 @@ app = FastAPI(
 
 
 # Exception handlers
-@app.exception_handler(DynamicAPIException)
-async def dynamic_api_exception_handler(request: Request, exc: DynamicAPIException):
-    """Handle custom dynamic API exceptions"""
-    payload = error_response(
-        error=exc.__class__.__name__,
-        message=exc.message
-    ).model_dump(mode='json')
-    logger.error(
-        "ERROR_RESPONSE %s %s status=%s payload=%s",
-        request.method,
-        request.url.path,
-        exc.status_code,
-        payload,
-    )
-    return JSONResponse(
-        status_code=exc.status_code,
-        content=payload
-    )
-
-
 @app.exception_handler(AuthError)
 async def auth_v2_exception_handler(request: Request, exc: AuthError):
     """Handle auth v2 exceptions with required envelope + request_id/details."""
@@ -228,8 +204,7 @@ async def internal_server_error_handler(request: Request, exc: Exception):
 # Set up middleware
 setup_middleware(app)
 
-# Include explicit APIRouter endpoints first.
-# Legacy dynamic routes remain enabled as fallback for old clients.
+# Include explicit APIRouter endpoints.
 app.include_router(api_router)
 app.include_router(explorer_tables_router)
 app.include_router(explorer_query_router)
@@ -237,16 +212,21 @@ app.include_router(explorer_export_router)
 app.include_router(explorer_ai_query_router)
 
 
+@app.get("/health")
+async def health():
+    """Application health check."""
+    return success_response(
+        data={"status": "healthy"},
+        message="Application is running",
+    ).model_dump(mode="json")
+
+
 # Root endpoint
 @app.get("/")
 async def root():
     """Root endpoint - redirects to health check"""
     from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/py/health")
-
-
-# Include legacy dynamic router after explicit routers.
-app.include_router(dynamic_router)
+    return RedirectResponse(url="/health")
 
 
 # Development server runner
