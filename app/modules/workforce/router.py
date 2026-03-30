@@ -103,6 +103,11 @@ class AttendanceRequestCreateRequest(BaseModel):
     park: int | None = None
 
 
+class AttendanceRequestBulkStatusRequest(BaseModel):
+    request_ids: list[int]
+    status: int
+
+
 @router.get("/meta")
 async def get_workforce_meta(
     _: CallerContext = Depends(require_any_caller),
@@ -318,3 +323,18 @@ async def create_workforce_attendance_request(
         created_by=caller.user_id,
     )
     return success_response(data=data, message="Attendance request created").model_dump(mode="json")
+
+
+@router.patch("/attendance/requests/status")
+async def bulk_update_workforce_attendance_request_status(
+    body: AttendanceRequestBulkStatusRequest,
+    caller: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+):
+    data = await service.bulk_update_attendance_request_status(
+        main_db,
+        request_ids=body.request_ids,
+        status=body.status,
+        modified_by=caller.user_id,
+    )
+    return success_response(data=data, message="Attendance request statuses updated").model_dump(mode="json")

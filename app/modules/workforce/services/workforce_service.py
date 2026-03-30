@@ -562,6 +562,42 @@ class WorkforceService:
             raise HTTPException(status_code=500, detail="Created attendance request could not be loaded")
         return {"row": self._serialize_attendance_request_row(created)}
 
+    async def bulk_update_attendance_request_status(
+        self,
+        main_db: AsyncSession,
+        *,
+        request_ids: list[int],
+        status: int,
+        modified_by: int,
+    ) -> dict[str, Any]:
+        if status not in {0, 1, 2, 3, 4}:
+            raise HTTPException(status_code=400, detail="Invalid status for attendance request")
+        cleaned_ids: list[int] = []
+        seen: set[int] = set()
+        for item in request_ids:
+            request_id = self._as_int(item)
+            if request_id is None or request_id <= 0:
+                continue
+            if request_id in seen:
+                continue
+            seen.add(request_id)
+            cleaned_ids.append(request_id)
+        if not cleaned_ids:
+            raise HTTPException(status_code=400, detail="request_ids is required")
+
+        updated_count = await self.repo.bulk_update_attendance_request_status(
+            main_db,
+            request_ids=cleaned_ids,
+            status=int(status),
+            modified_by=modified_by,
+        )
+        await main_db.commit()
+        return {
+            "updated_count": updated_count,
+            "request_ids": cleaned_ids,
+            "status": int(status),
+        }
+
     def _serialize_employee_row(
         self,
         row: dict[str, Any],

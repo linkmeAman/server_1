@@ -804,6 +804,34 @@ class WorkforceRepository:
         inserted_id = getattr(result, "lastrowid", None)
         return int(inserted_id or 0)
 
+    async def bulk_update_attendance_request_status(
+        self,
+        db: AsyncSession,
+        *,
+        request_ids: list[int],
+        status: int,
+        modified_by: int,
+    ) -> int:
+        if not request_ids:
+            return 0
+        id_placeholders: list[str] = []
+        params: dict[str, Any] = {
+            "status": int(status),
+            "modified_by": int(modified_by),
+        }
+        for index, request_id in enumerate(request_ids):
+            key = f"request_id_{index}"
+            id_placeholders.append(f":{key}")
+            params[key] = int(request_id)
+        sql = f"""
+            UPDATE emp_att_request
+            SET status = :status,
+                modified_by = :modified_by
+            WHERE id IN ({", ".join(id_placeholders)})
+        """
+        result = await db.execute(text(sql), params)
+        return int(getattr(result, "rowcount", 0) or 0)
+
     async def _attendance_records_query(
         self,
         db: AsyncSession,
