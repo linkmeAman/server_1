@@ -267,6 +267,137 @@ class WorkforceService:
             "future_scope": FUTURE_SCOPE_ATTENDANCE,
         }
 
+    async def list_attendance_records(
+        self,
+        main_db: AsyncSession,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        status: int | None,
+        regularised: int | None,
+        invalid: int | None,
+        limit: int,
+        offset: int,
+    ) -> dict[str, Any]:
+        rows = await self.repo.list_attendance_records(
+            main_db,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            status=status,
+            regularised=regularised,
+            invalid=invalid,
+            limit=limit,
+            offset=offset,
+        )
+        total = await self.repo.count_attendance_records(
+            main_db,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            status=status,
+            regularised=regularised,
+            invalid=invalid,
+        )
+        return {
+            "rows": [self._serialize_attendance_record_row(row) for row in rows],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
+    async def update_attendance_record(
+        self,
+        main_db: AsyncSession,
+        *,
+        record_id: int,
+        payload: dict[str, Any],
+        modified_by: int,
+    ) -> dict[str, Any]:
+        existing = await self.repo.get_attendance_record(main_db, record_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Attendance record not found")
+
+        normalized = self._normalize_attendance_record_payload(payload)
+        if normalized:
+            await self.repo.update_attendance_record(
+                main_db,
+                record_id=record_id,
+                payload=normalized,
+                modified_by=modified_by,
+            )
+            await main_db.commit()
+
+        refreshed = await self.repo.get_attendance_record(main_db, record_id)
+        if refreshed is None:
+            raise HTTPException(status_code=404, detail="Attendance record not found after update")
+        return {"row": self._serialize_attendance_record_row(refreshed)}
+
+    async def list_attendance_requests(
+        self,
+        main_db: AsyncSession,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        status: int | None,
+        request_type: int | None,
+        limit: int,
+        offset: int,
+    ) -> dict[str, Any]:
+        rows = await self.repo.list_attendance_requests(
+            main_db,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            status=status,
+            request_type=request_type,
+            limit=limit,
+            offset=offset,
+        )
+        total = await self.repo.count_attendance_requests(
+            main_db,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            status=status,
+            request_type=request_type,
+        )
+        return {
+            "rows": [self._serialize_attendance_request_row(row) for row in rows],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
+    async def update_attendance_request(
+        self,
+        main_db: AsyncSession,
+        *,
+        request_id: int,
+        payload: dict[str, Any],
+        modified_by: int,
+    ) -> dict[str, Any]:
+        existing = await self.repo.get_attendance_request(main_db, request_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Attendance request not found")
+
+        normalized = self._normalize_attendance_request_payload(payload)
+        if normalized:
+            await self.repo.update_attendance_request(
+                main_db,
+                request_id=request_id,
+                payload=normalized,
+                modified_by=modified_by,
+            )
+            await main_db.commit()
+
+        refreshed = await self.repo.get_attendance_request(main_db, request_id)
+        if refreshed is None:
+            raise HTTPException(status_code=404, detail="Attendance request not found after update")
+        return {"row": self._serialize_attendance_request_row(refreshed)}
+
     def _serialize_employee_row(
         self,
         row: dict[str, Any],
@@ -345,6 +476,136 @@ class WorkforceService:
             "qualifier": self._as_int(row.get("qualifier")),
         }
 
+    def _serialize_attendance_record_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": self._as_int(row.get("id")),
+            "employee_id": self._as_int(row.get("employee_id")),
+            "contact_id": self._as_int(row.get("contact_id")),
+            "full_name": self._normalize_full_name(
+                row.get("full_name"),
+                row.get("fname"),
+                row.get("mname"),
+                row.get("lname"),
+            ),
+            "email": self._as_text(row.get("email")),
+            "mobile": self._as_text(row.get("mobile")),
+            "date": self._as_date_text(row.get("date")),
+            "ip_address": self._as_text(row.get("ip_address")) or "",
+            "logout_ip_address": self._as_text(row.get("logout_ip_address")) or "",
+            "mac_address": self._as_text(row.get("mac_address")) or "",
+            "login_bssid": self._as_text(row.get("login_bssid")),
+            "logout_bssid": self._as_text(row.get("logout_bssid")),
+            "login_wifi_details": self._as_text(row.get("login_wifi_details")),
+            "logout_wifi_details": self._as_text(row.get("logout_wifi_details")),
+            "login_details": self._as_text(row.get("login_details")) or "",
+            "logout_details": self._as_text(row.get("logout_details")) or "",
+            "in_time": self._as_datetime_text(row.get("in_time")),
+            "out_time": self._as_datetime_text(row.get("out_time")),
+            "comment": self._as_text(row.get("comment")) or "",
+            "status": self._as_int(row.get("status")),
+            "regularised": self._as_int(row.get("regularised")),
+            "regularised_type_id": self._as_int(row.get("regularised_type_id")),
+            "invalid": self._as_int(row.get("invalid")),
+            "park": self._as_int(row.get("park")),
+            "created_by": self._as_int(row.get("created_by")),
+            "created_at": self._as_datetime_text(row.get("created_at")),
+            "modified_by": self._as_int(row.get("modified_by")),
+            "modified_at": self._as_datetime_text(row.get("modified_at")),
+        }
+
+    def _serialize_attendance_request_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": self._as_int(row.get("id")),
+            "employee_id": self._as_int(row.get("emp_id")),
+            "contact_id": self._as_int(row.get("contact_id")),
+            "full_name": self._normalize_full_name(
+                row.get("full_name"),
+                row.get("fname"),
+                row.get("mname"),
+                row.get("lname"),
+            ),
+            "email": self._as_text(row.get("email")),
+            "mobile": self._as_text(row.get("mobile")),
+            "date": self._as_date_text(row.get("date")),
+            "action_date": self._as_date_text(row.get("action_date")),
+            "parent_id": self._as_int(row.get("parent_id")),
+            "request_type": self._as_int(row.get("request_type")),
+            "no_of_days": self._as_text(row.get("no_of_days")) or "",
+            "start_date": self._as_date_text(row.get("start_date")),
+            "in_time": self._as_time_text(row.get("in_time")),
+            "end_date": self._as_date_text(row.get("end_date")),
+            "out_time": self._as_time_text(row.get("out_time")),
+            "status": self._as_int(row.get("status")),
+            "request_comment": self._as_text(row.get("request_comment")) or "",
+            "parent_comment": self._as_text(row.get("parent_comment")) or "",
+            "bid": self._as_int(row.get("bid")),
+            "park": self._as_int(row.get("park")),
+            "created_by": self._as_int(row.get("created_by")),
+            "created_at": self._as_datetime_text(row.get("created_at")),
+            "modified_by": self._as_int(row.get("modified_by")),
+            "modified_at": self._as_datetime_text(row.get("modified_at")),
+        }
+
+    def _normalize_attendance_record_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        normalized: dict[str, Any] = {}
+        int_fields = {
+            "contact_id",
+            "status",
+            "regularised",
+            "regularised_type_id",
+            "invalid",
+            "park",
+        }
+        str_fields = {
+            "date",
+            "ip_address",
+            "logout_ip_address",
+            "mac_address",
+            "login_bssid",
+            "logout_bssid",
+            "login_wifi_details",
+            "logout_wifi_details",
+            "login_details",
+            "logout_details",
+            "in_time",
+            "out_time",
+            "comment",
+        }
+        for field, value in payload.items():
+            if field in int_fields:
+                normalized[field] = self._coerce_int(value)
+            elif field in str_fields:
+                normalized[field] = self._coerce_string(value)
+        return normalized
+
+    def _normalize_attendance_request_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        normalized: dict[str, Any] = {}
+        int_fields = {
+            "emp_id",
+            "parent_id",
+            "request_type",
+            "status",
+            "bid",
+            "park",
+        }
+        str_fields = {
+            "date",
+            "action_date",
+            "no_of_days",
+            "start_date",
+            "in_time",
+            "end_date",
+            "out_time",
+            "request_comment",
+            "parent_comment",
+        }
+        for field, value in payload.items():
+            if field in int_fields:
+                normalized[field] = self._coerce_int(value)
+            elif field in str_fields:
+                normalized[field] = self._coerce_string(value)
+        return normalized
+
     @staticmethod
     def _normalize_full_name(full_name: Any, first_name: Any, middle_name: Any, last_name: Any) -> str | None:
         explicit_full_name = str(full_name or "").strip()
@@ -398,6 +659,15 @@ class WorkforceService:
         return text_value or None
 
     @staticmethod
+    def _as_datetime_text(value: Any) -> str | None:
+        if value is None:
+            return None
+        if hasattr(value, "isoformat"):
+            return value.isoformat(sep=" ", timespec="seconds")
+        text_value = str(value).strip()
+        return text_value or None
+
+    @staticmethod
     def _as_time_text(value: Any) -> str | None:
         if value is None:
             return None
@@ -410,3 +680,16 @@ class WorkforceService:
             return int(value or 0) > 0
         except (TypeError, ValueError):
             return False
+
+    @staticmethod
+    def _coerce_int(value: Any) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid integer value: {value}") from exc
+
+    @staticmethod
+    def _coerce_string(value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()

@@ -296,6 +296,470 @@ class WorkforceRepository:
         row = result.fetchone()
         return int(row._mapping["total"]) if row else 0
 
+    async def resolve_contact_id_for_employee(
+        self,
+        db: AsyncSession,
+        employee_id: int,
+    ) -> int | None:
+        result = await db.execute(
+            text(
+                """
+                SELECT contact_id
+                FROM employee
+                WHERE id = :employee_id
+                  AND (park IS NULL OR park = 0)
+                LIMIT 1
+                """
+            ),
+            {"employee_id": int(employee_id)},
+        )
+        row = result.fetchone()
+        if row is None:
+            return None
+        contact_id = row._mapping.get("contact_id")
+        return int(contact_id) if contact_id is not None else None
+
+    async def count_attendance_records(
+        self,
+        db: AsyncSession,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        status: int | None,
+        regularised: int | None,
+        invalid: int | None,
+    ) -> int:
+        sql, params = await self._attendance_records_query(
+            db,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            status=status,
+            regularised=regularised,
+            invalid=invalid,
+            select_sql="SELECT COUNT(*) AS total",
+        )
+        result = await db.execute(text(sql), params)
+        row = result.fetchone()
+        return int(row._mapping["total"]) if row else 0
+
+    async def list_attendance_records(
+        self,
+        db: AsyncSession,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        status: int | None,
+        regularised: int | None,
+        invalid: int | None,
+        limit: int,
+        offset: int,
+    ) -> list[dict[str, Any]]:
+        sql, params = await self._attendance_records_query(
+            db,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            status=status,
+            regularised=regularised,
+            invalid=invalid,
+            select_sql="""
+                SELECT
+                    a.id,
+                    e.id AS employee_id,
+                    a.contact_id,
+                    a.date,
+                    a.ip_address,
+                    a.logout_ip_address,
+                    a.mac_address,
+                    a.login_bssid,
+                    a.logout_bssid,
+                    a.login_wifi_details,
+                    a.logout_wifi_details,
+                    a.login_details,
+                    a.logout_details,
+                    a.in_time,
+                    a.out_time,
+                    a.comment,
+                    a.status,
+                    a.regularised,
+                    a.regularised_type_id,
+                    a.invalid,
+                    a.park,
+                    a.created_by,
+                    a.created_at,
+                    a.modified_by,
+                    a.modified_at,
+                    c.fname,
+                    c.mname,
+                    c.lname,
+                    c.email,
+                    c.mobile,
+                    CONCAT_WS(' ', NULLIF(TRIM(c.fname), ''), NULLIF(TRIM(c.mname), ''), NULLIF(TRIM(c.lname), '')) AS full_name
+            """,
+        )
+        sql += """
+            ORDER BY a.date DESC, a.in_time DESC, a.id DESC
+            LIMIT :limit OFFSET :offset
+        """
+        params["limit"] = int(limit)
+        params["offset"] = int(offset)
+        result = await db.execute(text(sql), params)
+        return [dict(row._mapping) for row in result.fetchall()]
+
+    async def get_attendance_record(self, db: AsyncSession, record_id: int) -> dict[str, Any] | None:
+        result = await db.execute(
+            text(
+                """
+                SELECT
+                    a.id,
+                    e.id AS employee_id,
+                    a.contact_id,
+                    a.date,
+                    a.ip_address,
+                    a.logout_ip_address,
+                    a.mac_address,
+                    a.login_bssid,
+                    a.logout_bssid,
+                    a.login_wifi_details,
+                    a.logout_wifi_details,
+                    a.login_details,
+                    a.logout_details,
+                    a.in_time,
+                    a.out_time,
+                    a.comment,
+                    a.status,
+                    a.regularised,
+                    a.regularised_type_id,
+                    a.invalid,
+                    a.park,
+                    a.created_by,
+                    a.created_at,
+                    a.modified_by,
+                    a.modified_at,
+                    c.fname,
+                    c.mname,
+                    c.lname,
+                    c.email,
+                    c.mobile,
+                    CONCAT_WS(' ', NULLIF(TRIM(c.fname), ''), NULLIF(TRIM(c.mname), ''), NULLIF(TRIM(c.lname), '')) AS full_name
+                FROM emp_attendance a
+                LEFT JOIN employee e ON e.contact_id = a.contact_id AND (e.park IS NULL OR e.park = 0)
+                LEFT JOIN contact c ON c.id = a.contact_id
+                WHERE a.id = :record_id
+                LIMIT 1
+                """
+            ),
+            {"record_id": int(record_id)},
+        )
+        row = result.fetchone()
+        return dict(row._mapping) if row else None
+
+    async def update_attendance_record(
+        self,
+        db: AsyncSession,
+        *,
+        record_id: int,
+        payload: dict[str, Any],
+        modified_by: int,
+    ) -> None:
+        allowed_fields = {
+            "contact_id",
+            "date",
+            "ip_address",
+            "logout_ip_address",
+            "mac_address",
+            "login_bssid",
+            "logout_bssid",
+            "login_wifi_details",
+            "logout_wifi_details",
+            "login_details",
+            "logout_details",
+            "in_time",
+            "out_time",
+            "comment",
+            "status",
+            "regularised",
+            "regularised_type_id",
+            "invalid",
+            "park",
+        }
+        assignments: list[str] = []
+        params: dict[str, Any] = {"record_id": int(record_id), "modified_by": int(modified_by)}
+        for field, value in payload.items():
+            if field not in allowed_fields:
+                continue
+            assignments.append(f"{field} = :{field}")
+            params[field] = value
+        if not assignments:
+            return
+        assignments.append("modified_by = :modified_by")
+        await db.execute(
+            text(
+                f"""
+                UPDATE emp_attendance
+                SET {", ".join(assignments)}
+                WHERE id = :record_id
+                """
+            ),
+            params,
+        )
+
+    async def count_attendance_requests(
+        self,
+        db: AsyncSession,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        status: int | None,
+        request_type: int | None,
+    ) -> int:
+        sql, params = self._attendance_requests_query(
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            status=status,
+            request_type=request_type,
+            select_sql="SELECT COUNT(*) AS total",
+        )
+        result = await db.execute(text(sql), params)
+        row = result.fetchone()
+        return int(row._mapping["total"]) if row else 0
+
+    async def list_attendance_requests(
+        self,
+        db: AsyncSession,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        status: int | None,
+        request_type: int | None,
+        limit: int,
+        offset: int,
+    ) -> list[dict[str, Any]]:
+        sql, params = self._attendance_requests_query(
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            status=status,
+            request_type=request_type,
+            select_sql="""
+                SELECT
+                    r.id,
+                    r.date,
+                    r.action_date,
+                    r.emp_id,
+                    r.parent_id,
+                    r.request_type,
+                    r.no_of_days,
+                    r.start_date,
+                    r.in_time,
+                    r.end_date,
+                    r.out_time,
+                    r.status,
+                    r.request_comment,
+                    r.parent_comment,
+                    r.bid,
+                    r.park,
+                    r.created_by,
+                    r.created_at,
+                    r.modified_by,
+                    r.modified_at,
+                    e.contact_id,
+                    c.fname,
+                    c.mname,
+                    c.lname,
+                    c.email,
+                    c.mobile,
+                    CONCAT_WS(' ', NULLIF(TRIM(c.fname), ''), NULLIF(TRIM(c.mname), ''), NULLIF(TRIM(c.lname), '')) AS full_name
+            """,
+        )
+        sql += """
+            ORDER BY r.start_date DESC, r.id DESC
+            LIMIT :limit OFFSET :offset
+        """
+        params["limit"] = int(limit)
+        params["offset"] = int(offset)
+        result = await db.execute(text(sql), params)
+        return [dict(row._mapping) for row in result.fetchall()]
+
+    async def get_attendance_request(self, db: AsyncSession, request_id: int) -> dict[str, Any] | None:
+        result = await db.execute(
+            text(
+                """
+                SELECT
+                    r.id,
+                    r.date,
+                    r.action_date,
+                    r.emp_id,
+                    r.parent_id,
+                    r.request_type,
+                    r.no_of_days,
+                    r.start_date,
+                    r.in_time,
+                    r.end_date,
+                    r.out_time,
+                    r.status,
+                    r.request_comment,
+                    r.parent_comment,
+                    r.bid,
+                    r.park,
+                    r.created_by,
+                    r.created_at,
+                    r.modified_by,
+                    r.modified_at,
+                    e.contact_id,
+                    c.fname,
+                    c.mname,
+                    c.lname,
+                    c.email,
+                    c.mobile,
+                    CONCAT_WS(' ', NULLIF(TRIM(c.fname), ''), NULLIF(TRIM(c.mname), ''), NULLIF(TRIM(c.lname), '')) AS full_name
+                FROM emp_att_request r
+                LEFT JOIN employee e ON e.id = r.emp_id AND (e.park IS NULL OR e.park = 0)
+                LEFT JOIN contact c ON c.id = e.contact_id
+                WHERE r.id = :request_id
+                LIMIT 1
+                """
+            ),
+            {"request_id": int(request_id)},
+        )
+        row = result.fetchone()
+        return dict(row._mapping) if row else None
+
+    async def update_attendance_request(
+        self,
+        db: AsyncSession,
+        *,
+        request_id: int,
+        payload: dict[str, Any],
+        modified_by: int,
+    ) -> None:
+        allowed_fields = {
+            "emp_id",
+            "parent_id",
+            "date",
+            "action_date",
+            "request_type",
+            "no_of_days",
+            "start_date",
+            "in_time",
+            "end_date",
+            "out_time",
+            "status",
+            "request_comment",
+            "parent_comment",
+            "bid",
+            "park",
+        }
+        assignments: list[str] = []
+        params: dict[str, Any] = {"request_id": int(request_id), "modified_by": int(modified_by)}
+        for field, value in payload.items():
+            if field not in allowed_fields:
+                continue
+            assignments.append(f"{field} = :{field}")
+            params[field] = value
+        if not assignments:
+            return
+        assignments.append("modified_by = :modified_by")
+        await db.execute(
+            text(
+                f"""
+                UPDATE emp_att_request
+                SET {", ".join(assignments)}
+                WHERE id = :request_id
+                """
+            ),
+            params,
+        )
+
+    async def _attendance_records_query(
+        self,
+        db: AsyncSession,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        status: int | None,
+        regularised: int | None,
+        invalid: int | None,
+        select_sql: str,
+    ) -> tuple[str, dict[str, Any]]:
+        sql = f"""
+            {select_sql}
+            FROM emp_attendance a
+            LEFT JOIN employee e ON e.contact_id = a.contact_id AND (e.park IS NULL OR e.park = 0)
+            LEFT JOIN contact c ON c.id = a.contact_id
+            WHERE 1 = 1
+        """
+        params: dict[str, Any] = {}
+        if employee_id is not None:
+            contact_id = await self.resolve_contact_id_for_employee(db, employee_id)
+            if contact_id is None:
+                sql += " AND 1 = 0"
+                return sql, params
+            sql += " AND a.contact_id = :contact_id"
+            params["contact_id"] = int(contact_id)
+        if from_date:
+            sql += " AND a.date >= :from_date"
+            params["from_date"] = from_date
+        if to_date:
+            sql += " AND a.date <= :to_date"
+            params["to_date"] = to_date
+        if status is not None:
+            sql += " AND a.status = :status"
+            params["status"] = int(status)
+        if regularised is not None:
+            sql += " AND a.regularised = :regularised"
+            params["regularised"] = int(regularised)
+        if invalid is not None:
+            sql += " AND a.invalid = :invalid"
+            params["invalid"] = int(invalid)
+        return sql, params
+
+    def _attendance_requests_query(
+        self,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        status: int | None,
+        request_type: int | None,
+        select_sql: str,
+    ) -> tuple[str, dict[str, Any]]:
+        sql = f"""
+            {select_sql}
+            FROM emp_att_request r
+            LEFT JOIN employee e ON e.id = r.emp_id AND (e.park IS NULL OR e.park = 0)
+            LEFT JOIN contact c ON c.id = e.contact_id
+            WHERE 1 = 1
+        """
+        params: dict[str, Any] = {}
+        if employee_id is not None:
+            sql += " AND r.emp_id = :employee_id"
+            params["employee_id"] = int(employee_id)
+        if from_date and to_date:
+            sql += " AND r.start_date <= :to_date AND r.end_date >= :from_date"
+            params["from_date"] = from_date
+            params["to_date"] = to_date
+        elif from_date:
+            sql += " AND r.start_date >= :from_date"
+            params["from_date"] = from_date
+        elif to_date:
+            sql += " AND r.end_date <= :to_date"
+            params["to_date"] = to_date
+        if status is not None:
+            sql += " AND r.status = :status"
+            params["status"] = int(status)
+        if request_type is not None:
+            sql += " AND r.request_type = :request_type"
+            params["request_type"] = int(request_type)
+        return sql, params
+
     def _employee_base_query(
         self,
         *,
