@@ -54,7 +54,9 @@ def _paseto_key():
     """Build a deterministic 32-byte symmetric key for v4.local."""
     pyseto, Key = _load_pyseto_module()
     settings = get_settings()
-    raw_secret = settings.PASETO_SECRET_KEY
+    raw_secret = settings.PASETO_SECRET_KEY.strip()
+    if not raw_secret:
+        raise RuntimeError("PASETO_SECRET_KEY is not configured")
     key_bytes = hashlib.sha256(raw_secret.encode("utf-8")).digest()
     return pyseto, Key.new(version=4, purpose="local", key=key_bytes)
 
