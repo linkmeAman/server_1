@@ -45,6 +45,28 @@ class AttendanceRecordUpdateRequest(BaseModel):
     park: int | None = None
 
 
+class AttendanceRecordCreateRequest(BaseModel):
+    contact_id: int | None = None
+    date: str | None = None
+    ip_address: str | None = None
+    logout_ip_address: str | None = None
+    mac_address: str | None = None
+    login_bssid: str | None = None
+    logout_bssid: str | None = None
+    login_wifi_details: str | None = None
+    logout_wifi_details: str | None = None
+    login_details: str | None = None
+    logout_details: str | None = None
+    in_time: str | None = None
+    out_time: str | None = None
+    comment: str | None = None
+    status: int | None = None
+    regularised: int | None = None
+    regularised_type_id: int | None = None
+    invalid: int | None = None
+    park: int | None = None
+
+
 class AttendanceRequestUpdateRequest(BaseModel):
     emp_id: int | None = None
     parent_id: int | None = None
@@ -209,6 +231,20 @@ async def update_workforce_attendance_record(
         modified_by=caller.user_id,
     )
     return success_response(data=data, message="Attendance record updated").model_dump(mode="json")
+
+
+@router.post("/attendance/records")
+async def create_workforce_attendance_record(
+    body: AttendanceRecordCreateRequest,
+    caller: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+):
+    data = await service.create_attendance_record(
+        main_db,
+        payload=body.model_dump(exclude_unset=True),
+        created_by=caller.user_id,
+    )
+    return success_response(data=data, message="Attendance record created").model_dump(mode="json")
 
 
 @router.get("/attendance/requests")

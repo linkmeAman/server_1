@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from fastapi import HTTPException
@@ -404,6 +404,55 @@ class WorkforceService:
         if refreshed is None:
             raise HTTPException(status_code=404, detail="Attendance record not found after update")
         return {"row": self._serialize_attendance_record_row(refreshed)}
+
+    async def create_attendance_record(
+        self,
+        main_db: AsyncSession,
+        *,
+        payload: dict[str, Any],
+        created_by: int,
+    ) -> dict[str, Any]:
+        normalized = self._normalize_attendance_record_payload(payload)
+        today = date.today().isoformat()
+        now_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        defaults: dict[str, Any] = {
+            "date": today,
+            "ip_address": "",
+            "logout_ip_address": "",
+            "mac_address": "",
+            "login_bssid": "",
+            "logout_bssid": "",
+            "login_wifi_details": "",
+            "logout_wifi_details": "",
+            "login_details": "",
+            "logout_details": "",
+            "in_time": now_text,
+            "out_time": now_text,
+            "comment": "Regular",
+            "status": 0,
+            "regularised": 0,
+            "regularised_type_id": 0,
+            "invalid": 0,
+            "park": 0,
+        }
+        merged = {**defaults, **normalized}
+        contact_id = self._as_int(merged.get("contact_id"))
+        if contact_id is None or contact_id <= 0:
+            raise HTTPException(status_code=400, detail="contact_id is required to create attendance row")
+        merged["contact_id"] = int(contact_id)
+
+        record_id = await self.repo.create_attendance_record(
+            main_db,
+            payload=merged,
+            created_by=created_by,
+        )
+        await main_db.commit()
+        if record_id <= 0:
+            raise HTTPException(status_code=500, detail="Failed to create attendance record")
+        created = await self.repo.get_attendance_record(main_db, record_id)
+        if created is None:
+            raise HTTPException(status_code=500, detail="Created attendance record could not be loaded")
+        return {"row": self._serialize_attendance_record_row(created)}
 
     async def list_attendance_requests(
         self,

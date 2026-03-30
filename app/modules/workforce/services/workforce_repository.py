@@ -473,6 +473,91 @@ class WorkforceRepository:
             params,
         )
 
+    async def create_attendance_record(
+        self,
+        db: AsyncSession,
+        *,
+        payload: dict[str, Any],
+        created_by: int,
+    ) -> int:
+        params = {
+            "contact_id": int(payload.get("contact_id", 0)),
+            "date": payload.get("date", "1970-01-01"),
+            "ip_address": payload.get("ip_address", ""),
+            "logout_ip_address": payload.get("logout_ip_address", ""),
+            "mac_address": payload.get("mac_address", ""),
+            "login_bssid": payload.get("login_bssid", ""),
+            "logout_bssid": payload.get("logout_bssid", ""),
+            "login_wifi_details": payload.get("login_wifi_details", ""),
+            "logout_wifi_details": payload.get("logout_wifi_details", ""),
+            "login_details": payload.get("login_details", ""),
+            "logout_details": payload.get("logout_details", ""),
+            "in_time": payload.get("in_time", "1970-01-01 00:00:00"),
+            "out_time": payload.get("out_time", "1970-01-01 00:00:00"),
+            "comment": payload.get("comment", "Regular"),
+            "status": int(payload.get("status", 0)),
+            "regularised": int(payload.get("regularised", 0)),
+            "regularised_type_id": int(payload.get("regularised_type_id", 0)),
+            "invalid": int(payload.get("invalid", 0)),
+            "park": int(payload.get("park", 0)),
+            "created_by": int(created_by),
+            "modified_by": int(created_by),
+        }
+        result = await db.execute(
+            text(
+                """
+                INSERT INTO emp_attendance (
+                    contact_id,
+                    date,
+                    ip_address,
+                    logout_ip_address,
+                    mac_address,
+                    login_bssid,
+                    logout_bssid,
+                    login_wifi_details,
+                    logout_wifi_details,
+                    login_details,
+                    logout_details,
+                    in_time,
+                    out_time,
+                    comment,
+                    status,
+                    regularised,
+                    regularised_type_id,
+                    invalid,
+                    park,
+                    created_by,
+                    modified_by
+                ) VALUES (
+                    :contact_id,
+                    :date,
+                    :ip_address,
+                    :logout_ip_address,
+                    :mac_address,
+                    :login_bssid,
+                    :logout_bssid,
+                    :login_wifi_details,
+                    :logout_wifi_details,
+                    :login_details,
+                    :logout_details,
+                    :in_time,
+                    :out_time,
+                    :comment,
+                    :status,
+                    :regularised,
+                    :regularised_type_id,
+                    :invalid,
+                    :park,
+                    :created_by,
+                    :modified_by
+                )
+                """
+            ),
+            params,
+        )
+        inserted_id = getattr(result, "lastrowid", None)
+        return int(inserted_id or 0)
+
     async def count_attendance_requests(
         self,
         db: AsyncSession,
