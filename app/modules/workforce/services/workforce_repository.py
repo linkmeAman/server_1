@@ -307,6 +307,7 @@ class WorkforceRepository:
             status=status,
             regularised=regularised,
             invalid=invalid,
+            department_id=None,
             select_sql="""
                 SELECT
                     a.id,
