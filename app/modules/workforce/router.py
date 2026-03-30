@@ -159,6 +159,15 @@ async def list_workforce_attendance_employees(
     return success_response(data=data, message="Attendance employee index fetched").model_dump(mode="json")
 
 
+@router.get("/attendance/bssid-options")
+async def list_workforce_attendance_bssid_options(
+    _: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+):
+    data = await service.list_attendance_bssid_options(main_db)
+    return success_response(data=data, message="Attendance BSSID options fetched").model_dump(mode="json")
+
+
 @router.get("/attendance/records")
 async def list_workforce_attendance_records(
     employee_id: int | None = Query(default=None),

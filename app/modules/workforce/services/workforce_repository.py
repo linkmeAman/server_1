@@ -35,6 +35,29 @@ class WorkforceRepository:
         )
         return [dict(row._mapping) for row in result.fetchall()]
 
+    async def list_valid_bssid_options(self, db: AsyncSession) -> list[dict[str, Any]]:
+        result = await db.execute(
+            text(
+                """
+                SELECT
+                    MIN(id) AS id,
+                    bssid,
+                    MAX(NULLIF(TRIM(bssid_name), '')) AS bssid_name,
+                    MAX(NULLIF(TRIM(venue_name), '')) AS venue_name,
+                    MAX(NULLIF(TRIM(wifi_name), '')) AS wifi_name
+                FROM venue_details
+                WHERE NULLIF(TRIM(bssid), '') IS NOT NULL
+                GROUP BY bssid
+                ORDER BY
+                    MAX(NULLIF(TRIM(bssid_name), '')) ASC,
+                    MAX(NULLIF(TRIM(venue_name), '')) ASC,
+                    MAX(NULLIF(TRIM(wifi_name), '')) ASC,
+                    bssid ASC
+                """
+            )
+        )
+        return [dict(row._mapping) for row in result.fetchall()]
+
     async def count_employees(
         self,
         db: AsyncSession,

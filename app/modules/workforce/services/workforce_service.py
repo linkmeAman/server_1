@@ -137,6 +137,21 @@ class WorkforceService:
             },
         }
 
+    async def list_attendance_bssid_options(self, main_db: AsyncSession) -> dict[str, Any]:
+        rows = await self.repo.list_valid_bssid_options(main_db)
+        options = [
+            {
+                "id": self._as_int(row.get("id")),
+                "bssid": self._as_text(row.get("bssid")),
+                "bssid_name": self._as_text(row.get("bssid_name")),
+                "venue_name": self._as_text(row.get("venue_name")),
+                "wifi_name": self._as_text(row.get("wifi_name")),
+            }
+            for row in rows
+            if self._as_text(row.get("bssid"))
+        ]
+        return {"options": options}
+
     async def get_employee(
         self,
         main_db: AsyncSession,
