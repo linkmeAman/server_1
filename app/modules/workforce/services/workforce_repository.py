@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class WorkforceRepository:
-    async def list_departments(self, db: AsyncSession) -> list[dict[str, Any]]:
-        result = await db.execute(
+    async def list_departments(self, central_db: AsyncSession) -> list[dict[str, Any]]:
+        result = await central_db.execute(
             text(
                 """
                 SELECT id, department AS name
@@ -22,8 +22,8 @@ class WorkforceRepository:
         )
         return [dict(row._mapping) for row in result.fetchall()]
 
-    async def list_positions(self, db: AsyncSession) -> list[dict[str, Any]]:
-        result = await db.execute(
+    async def list_positions(self, central_db: AsyncSession) -> list[dict[str, Any]]:
+        result = await central_db.execute(
             text(
                 """
                 SELECT id, position AS name
@@ -73,9 +73,7 @@ class WorkforceRepository:
                     e.contact_id,
                     e.ecode,
                     e.department_id,
-                    ed.department,
                     e.position_id,
-                    ep.position,
                     e.status,
                     e.user_account,
                     e.is_admin,
@@ -125,9 +123,7 @@ class WorkforceRepository:
                     e.contact_id,
                     e.ecode,
                     e.department_id,
-                    ed.department,
                     e.position_id,
-                    ep.position,
                     e.status,
                     e.user_account,
                     e.is_admin,
@@ -167,8 +163,6 @@ class WorkforceRepository:
                     CONCAT_WS(' ', NULLIF(TRIM(c.fname), ''), NULLIF(TRIM(c.mname), ''), NULLIF(TRIM(c.lname), '')) AS full_name
                 FROM employee e
                 LEFT JOIN contact c ON c.id = e.contact_id
-                LEFT JOIN employee_department ed ON ed.id = e.department_id
-                LEFT JOIN employee_position ep ON ep.id = e.position_id
                 WHERE e.id = :employee_id
                   AND (e.park IS NULL OR e.park = 0)
                 LIMIT 1
@@ -318,8 +312,6 @@ class WorkforceRepository:
             {select_sql}
             FROM employee e
             LEFT JOIN contact c ON c.id = e.contact_id
-            LEFT JOIN employee_department ed ON ed.id = e.department_id
-            LEFT JOIN employee_position ep ON ep.id = e.position_id
             WHERE (e.park IS NULL OR e.park = 0)
         """
         params: dict[str, Any] = {}

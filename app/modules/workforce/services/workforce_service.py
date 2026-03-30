@@ -8,8 +8,6 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.employee_events_v1.services.event_repository import EmployeeEventsRepository
-
 from ..schemas.models import FUTURE_SCOPE_ATTENDANCE, FUTURE_SCOPE_EMPLOYEE
 from .workforce_repository import WorkforceRepository
 
@@ -22,11 +20,11 @@ class WorkforceService:
 
     def __init__(self) -> None:
         self.repo = WorkforceRepository()
-        self.employee_events_repo = EmployeeEventsRepository()
 
-    async def get_meta(self, db: AsyncSession) -> dict[str, Any]:
-        departments = await self.repo.list_departments(db)
-        positions = await self.repo.list_positions(db)
+    async def get_meta(self, main_db: AsyncSession, central_db: AsyncSession) -> dict[str, Any]:
+        del main_db
+        departments = await self.repo.list_departments(central_db)
+        positions = await self.repo.list_positions(central_db)
         return {
             "filter_options": {
                 "departments": departments,
@@ -38,7 +36,8 @@ class WorkforceService:
 
     async def list_employees(
         self,
-        db: AsyncSession,
+        main_db: AsyncSession,
+        central_db: AsyncSession,
         *,
         q: str | None,
         status: int | None,
@@ -48,7 +47,7 @@ class WorkforceService:
         offset: int,
     ) -> dict[str, Any]:
         rows = await self.repo.list_employees(
-            db,
+            main_db,
             q=q,
             status=status,
             department_id=department_id,
@@ -57,13 +56,25 @@ class WorkforceService:
             offset=offset,
         )
         total = await self.repo.count_employees(
-            db,
+            main_db,
             q=q,
             status=status,
             department_id=department_id,
             position_id=position_id,
         )
-        employees = [self._serialize_employee_row(row) for row in rows]
+        departments = await self.repo.list_departments(central_db)
+        positions = await self.repo.list_positions(central_db)
+        department_map = self._map_lookup_by_id(departments)
+        position_map = self._map_lookup_by_id(positions)
+
+        employees = [
+            self._serialize_employee_row(
+                row,
+                department_map=department_map,
+                position_map=position_map,
+            )
+            for row in rows
+        ]
         return {
             "employees": employees,
             "total": total,
@@ -77,44 +88,68 @@ class WorkforceService:
                 "user_account_count": sum(1 for item in employees if self._truthy_int(item["user_account"])),
             },
             "filter_options": {
-                "departments": await self.repo.list_departments(db),
-                "positions": await self.repo.list_positions(db),
+                "departments": departments,
+                "positions": positions,
                 "statuses": self.STATUS_OPTIONS,
             },
             "future_scope": FUTURE_SCOPE_EMPLOYEE,
         }
 
-    async def get_employee(self, db: AsyncSession, employee_id: int) -> dict[str, Any]:
-        row = await self.repo.get_employee(db, employee_id)
+    async def get_employee(
+        self,
+        main_db: AsyncSession,
+        central_db: AsyncSession,
+        employee_id: int,
+    ) -> dict[str, Any]:
+        row = await self.repo.get_employee(main_db, employee_id)
         if row is None:
             raise HTTPException(status_code=404, detail="Employee not found")
 
+        departments = await self.repo.list_departments(central_db)
+        positions = await self.repo.list_positions(central_db)
+        department_map = self._map_lookup_by_id(departments)
+        position_map = self._map_lookup_by_id(positions)
+
         return {
-            "employee": self._serialize_employee_row(row),
+            "employee": self._serialize_employee_row(
+                row,
+                department_map=department_map,
+                position_map=position_map,
+            ),
             "future_scope": FUTURE_SCOPE_EMPLOYEE,
         }
 
     async def get_employee_attendance_summary(
         self,
-        db: AsyncSession,
+        main_db: AsyncSession,
+        central_db: AsyncSession,
         *,
         employee_id: int,
         from_date: str,
         to_date: str,
     ) -> dict[str, Any]:
-        row = await self.repo.get_employee(db, employee_id)
+        row = await self.repo.get_employee(main_db, employee_id)
         if row is None:
             raise HTTPException(status_code=404, detail="Employee not found")
 
-        employee = self._serialize_employee_row(row)
+        departments = await self.repo.list_departments(central_db)
+        positions = await self.repo.list_positions(central_db)
+        department_map = self._map_lookup_by_id(departments)
+        position_map = self._map_lookup_by_id(positions)
+
+        employee = self._serialize_employee_row(
+            row,
+            department_map=department_map,
+            position_map=position_map,
+        )
         scheduled_events = await self.repo.list_scheduled_events(
-            db,
+            main_db,
             employee_id=employee_id,
             from_date=from_date,
             to_date=to_date,
         )
         leave_requests = await self.repo.list_leave_requests(
-            db,
+            main_db,
             employee_id=employee_id,
             from_date=from_date,
             to_date=to_date,
@@ -164,7 +199,8 @@ class WorkforceService:
 
     async def get_attendance_overview(
         self,
-        db: AsyncSession,
+        main_db: AsyncSession,
+        central_db: AsyncSession,
         *,
         from_date: str,
         to_date: str,
@@ -172,7 +208,7 @@ class WorkforceService:
         limit: int,
     ) -> dict[str, Any]:
         rows = await self.repo.list_employees(
-            db,
+            main_db,
             status=1,
             department_id=department_id,
             position_id=None,
@@ -180,13 +216,25 @@ class WorkforceService:
             limit=limit,
             offset=0,
         )
-        employees = [self._serialize_employee_row(row) for row in rows]
+        departments = await self.repo.list_departments(central_db)
+        positions = await self.repo.list_positions(central_db)
+        department_map = self._map_lookup_by_id(departments)
+        position_map = self._map_lookup_by_id(positions)
+
+        employees = [
+            self._serialize_employee_row(
+                row,
+                department_map=department_map,
+                position_map=position_map,
+            )
+            for row in rows
+        ]
 
         approved_leave_count = 0
         employees_on_leave: set[int] = set()
         for employee in employees:
             leave_requests = await self.repo.list_leave_requests(
-                db,
+                main_db,
                 employee_id=int(employee["employee_id"]),
                 from_date=from_date,
                 to_date=to_date,
@@ -204,7 +252,7 @@ class WorkforceService:
                 "active_employee_count": len(employees),
                 "attendance_ready_count": sum(1 for item in employees if item["attendance_ready"]),
                 "scheduled_event_count": await self.repo.count_scheduled_events(
-                    db,
+                    main_db,
                     from_date=from_date,
                     to_date=to_date,
                     department_id=department_id,
@@ -214,15 +262,31 @@ class WorkforceService:
             },
             "employees": employees,
             "filter_options": {
-                "departments": await self.repo.list_departments(db),
+                "departments": departments,
             },
             "future_scope": FUTURE_SCOPE_ATTENDANCE,
         }
 
-    def _serialize_employee_row(self, row: dict[str, Any]) -> dict[str, Any]:
+    def _serialize_employee_row(
+        self,
+        row: dict[str, Any],
+        *,
+        department_map: dict[int, str] | None = None,
+        position_map: dict[int, str] | None = None,
+    ) -> dict[str, Any]:
         workshift_id = self._as_int(row.get("workshift_id"))
         workshift_in_time = self._as_time_text(row.get("workshift_in_time"))
         workshift_out_time = self._as_time_text(row.get("workshift_out_time"))
+        department_id = self._as_int(row.get("department_id"))
+        position_id = self._as_int(row.get("position_id"))
+        department_name = self._as_text(row.get("department"))
+        position_name = self._as_text(row.get("position"))
+
+        if department_name is None and department_id is not None and department_map:
+            department_name = department_map.get(department_id)
+        if position_name is None and position_id is not None and position_map:
+            position_name = position_map.get(position_id)
+
         attendance_ready = bool(
             (workshift_id is not None and workshift_id > 0)
             or (workshift_in_time and workshift_out_time)
@@ -232,10 +296,10 @@ class WorkforceService:
             "employee_id": self._as_int(row.get("employee_id")),
             "contact_id": self._as_int(row.get("contact_id")),
             "ecode": row.get("ecode"),
-            "department_id": self._as_int(row.get("department_id")),
-            "department": self._as_text(row.get("department")),
-            "position_id": self._as_int(row.get("position_id")),
-            "position": self._as_text(row.get("position")),
+            "department_id": department_id,
+            "department": department_name,
+            "position_id": position_id,
+            "position": position_name,
             "status": self._as_int(row.get("status")),
             "user_account": self._as_int(row.get("user_account")),
             "is_admin": self._as_int(row.get("is_admin")),
@@ -282,11 +346,31 @@ class WorkforceService:
         }
 
     @staticmethod
-    def _normalize_full_name(*parts: Any) -> str | None:
-        cleaned = [str(part).strip() for part in parts if str(part or "").strip()]
+    def _normalize_full_name(full_name: Any, first_name: Any, middle_name: Any, last_name: Any) -> str | None:
+        explicit_full_name = str(full_name or "").strip()
+        if explicit_full_name:
+            return explicit_full_name
+        cleaned = [
+            str(part).strip()
+            for part in (first_name, middle_name, last_name)
+            if str(part or "").strip()
+        ]
         if not cleaned:
             return None
-        return cleaned[0] if len(parts) == 1 and cleaned else " ".join(cleaned)
+        return " ".join(cleaned)
+
+    @staticmethod
+    def _map_lookup_by_id(items: list[dict[str, Any]]) -> dict[int, str]:
+        mapped: dict[int, str] = {}
+        for item in items:
+            try:
+                key = int(item.get("id"))
+            except (TypeError, ValueError):
+                continue
+            name = str(item.get("name") or "").strip()
+            if name:
+                mapped[key] = name
+        return mapped
 
     @staticmethod
     def _as_int(value: Any) -> int | None:
