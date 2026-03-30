@@ -518,6 +518,86 @@ class WorkforceService:
             raise HTTPException(status_code=404, detail="Attendance request not found after update")
         return {"row": self._serialize_attendance_request_row(refreshed)}
 
+    async def create_attendance_request(
+        self,
+        main_db: AsyncSession,
+        *,
+        payload: dict[str, Any],
+        created_by: int,
+    ) -> dict[str, Any]:
+        normalized = self._normalize_attendance_request_payload(payload)
+        today = date.today().isoformat()
+        defaults: dict[str, Any] = {
+            "parent_id": 0,
+            "date": today,
+            "action_date": today,
+            "request_type": 1,
+            "no_of_days": "1",
+            "start_date": today,
+            "in_time": "09:30:00",
+            "end_date": today,
+            "out_time": "18:30:00",
+            "status": 0,
+            "request_comment": "",
+            "parent_comment": "",
+            "bid": 0,
+            "park": 0,
+        }
+        merged = {**defaults, **normalized}
+        emp_id = self._as_int(merged.get("emp_id"))
+        if emp_id is None or emp_id <= 0:
+            raise HTTPException(status_code=400, detail="emp_id is required to create attendance request")
+        merged["emp_id"] = int(emp_id)
+
+        request_id = await self.repo.create_attendance_request(
+            main_db,
+            payload=merged,
+            created_by=created_by,
+        )
+        await main_db.commit()
+        if request_id <= 0:
+            raise HTTPException(status_code=500, detail="Failed to create attendance request")
+        created = await self.repo.get_attendance_request(main_db, request_id)
+        if created is None:
+            raise HTTPException(status_code=500, detail="Created attendance request could not be loaded")
+        return {"row": self._serialize_attendance_request_row(created)}
+
+    async def bulk_update_attendance_request_status(
+        self,
+        main_db: AsyncSession,
+        *,
+        request_ids: list[int],
+        status: int,
+        modified_by: int,
+    ) -> dict[str, Any]:
+        if status not in {0, 1, 2, 3, 4}:
+            raise HTTPException(status_code=400, detail="Invalid status for attendance request")
+        cleaned_ids: list[int] = []
+        seen: set[int] = set()
+        for item in request_ids:
+            request_id = self._as_int(item)
+            if request_id is None or request_id <= 0:
+                continue
+            if request_id in seen:
+                continue
+            seen.add(request_id)
+            cleaned_ids.append(request_id)
+        if not cleaned_ids:
+            raise HTTPException(status_code=400, detail="request_ids is required")
+
+        updated_count = await self.repo.bulk_update_attendance_request_status(
+            main_db,
+            request_ids=cleaned_ids,
+            status=int(status),
+            modified_by=modified_by,
+        )
+        await main_db.commit()
+        return {
+            "updated_count": updated_count,
+            "request_ids": cleaned_ids,
+            "status": int(status),
+        }
+
     def _serialize_employee_row(
         self,
         row: dict[str, Any],

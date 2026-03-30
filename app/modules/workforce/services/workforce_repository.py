@@ -731,6 +731,107 @@ class WorkforceRepository:
             params,
         )
 
+    async def create_attendance_request(
+        self,
+        db: AsyncSession,
+        *,
+        payload: dict[str, Any],
+        created_by: int,
+    ) -> int:
+        params = {
+            "emp_id": int(payload.get("emp_id", 0)),
+            "parent_id": int(payload.get("parent_id", 0)),
+            "date": payload.get("date", "1970-01-01"),
+            "action_date": payload.get("action_date", "1970-01-01"),
+            "request_type": int(payload.get("request_type", 0)),
+            "no_of_days": payload.get("no_of_days", ""),
+            "start_date": payload.get("start_date", "1970-01-01"),
+            "in_time": payload.get("in_time", "00:00:00"),
+            "end_date": payload.get("end_date", "1970-01-01"),
+            "out_time": payload.get("out_time", "00:00:00"),
+            "status": int(payload.get("status", 0)),
+            "request_comment": payload.get("request_comment", ""),
+            "parent_comment": payload.get("parent_comment", ""),
+            "bid": int(payload.get("bid", 0)),
+            "park": int(payload.get("park", 0)),
+            "created_by": int(created_by),
+            "modified_by": int(created_by),
+        }
+        result = await db.execute(
+            text(
+                """
+                INSERT INTO emp_att_request (
+                    date,
+                    action_date,
+                    emp_id,
+                    parent_id,
+                    request_type,
+                    no_of_days,
+                    start_date,
+                    in_time,
+                    end_date,
+                    out_time,
+                    status,
+                    request_comment,
+                    parent_comment,
+                    bid,
+                    park,
+                    created_by,
+                    modified_by
+                ) VALUES (
+                    :date,
+                    :action_date,
+                    :emp_id,
+                    :parent_id,
+                    :request_type,
+                    :no_of_days,
+                    :start_date,
+                    :in_time,
+                    :end_date,
+                    :out_time,
+                    :status,
+                    :request_comment,
+                    :parent_comment,
+                    :bid,
+                    :park,
+                    :created_by,
+                    :modified_by
+                )
+                """
+            ),
+            params,
+        )
+        inserted_id = getattr(result, "lastrowid", None)
+        return int(inserted_id or 0)
+
+    async def bulk_update_attendance_request_status(
+        self,
+        db: AsyncSession,
+        *,
+        request_ids: list[int],
+        status: int,
+        modified_by: int,
+    ) -> int:
+        if not request_ids:
+            return 0
+        id_placeholders: list[str] = []
+        params: dict[str, Any] = {
+            "status": int(status),
+            "modified_by": int(modified_by),
+        }
+        for index, request_id in enumerate(request_ids):
+            key = f"request_id_{index}"
+            id_placeholders.append(f":{key}")
+            params[key] = int(request_id)
+        sql = f"""
+            UPDATE emp_att_request
+            SET status = :status,
+                modified_by = :modified_by
+            WHERE id IN ({", ".join(id_placeholders)})
+        """
+        result = await db.execute(text(sql), params)
+        return int(getattr(result, "rowcount", 0) or 0)
+
     async def _attendance_records_query(
         self,
         db: AsyncSession,

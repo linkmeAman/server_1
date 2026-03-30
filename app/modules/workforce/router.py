@@ -85,6 +85,29 @@ class AttendanceRequestUpdateRequest(BaseModel):
     park: int | None = None
 
 
+class AttendanceRequestCreateRequest(BaseModel):
+    emp_id: int | None = None
+    parent_id: int | None = None
+    date: str | None = None
+    action_date: str | None = None
+    request_type: int | None = None
+    no_of_days: str | None = None
+    start_date: str | None = None
+    in_time: str | None = None
+    end_date: str | None = None
+    out_time: str | None = None
+    status: int | None = None
+    request_comment: str | None = None
+    parent_comment: str | None = None
+    bid: int | None = None
+    park: int | None = None
+
+
+class AttendanceRequestBulkStatusRequest(BaseModel):
+    request_ids: list[int]
+    status: int
+
+
 @router.get("/meta")
 async def get_workforce_meta(
     _: CallerContext = Depends(require_any_caller),
@@ -286,3 +309,32 @@ async def update_workforce_attendance_request(
         modified_by=caller.user_id,
     )
     return success_response(data=data, message="Attendance request updated").model_dump(mode="json")
+
+
+@router.post("/attendance/requests")
+async def create_workforce_attendance_request(
+    body: AttendanceRequestCreateRequest,
+    caller: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+):
+    data = await service.create_attendance_request(
+        main_db,
+        payload=body.model_dump(exclude_unset=True),
+        created_by=caller.user_id,
+    )
+    return success_response(data=data, message="Attendance request created").model_dump(mode="json")
+
+
+@router.patch("/attendance/requests/status")
+async def bulk_update_workforce_attendance_request_status(
+    body: AttendanceRequestBulkStatusRequest,
+    caller: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+):
+    data = await service.bulk_update_attendance_request_status(
+        main_db,
+        request_ids=body.request_ids,
+        status=body.status,
+        modified_by=caller.user_id,
+    )
+    return success_response(data=data, message="Attendance request statuses updated").model_dump(mode="json")
