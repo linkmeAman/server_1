@@ -142,19 +142,23 @@ class WorkforceService:
             department_map=department_map,
             position_map=position_map,
         )
-        scheduled_events = await self.repo.list_scheduled_events(
+        attendance_record_count = await self.repo.count_attendance_records(
+            main_db,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            status=None,
+            regularised=None,
+            invalid=None,
+        )
+        correction_requests = await self.repo.list_correction_requests(
             main_db,
             employee_id=employee_id,
             from_date=from_date,
             to_date=to_date,
         )
-        leave_requests = await self.repo.list_leave_requests(
-            main_db,
-            employee_id=employee_id,
-            from_date=from_date,
-            to_date=to_date,
-        )
-        approved_leave_count = sum(1 for item in leave_requests if self._as_int(item.get("status")) == 1)
+        correction_request_count = len(correction_requests)
+        approved_request_count = sum(1 for item in correction_requests if self._as_int(item.get("status")) == 1)
 
         return {
             "employee": employee,
@@ -169,30 +173,19 @@ class WorkforceService:
                 "week_off_code": employee["week_off_code"],
             },
             "metrics": {
-                "scheduled_event_count": len(scheduled_events),
-                "approved_leave_count": approved_leave_count,
+                "attendance_record_count": attendance_record_count,
+                "correction_request_count": correction_request_count,
+                "approved_request_count": approved_request_count,
             },
-            "scheduled_events": [
+            "correction_requests": [
                 {
-                    "id": self._as_int(item.get("id")),
-                    "category": self._as_text(item.get("category")),
-                    "description": self._as_text(item.get("description")),
-                    "date": self._as_date_text(item.get("date")),
-                    "start_time": self._as_time_text(item.get("start_time")),
-                    "end_time": self._as_time_text(item.get("end_time")),
-                    "status": self._as_int(item.get("status")),
-                }
-                for item in scheduled_events
-            ],
-            "leave_requests": [
-                {
-                    "leave_request_id": item.get("leave_request_id"),
+                    "request_id": self._as_int(item.get("request_id")),
                     "start_date": self._as_date_text(item.get("start_date")),
                     "end_date": self._as_date_text(item.get("end_date")),
                     "status": self._as_int(item.get("status")),
                     "request_type": self._as_int(item.get("request_type")),
                 }
-                for item in leave_requests
+                for item in correction_requests
             ],
             "future_scope": FUTURE_SCOPE_ATTENDANCE,
         }
@@ -230,35 +223,56 @@ class WorkforceService:
             for row in rows
         ]
 
-        approved_leave_count = 0
-        employees_on_leave: set[int] = set()
-        for employee in employees:
-            leave_requests = await self.repo.list_leave_requests(
-                main_db,
-                employee_id=int(employee["employee_id"]),
-                from_date=from_date,
-                to_date=to_date,
-            )
-            approved = [item for item in leave_requests if self._as_int(item.get("status")) == 1]
-            approved_leave_count += len(approved)
-            if approved:
-                employees_on_leave.add(int(employee["employee_id"]))
+        active_employee_count = await self.repo.count_employees(
+            main_db,
+            q=None,
+            status=1,
+            department_id=department_id,
+            position_id=None,
+        )
+        attendance_ready_count = await self.repo.count_attendance_ready_employees(
+            main_db,
+            department_id=department_id,
+        )
+        attendance_record_count = await self.repo.count_attendance_records(
+            main_db,
+            employee_id=None,
+            from_date=from_date,
+            to_date=to_date,
+            status=None,
+            regularised=None,
+            invalid=None,
+            department_id=department_id,
+        )
+        correction_request_count = await self.repo.count_attendance_requests(
+            main_db,
+            employee_id=None,
+            from_date=from_date,
+            to_date=to_date,
+            status=None,
+            request_type=None,
+            department_id=department_id,
+        )
+        approved_request_count = await self.repo.count_attendance_requests(
+            main_db,
+            employee_id=None,
+            from_date=from_date,
+            to_date=to_date,
+            status=1,
+            request_type=None,
+            department_id=department_id,
+        )
 
         return {
             "from_date": from_date,
             "to_date": to_date,
             "department_id": department_id,
             "summary": {
-                "active_employee_count": len(employees),
-                "attendance_ready_count": sum(1 for item in employees if item["attendance_ready"]),
-                "scheduled_event_count": await self.repo.count_scheduled_events(
-                    main_db,
-                    from_date=from_date,
-                    to_date=to_date,
-                    department_id=department_id,
-                ),
-                "approved_leave_count": approved_leave_count,
-                "employees_on_leave_count": len(employees_on_leave),
+                "active_employee_count": active_employee_count,
+                "attendance_ready_count": attendance_ready_count,
+                "attendance_record_count": attendance_record_count,
+                "correction_request_count": correction_request_count,
+                "approved_request_count": approved_request_count,
             },
             "employees": employees,
             "filter_options": {

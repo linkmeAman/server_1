@@ -173,42 +173,7 @@ class WorkforceRepository:
         row = result.fetchone()
         return dict(row._mapping) if row else None
 
-    async def list_scheduled_events(
-        self,
-        db: AsyncSession,
-        *,
-        employee_id: int,
-        from_date: str,
-        to_date: str,
-    ) -> list[dict[str, Any]]:
-        result = await db.execute(
-            text(
-                """
-                SELECT
-                    id,
-                    category,
-                    description,
-                    date,
-                    start_time,
-                    end_time,
-                    status
-                FROM employee_schedule_events
-                WHERE employee_id = :employee_id
-                  AND date >= :from_date
-                  AND date <= :to_date
-                  AND (park IS NULL OR park = 0)
-                ORDER BY date ASC, start_time ASC, id ASC
-                """
-            ),
-            {
-                "employee_id": int(employee_id),
-                "from_date": from_date,
-                "to_date": to_date,
-            },
-        )
-        return [dict(row._mapping) for row in result.fetchall()]
-
-    async def list_leave_requests(
+    async def list_correction_requests(
         self,
         db: AsyncSession,
         *,
@@ -250,7 +215,7 @@ class WorkforceRepository:
 
         sql = f"""
             SELECT
-                l.{id_column} AS leave_request_id,
+                l.{id_column} AS request_id,
                 l.{start_column} AS start_date,
                 l.{end_column} AS end_date,
                 {status_select},
@@ -270,31 +235,6 @@ class WorkforceRepository:
             },
         )
         return [dict(row._mapping) for row in result.fetchall()]
-
-    async def count_scheduled_events(
-        self,
-        db: AsyncSession,
-        *,
-        from_date: str,
-        to_date: str,
-        department_id: int | None = None,
-    ) -> int:
-        sql = """
-            SELECT COUNT(*) AS total
-            FROM employee_schedule_events ese
-            INNER JOIN employee e ON e.id = ese.employee_id
-            WHERE ese.date >= :from_date
-              AND ese.date <= :to_date
-              AND (ese.park IS NULL OR ese.park = 0)
-              AND (e.park IS NULL OR e.park = 0)
-        """
-        params: dict[str, Any] = {"from_date": from_date, "to_date": to_date}
-        if department_id is not None:
-            sql += " AND e.department_id = :department_id"
-            params["department_id"] = int(department_id)
-        result = await db.execute(text(sql), params)
-        row = result.fetchone()
-        return int(row._mapping["total"]) if row else 0
 
     async def resolve_contact_id_for_employee(
         self,
@@ -329,6 +269,7 @@ class WorkforceRepository:
         status: int | None,
         regularised: int | None,
         invalid: int | None,
+        department_id: int | None = None,
     ) -> int:
         sql, params = await self._attendance_records_query(
             db,
@@ -338,6 +279,7 @@ class WorkforceRepository:
             status=status,
             regularised=regularised,
             invalid=invalid,
+            department_id=department_id,
             select_sql="SELECT COUNT(*) AS total",
         )
         result = await db.execute(text(sql), params)
@@ -516,6 +458,7 @@ class WorkforceRepository:
         to_date: str | None,
         status: int | None,
         request_type: int | None,
+        department_id: int | None = None,
     ) -> int:
         sql, params = self._attendance_requests_query(
             employee_id=employee_id,
@@ -523,6 +466,7 @@ class WorkforceRepository:
             to_date=to_date,
             status=status,
             request_type=request_type,
+            department_id=department_id,
             select_sql="SELECT COUNT(*) AS total",
         )
         result = await db.execute(text(sql), params)
@@ -547,6 +491,7 @@ class WorkforceRepository:
             to_date=to_date,
             status=status,
             request_type=request_type,
+            department_id=None,
             select_sql="""
                 SELECT
                     r.id,
@@ -687,6 +632,7 @@ class WorkforceRepository:
         status: int | None,
         regularised: int | None,
         invalid: int | None,
+        department_id: int | None,
         select_sql: str,
     ) -> tuple[str, dict[str, Any]]:
         sql = f"""
@@ -719,6 +665,9 @@ class WorkforceRepository:
         if invalid is not None:
             sql += " AND a.invalid = :invalid"
             params["invalid"] = int(invalid)
+        if department_id is not None:
+            sql += " AND e.department_id = :department_id"
+            params["department_id"] = int(department_id)
         return sql, params
 
     def _attendance_requests_query(
@@ -729,6 +678,7 @@ class WorkforceRepository:
         to_date: str | None,
         status: int | None,
         request_type: int | None,
+        department_id: int | None,
         select_sql: str,
     ) -> tuple[str, dict[str, Any]]:
         sql = f"""
@@ -758,7 +708,37 @@ class WorkforceRepository:
         if request_type is not None:
             sql += " AND r.request_type = :request_type"
             params["request_type"] = int(request_type)
+        if department_id is not None:
+            sql += " AND e.department_id = :department_id"
+            params["department_id"] = int(department_id)
         return sql, params
+
+    async def count_attendance_ready_employees(
+        self,
+        db: AsyncSession,
+        *,
+        department_id: int | None = None,
+    ) -> int:
+        sql = """
+            SELECT COUNT(*) AS total
+            FROM employee e
+            WHERE (e.park IS NULL OR e.park = 0)
+              AND e.status = 1
+              AND (
+                    (e.workshift_id IS NOT NULL AND e.workshift_id > 0)
+                    OR (
+                        NULLIF(TRIM(CAST(e.workshift_in_time AS CHAR)), '') IS NOT NULL
+                        AND NULLIF(TRIM(CAST(e.workshift_out_time AS CHAR)), '') IS NOT NULL
+                    )
+              )
+        """
+        params: dict[str, Any] = {}
+        if department_id is not None:
+            sql += " AND e.department_id = :department_id"
+            params["department_id"] = int(department_id)
+        result = await db.execute(text(sql), params)
+        row = result.fetchone()
+        return int(row._mapping["total"]) if row else 0
 
     def _employee_base_query(
         self,
