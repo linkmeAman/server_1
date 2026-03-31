@@ -295,6 +295,21 @@ async def list_workforce_attendance_requests(
     return success_response(data=data, message="Attendance requests fetched").model_dump(mode="json")
 
 
+@router.patch("/attendance/requests/status")
+async def bulk_update_workforce_attendance_request_status(
+    body: AttendanceRequestBulkStatusRequest,
+    caller: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+):
+    data = await service.bulk_update_attendance_request_status(
+        main_db,
+        request_ids=body.request_ids,
+        status=body.status,
+        modified_by=caller.user_id,
+    )
+    return success_response(data=data, message="Attendance request statuses updated").model_dump(mode="json")
+
+
 @router.patch("/attendance/requests/{request_id}")
 async def update_workforce_attendance_request(
     request_id: int,
@@ -323,18 +338,3 @@ async def create_workforce_attendance_request(
         created_by=caller.user_id,
     )
     return success_response(data=data, message="Attendance request created").model_dump(mode="json")
-
-
-@router.patch("/attendance/requests/status")
-async def bulk_update_workforce_attendance_request_status(
-    body: AttendanceRequestBulkStatusRequest,
-    caller: CallerContext = Depends(require_any_caller),
-    main_db: AsyncSession = Depends(get_main_db_session),
-):
-    data = await service.bulk_update_attendance_request_status(
-        main_db,
-        request_ids=body.request_ids,
-        status=body.status,
-        modified_by=caller.user_id,
-    )
-    return success_response(data=data, message="Attendance request statuses updated").model_dump(mode="json")
