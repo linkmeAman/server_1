@@ -685,6 +685,7 @@ class WorkforceService:
         park: int | None,
         limit: int,
         offset: int,
+        paid_nonzero: bool = False,
     ) -> dict[str, Any]:
         rows = await self.repo.list_payroll_records(
             main_db,
@@ -695,6 +696,7 @@ class WorkforceService:
             park=park,
             limit=limit,
             offset=offset,
+            paid_nonzero=paid_nonzero,
         )
         total = await self.repo.count_payroll_records(
             main_db,
@@ -703,6 +705,7 @@ class WorkforceService:
             to_date=to_date,
             paid=paid,
             park=park,
+            paid_nonzero=paid_nonzero,
         )
         return {
             "rows": [self._serialize_payroll_record_row(row) for row in rows],

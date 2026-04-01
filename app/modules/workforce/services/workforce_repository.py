@@ -1023,6 +1023,7 @@ class WorkforceRepository:
         to_date: str | None,
         paid: int | None = None,
         park: int | None = None,
+        paid_nonzero: bool = False,
     ) -> int:
         sql, params = await self._payroll_records_query(
             db,
@@ -1032,6 +1033,7 @@ class WorkforceRepository:
             paid=paid,
             park=park,
             select_sql="SELECT COUNT(*) AS total",
+            paid_nonzero=paid_nonzero,
         )
         result = await db.execute(text(sql), params)
         row = result.fetchone()
@@ -1090,6 +1092,7 @@ class WorkforceRepository:
         park: int | None,
         limit: int,
         offset: int,
+        paid_nonzero: bool = False,
     ) -> list[dict[str, Any]]:
         sql, params = await self._payroll_records_query(
             db,
@@ -1098,6 +1101,7 @@ class WorkforceRepository:
             to_date=to_date,
             paid=paid,
             park=park,
+            paid_nonzero=paid_nonzero,
             select_sql="""
                 SELECT
                     s.id,
@@ -1497,6 +1501,7 @@ class WorkforceRepository:
         paid: int | None,
         park: int | None,
         select_sql: str,
+        paid_nonzero: bool = False,
     ) -> tuple[str, dict[str, Any]]:
         sql = f"""
             {select_sql}
@@ -1528,6 +1533,8 @@ class WorkforceRepository:
         if paid is not None:
             sql += " AND s.paid = :paid"
             params["paid"] = int(paid)
+        elif paid_nonzero:
+            sql += " AND s.paid > 0"
         if park is not None:
             sql += " AND s.park = :park"
             params["park"] = int(park)

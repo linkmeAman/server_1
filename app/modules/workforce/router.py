@@ -438,6 +438,7 @@ async def list_workforce_payroll_records(
     to_date: str | None = Query(default=None),
     paid: int | None = Query(default=None),
     park: int | None = Query(default=None),
+    paid_nonzero: bool = Query(default=False),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     _: CallerContext = Depends(require_any_caller),
@@ -450,6 +451,7 @@ async def list_workforce_payroll_records(
         to_date=to_date,
         paid=paid,
         park=park,
+        paid_nonzero=paid_nonzero,
         limit=limit,
         offset=offset,
     )
