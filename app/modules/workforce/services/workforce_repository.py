@@ -1518,16 +1518,21 @@ class WorkforceRepository:
     ) -> list[dict[str, Any]]:
         params: dict[str, Any] = {}
         salary_conditions: list[str] = []
-        if from_date and to_date:
-            salary_conditions.append("s_inner.from_date <= :to_date AND s_inner.to_date >= :from_date")
-            params["from_date"] = from_date
-            params["to_date"] = to_date
-        elif from_date:
-            salary_conditions.append("s_inner.to_date >= :from_date")
-            params["from_date"] = from_date
-        elif to_date:
-            salary_conditions.append("s_inner.from_date <= :to_date")
-            params["to_date"] = to_date
+
+        # Derive target year_month (YYYYMM) from from_date; fall back to to_date.
+        # This avoids the "date overlap" trap where e.g. a March salary record
+        # (to_date 2026-03-31) never satisfies `to_date >= 2026-04-01`.
+        target_ym: str | None = None
+        ref_date = from_date or to_date
+        if ref_date:
+            parts = ref_date.split("-")
+            if len(parts) >= 2:
+                target_ym = parts[0] + parts[1]  # "2026-03-01" → "202603"
+
+        if target_ym:
+            salary_conditions.append("s_inner.year_month = :target_ym")
+            params["target_ym"] = target_ym
+
         salary_where = ("WHERE " + " AND ".join(salary_conditions)) if salary_conditions else ""
 
         sql = f"""
