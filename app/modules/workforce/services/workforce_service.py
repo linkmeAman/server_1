@@ -848,6 +848,7 @@ class WorkforceService:
     async def salary_track(
         self,
         main_db: AsyncSession,
+        central_db: AsyncSession,
         *,
         employee_id: int | None,
         from_date: str | None,
@@ -855,6 +856,8 @@ class WorkforceService:
         limit: int,
         offset: int,
     ) -> dict[str, Any]:
+        positions = await self.repo.list_positions(central_db)
+        position_map = self._map_lookup_by_id(positions)
         rows = await self.repo.list_salary_track(
             main_db,
             employee_id=employee_id,
@@ -862,6 +865,7 @@ class WorkforceService:
             to_date=to_date,
             limit=limit,
             offset=offset,
+            position_map=position_map,
         )
         total = await self.repo.count_salary_track(
             main_db,
