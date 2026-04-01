@@ -1341,8 +1341,11 @@ class WorkforceRepository:
         for field, value in payload.items():
             if field not in allowed_fields:
                 continue
-            # `break` is a reserved keyword in MySQL and must be escaped.
-            column_name = "`break`" if field == "break" else field
+            # Reserved-like identifiers must be escaped for MySQL parser safety.
+            if field in {"break", "year_month"}:
+                column_name = f"`{field}`"
+            else:
+                column_name = field
             assignments.append(f"{column_name} = :{field}")
             if field in json_fields:
                 import json
@@ -1448,7 +1451,7 @@ class WorkforceRepository:
                     paid_holidays, paid_holidays_dates, leaves, leaves_dates, wfh, wfh_dates, half_day, half_day_dates,
                     optional_holiday, optional_holiday_dates, punch_inout, punch_inout_dates, `break`, break_dates,
                     supplementary, supplementary_dates, park, response_data, response_data_app, pay_slip_data,
-                    incentive_html, year_month, created_at, created_by, modified_at, modified_by
+                    incentive_html, `year_month`, created_at, created_by, modified_at, modified_by
                 ) VALUES (
                     :contact_id, :from_date, :to_date, :working_days, :present_days, :absent_days, :wo_days, :par_day,
                     :total_leaves, :paid_leave, :unpaid_leave, :leave_balance_before, :leave_balance_after,
