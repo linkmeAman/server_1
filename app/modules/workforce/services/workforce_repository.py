@@ -1491,6 +1491,111 @@ class WorkforceRepository:
             {"record_id": int(record_id)},
         )
 
+    async def count_salary_track(
+        self,
+        db: AsyncSession,
+        *,
+        employee_id: int | None,
+    ) -> int:
+        sql = "SELECT COUNT(*) AS total FROM employee e WHERE (e.park IS NULL OR e.park = 0)"
+        params: dict[str, Any] = {}
+        if employee_id is not None:
+            sql += " AND e.id = :employee_id"
+            params["employee_id"] = int(employee_id)
+        result = await db.execute(text(sql), params)
+        row = result.fetchone()
+        return int(row._mapping["total"]) if row else 0
+
+    async def list_salary_track(
+        self,
+        db: AsyncSession,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        limit: int,
+        offset: int,
+    ) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {}
+        salary_conditions: list[str] = []
+        if from_date and to_date:
+            salary_conditions.append("s_inner.from_date <= :to_date AND s_inner.to_date >= :from_date")
+            params["from_date"] = from_date
+            params["to_date"] = to_date
+        elif from_date:
+            salary_conditions.append("s_inner.to_date >= :from_date")
+            params["from_date"] = from_date
+        elif to_date:
+            salary_conditions.append("s_inner.from_date <= :to_date")
+            params["to_date"] = to_date
+        salary_where = ("WHERE " + " AND ".join(salary_conditions)) if salary_conditions else ""
+
+        sql = f"""
+            SELECT
+                e.id AS employee_id,
+                e.contact_id,
+                NULLIF(TRIM(CONCAT(COALESCE(c.fname, ''), ' ', COALESCE(c.lname, ''))), '') AS full_name,
+                c.email,
+                c.mobile,
+                s.id AS salary_id,
+                s.salary,
+                s.paid,
+                s.pay_mode,
+                s.year_month,
+                s.from_date,
+                s.to_date,
+                CASE
+                    WHEN s.id IS NULL THEN 'not_generated'
+                    WHEN s.paid > 0 THEN 'paid'
+                    ELSE 'processing'
+                END AS salary_status
+            FROM employee e
+            LEFT JOIN contact c ON c.id = e.contact_id
+            LEFT JOIN (
+                SELECT
+                    s_inner.id,
+                    s_inner.contact_id,
+                    s_inner.salary,
+                    s_inner.paid,
+                    s_inner.pay_mode,
+                    s_inner.year_month,
+                    s_inner.from_date,
+                    s_inner.to_date,
+                    ROW_NUMBER() OVER (PARTITION BY s_inner.contact_id ORDER BY s_inner.id DESC) AS rn
+                FROM salary s_inner
+                {salary_where}
+            ) s ON s.contact_id = e.contact_id AND s.rn = 1
+            WHERE (e.park IS NULL OR e.park = 0)
+        """
+        if employee_id is not None:
+            sql += " AND e.id = :employee_id"
+            params["employee_id"] = int(employee_id)
+        sql += " ORDER BY e.id DESC LIMIT :limit OFFSET :offset"
+        params["limit"] = int(limit)
+        params["offset"] = int(offset)
+
+        result = await db.execute(text(sql), params)
+        rows = result.fetchall()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            m = dict(row._mapping)
+            out.append({
+                "employee_id": m.get("employee_id"),
+                "contact_id": m.get("contact_id"),
+                "full_name": m.get("full_name"),
+                "email": m.get("email"),
+                "mobile": m.get("mobile"),
+                "salary_id": m.get("salary_id"),
+                "salary": int(m["salary"]) if m.get("salary") is not None else None,
+                "paid": int(m["paid"]) if m.get("paid") is not None else None,
+                "pay_mode": m.get("pay_mode"),
+                "year_month": str(m["year_month"]) if m.get("year_month") is not None else None,
+                "from_date": str(m["from_date"]) if m.get("from_date") is not None else None,
+                "to_date": str(m["to_date"]) if m.get("to_date") is not None else None,
+                "salary_status": m.get("salary_status", "not_generated"),
+            })
+        return out
+
     async def _payroll_records_query(
         self,
         db: AsyncSession,

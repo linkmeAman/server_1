@@ -505,3 +505,24 @@ async def delete_workforce_payroll_record(
         record_id=record_id,
     )
     return success_response(data={"record_id": record_id}, message="Payroll record deleted").model_dump(mode="json")
+
+
+@router.get("/payroll/salary-track")
+async def get_workforce_salary_track(
+    employee_id: int | None = Query(default=None),
+    from_date: str | None = Query(default=None),
+    to_date: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    _: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+):
+    data = await service.salary_track(
+        main_db,
+        employee_id=employee_id,
+        from_date=from_date,
+        to_date=to_date,
+        limit=limit,
+        offset=offset,
+    )
+    return success_response(data=data, message="Salary track fetched").model_dump(mode="json")

@@ -845,6 +845,35 @@ class WorkforceService:
         await self.repo.delete_payroll_record(main_db, record_id=record_id)
         await main_db.commit()
 
+    async def salary_track(
+        self,
+        main_db: AsyncSession,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        limit: int,
+        offset: int,
+    ) -> dict[str, Any]:
+        rows = await self.repo.list_salary_track(
+            main_db,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            limit=limit,
+            offset=offset,
+        )
+        total = await self.repo.count_salary_track(
+            main_db,
+            employee_id=employee_id,
+        )
+        return {
+            "rows": rows,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
     def _serialize_employee_row(
         self,
         row: dict[str, Any],
