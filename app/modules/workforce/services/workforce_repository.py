@@ -1542,6 +1542,7 @@ class WorkforceRepository:
                 NULLIF(TRIM(CONCAT(COALESCE(c.fname, ''), ' ', COALESCE(c.lname, ''))), '') AS full_name,
                 c.email,
                 c.mobile,
+                ep.position AS position,
                 s.id AS salary_id,
                 s.salary,
                 s.paid,
@@ -1556,6 +1557,7 @@ class WorkforceRepository:
                 END AS salary_status
             FROM employee e
             LEFT JOIN contact c ON c.id = e.contact_id
+            LEFT JOIN employee_position ep ON ep.id = e.position_id
             LEFT JOIN (
                 SELECT
                     s_inner.id,
@@ -1588,6 +1590,7 @@ class WorkforceRepository:
                 "employee_id": m.get("employee_id"),
                 "contact_id": m.get("contact_id"),
                 "full_name": m.get("full_name"),
+                "position": str(m["position"]).strip() if m.get("position") else None,
                 "email": m.get("email"),
                 "mobile": m.get("mobile"),
                 "salary_id": m.get("salary_id"),
