@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_central_db_session, get_main_db_session
@@ -109,6 +109,8 @@ class AttendanceRequestBulkStatusRequest(BaseModel):
 
 
 class PayrollRecordUpdateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     contact_id: int | None = None
     from_date: str | None = None
     to_date: str | None = None
@@ -156,7 +158,7 @@ class PayrollRecordUpdateRequest(BaseModel):
     optional_holiday_dates: str | None = None
     punch_inout: int | None = None
     punch_inout_dates: str | None = None
-    break_: int | None = None
+    break_: int | None = Field(default=None, alias="break")
     break_dates: str | None = None
     supplementary: int | None = None
     supplementary_dates: str | None = None

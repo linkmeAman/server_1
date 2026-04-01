@@ -1341,7 +1341,9 @@ class WorkforceRepository:
         for field, value in payload.items():
             if field not in allowed_fields:
                 continue
-            assignments.append(f"{field} = :{field}")
+            # `break` is a reserved keyword in MySQL and must be escaped.
+            column_name = "`break`" if field == "break" else field
+            assignments.append(f"{column_name} = :{field}")
             if field in json_fields:
                 import json
 
