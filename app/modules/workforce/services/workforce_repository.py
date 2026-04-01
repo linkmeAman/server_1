@@ -1515,6 +1515,7 @@ class WorkforceRepository:
         to_date: str | None,
         limit: int,
         offset: int,
+        position_map: dict[int, str] | None = None,
     ) -> list[dict[str, Any]]:
         params: dict[str, Any] = {}
         salary_conditions: list[str] = []
@@ -1539,10 +1540,10 @@ class WorkforceRepository:
             SELECT
                 e.id AS employee_id,
                 e.contact_id,
+                e.position_id,
                 NULLIF(TRIM(CONCAT(COALESCE(c.fname, ''), ' ', COALESCE(c.lname, ''))), '') AS full_name,
                 c.email,
                 c.mobile,
-                ep.position AS position,
                 s.id AS salary_id,
                 s.salary,
                 s.paid,
@@ -1557,7 +1558,6 @@ class WorkforceRepository:
                 END AS salary_status
             FROM employee e
             LEFT JOIN contact c ON c.id = e.contact_id
-            LEFT JOIN employee_position ep ON ep.id = e.position_id
             LEFT JOIN (
                 SELECT
                     s_inner.id,
@@ -1586,11 +1586,13 @@ class WorkforceRepository:
         out: list[dict[str, Any]] = []
         for row in rows:
             m = dict(row._mapping)
+            pos_id = m.get("position_id")
+            position_name = (position_map or {}).get(int(pos_id)) if pos_id is not None else None
             out.append({
                 "employee_id": m.get("employee_id"),
                 "contact_id": m.get("contact_id"),
                 "full_name": m.get("full_name"),
-                "position": str(m["position"]).strip() if m.get("position") else None,
+                "position": position_name,
                 "email": m.get("email"),
                 "mobile": m.get("mobile"),
                 "salary_id": m.get("salary_id"),

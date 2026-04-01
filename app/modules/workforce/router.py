@@ -516,9 +516,11 @@ async def get_workforce_salary_track(
     offset: int = Query(default=0, ge=0),
     _: CallerContext = Depends(require_any_caller),
     main_db: AsyncSession = Depends(get_main_db_session),
+    central_db: AsyncSession = Depends(get_central_db_session),
 ):
     data = await service.salary_track(
         main_db,
+        central_db,
         employee_id=employee_id,
         from_date=from_date,
         to_date=to_date,
