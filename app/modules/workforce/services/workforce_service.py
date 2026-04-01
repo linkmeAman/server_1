@@ -8,7 +8,11 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..schemas.models import FUTURE_SCOPE_ATTENDANCE, FUTURE_SCOPE_EMPLOYEE
+from ..schemas.models import (
+    FUTURE_SCOPE_ATTENDANCE,
+    FUTURE_SCOPE_EMPLOYEE,
+    FUTURE_SCOPE_PAYROLL,
+)
 from .workforce_repository import WorkforceRepository
 
 
@@ -31,7 +35,7 @@ class WorkforceService:
                 "positions": positions,
                 "statuses": self.STATUS_OPTIONS,
             },
-            "future_scope": sorted(set(FUTURE_SCOPE_EMPLOYEE + FUTURE_SCOPE_ATTENDANCE)),
+            "future_scope": sorted(set(FUTURE_SCOPE_EMPLOYEE + FUTURE_SCOPE_ATTENDANCE + FUTURE_SCOPE_PAYROLL)),
         }
 
     async def list_employees(
@@ -598,6 +602,278 @@ class WorkforceService:
             "status": int(status),
         }
 
+    async def get_payroll_overview(
+        self,
+        main_db: AsyncSession,
+        central_db: AsyncSession,
+        *,
+        from_date: str,
+        to_date: str,
+        employee_id: int | None,
+        limit: int,
+    ) -> dict[str, Any]:
+        employee_rows = await self.repo.list_employees(
+            main_db,
+            status=None,
+            department_id=None,
+            position_id=None,
+            q=None,
+            limit=limit,
+            offset=0,
+        )
+        departments = await self.repo.list_departments(central_db)
+        positions = await self.repo.list_positions(central_db)
+        department_map = self._map_lookup_by_id(departments)
+        position_map = self._map_lookup_by_id(positions)
+
+        employees = [
+            self._serialize_employee_row(
+                row,
+                department_map=department_map,
+                position_map=position_map,
+            )
+            for row in employee_rows
+        ]
+
+        payroll_total = await self.repo.count_payroll_records(
+            main_db,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        salary_sum = await self.repo.sum_payroll_salary(
+            main_db,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+        )
+        paid_sum = await self.repo.sum_payroll_paid(
+            main_db,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+        )
+
+        return {
+            "from_date": from_date,
+            "to_date": to_date,
+            "employee_id": employee_id,
+            "summary": {
+                "employee_count": len(employees),
+                "payroll_count": payroll_total,
+                "salary_sum": salary_sum,
+                "paid_sum": paid_sum,
+                "unpaid_sum": salary_sum - paid_sum,
+            },
+            "employees": employees,
+            "filter_options": {
+                "departments": departments,
+                "positions": positions,
+                "statuses": self.STATUS_OPTIONS,
+            },
+            "future_scope": FUTURE_SCOPE_PAYROLL,
+        }
+
+    async def list_payroll_records(
+        self,
+        main_db: AsyncSession,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        paid: int | None,
+        park: int | None,
+        limit: int,
+        offset: int,
+        paid_nonzero: bool = False,
+    ) -> dict[str, Any]:
+        rows = await self.repo.list_payroll_records(
+            main_db,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            paid=paid,
+            park=park,
+            limit=limit,
+            offset=offset,
+            paid_nonzero=paid_nonzero,
+        )
+        total = await self.repo.count_payroll_records(
+            main_db,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            paid=paid,
+            park=park,
+            paid_nonzero=paid_nonzero,
+        )
+        return {
+            "rows": [self._serialize_payroll_record_row(row) for row in rows],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
+    async def update_payroll_record(
+        self,
+        main_db: AsyncSession,
+        *,
+        record_id: int,
+        payload: dict[str, Any],
+        modified_by: int,
+    ) -> dict[str, Any]:
+        existing = await self.repo.get_payroll_record(main_db, record_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Payroll record not found")
+
+        normalized = self._normalize_payroll_payload(payload)
+        if normalized:
+            await self.repo.update_payroll_record(
+                main_db,
+                record_id=record_id,
+                payload=normalized,
+                modified_by=modified_by,
+            )
+            await main_db.commit()
+
+        refreshed = await self.repo.get_payroll_record(main_db, record_id)
+        if refreshed is None:
+            raise HTTPException(status_code=404, detail="Payroll record not found after update")
+        return {"row": self._serialize_payroll_record_row(refreshed)}
+
+    async def create_payroll_record(
+        self,
+        main_db: AsyncSession,
+        *,
+        payload: dict[str, Any],
+        created_by: int,
+    ) -> dict[str, Any]:
+        normalized = self._normalize_payroll_payload(payload)
+        today = date.today().isoformat()
+        month_stamp = today[:7]
+        now_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        defaults: dict[str, Any] = {
+            "from_date": today,
+            "to_date": today,
+            "working_days": 0,
+            "present_days": 0,
+            "absent_days": 0,
+            "wo_days": 0,
+            "par_day": 0,
+            "total_leaves": 0.0,
+            "paid_leave": 0.0,
+            "unpaid_leave": 0.0,
+            "leave_balance_before": 0.0,
+            "leave_balance_after": 0.0,
+            "tax_amount": 0,
+            "tax_comment": "",
+            "advance_amount": 0,
+            "advance_comment": "",
+            "fine_amount": 0,
+            "fine_comment": "",
+            "base_amount": 0,
+            "incentive": 0,
+            "incentive_comment": "",
+            "deduction": 0,
+            "deduction_comment": "",
+            "addition": 0,
+            "addition_comment": "",
+            "extra_amount": 0,
+            "extra_comment": "",
+            "allowance": 0,
+            "pay_mode": 0,
+            "sub_total": 0,
+            "salary": 0,
+            "paid": 0,
+            "bid": 0,
+            "comments": "",
+            "paid_holidays": 0,
+            "paid_holidays_dates": "",
+            "leaves": 0,
+            "leaves_dates": "",
+            "wfh": 0,
+            "wfh_dates": "",
+            "half_day": 0,
+            "half_day_dates": "",
+            "optional_holiday": 0,
+            "optional_holiday_dates": "",
+            "punch_inout": 0,
+            "punch_inout_dates": "",
+            "break": 0,
+            "break_dates": "",
+            "supplementary": 0,
+            "supplementary_dates": "",
+            "park": 0,
+            "response_data": {},
+            "response_data_app": {},
+            "pay_slip_data": {},
+            "incentive_html": "",
+            "year_month": month_stamp,
+            "created_at": now_text,
+            "modified_at": now_text,
+        }
+        merged = {**defaults, **normalized}
+        contact_id = self._as_int(merged.get("contact_id"))
+        if contact_id is None or contact_id <= 0:
+            raise HTTPException(status_code=400, detail="contact_id is required to create payroll row")
+        merged["contact_id"] = int(contact_id)
+
+        record_id = await self.repo.create_payroll_record(
+            main_db,
+            payload=merged,
+            created_by=created_by,
+        )
+        await main_db.commit()
+        if record_id <= 0:
+            raise HTTPException(status_code=500, detail="Failed to create payroll record")
+        created = await self.repo.get_payroll_record(main_db, record_id)
+        if created is None:
+            raise HTTPException(status_code=500, detail="Created payroll record could not be loaded")
+        return {"row": self._serialize_payroll_record_row(created)}
+
+    async def delete_payroll_record(
+        self,
+        main_db: AsyncSession,
+        *,
+        record_id: int,
+    ) -> None:
+        existing = await self.repo.get_payroll_record(main_db, record_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Payroll record not found")
+
+        await self.repo.delete_payroll_record(main_db, record_id=record_id)
+        await main_db.commit()
+
+    async def salary_track(
+        self,
+        main_db: AsyncSession,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        limit: int,
+        offset: int,
+    ) -> dict[str, Any]:
+        rows = await self.repo.list_salary_track(
+            main_db,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            limit=limit,
+            offset=offset,
+        )
+        total = await self.repo.count_salary_track(
+            main_db,
+            employee_id=employee_id,
+        )
+        return {
+            "rows": rows,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
     def _serialize_employee_row(
         self,
         row: dict[str, Any],
@@ -746,6 +1022,94 @@ class WorkforceService:
             "modified_at": self._as_datetime_text(row.get("modified_at")),
         }
 
+    def _serialize_payroll_record_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        def _json_field(value: Any) -> Any:
+            if value is None:
+                return {}
+            if isinstance(value, (dict, list)):
+                return value
+            try:
+                import json
+
+                parsed = json.loads(str(value))
+                return parsed
+            except (ValueError, TypeError):
+                return {}
+
+        return {
+            "id": self._as_int(row.get("id")),
+            "employee_id": self._as_int(row.get("employee_id")),
+            "contact_id": self._as_int(row.get("contact_id")),
+            "full_name": self._normalize_full_name(
+                row.get("full_name"),
+                row.get("fname"),
+                row.get("mname"),
+                row.get("lname"),
+            ),
+            "email": self._as_text(row.get("email")),
+            "mobile": self._as_text(row.get("mobile")),
+            "from_date": self._as_date_text(row.get("from_date")),
+            "to_date": self._as_date_text(row.get("to_date")),
+            "working_days": self._as_int(row.get("working_days")),
+            "present_days": self._as_int(row.get("present_days")),
+            "absent_days": self._as_int(row.get("absent_days")),
+            "wo_days": self._as_int(row.get("wo_days")),
+            "par_day": self._as_int(row.get("par_day")),
+            "total_leaves": row.get("total_leaves"),
+            "paid_leave": row.get("paid_leave"),
+            "unpaid_leave": row.get("unpaid_leave"),
+            "leave_balance_before": row.get("leave_balance_before"),
+            "leave_balance_after": row.get("leave_balance_after"),
+            "tax_amount": self._as_int(row.get("tax_amount")),
+            "tax_comment": self._as_text(row.get("tax_comment")) or "",
+            "advance_amount": self._as_int(row.get("advance_amount")),
+            "advance_comment": self._as_text(row.get("advance_comment")) or "",
+            "fine_amount": self._as_int(row.get("fine_amount")),
+            "fine_comment": self._as_text(row.get("fine_comment")) or "",
+            "base_amount": self._as_int(row.get("base_amount")),
+            "incentive": self._as_int(row.get("incentive")),
+            "incentive_comment": self._as_text(row.get("incentive_comment")) or "",
+            "deduction": self._as_int(row.get("deduction")),
+            "deduction_comment": self._as_text(row.get("deduction_comment")) or "",
+            "addition": self._as_int(row.get("addition")),
+            "addition_comment": self._as_text(row.get("addition_comment")) or "",
+            "extra_amount": self._as_int(row.get("extra_amount")),
+            "extra_comment": self._as_text(row.get("extra_comment")) or "",
+            "allowance": self._as_int(row.get("allowance")),
+            "pay_mode": self._as_int(row.get("pay_mode")),
+            "sub_total": self._as_int(row.get("sub_total")),
+            "salary": self._as_int(row.get("salary")),
+            "paid": self._as_int(row.get("paid")),
+            "bid": self._as_int(row.get("bid")),
+            "comments": self._as_text(row.get("comments")) or "",
+            "paid_holidays": self._as_int(row.get("paid_holidays")),
+            "paid_holidays_dates": self._as_text(row.get("paid_holidays_dates")) or "",
+            "leaves": self._as_int(row.get("leaves")),
+            "leaves_dates": self._as_text(row.get("leaves_dates")) or "",
+            "wfh": self._as_int(row.get("wfh")),
+            "wfh_dates": self._as_text(row.get("wfh_dates")) or "",
+            "half_day": self._as_int(row.get("half_day")),
+            "half_day_dates": self._as_text(row.get("half_day_dates")) or "",
+            "optional_holiday": self._as_int(row.get("optional_holiday")),
+            "optional_holiday_dates": self._as_text(row.get("optional_holiday_dates")) or "",
+            "punch_inout": self._as_int(row.get("punch_inout")),
+            "punch_inout_dates": self._as_text(row.get("punch_inout_dates")) or "",
+            "break": self._as_int(row.get("break")),
+            "break_dates": self._as_text(row.get("break_dates")) or "",
+            "supplementary": self._as_int(row.get("supplementary")),
+            "supplementary_dates": self._as_text(row.get("supplementary_dates")) or "",
+            "park": self._as_int(row.get("park")),
+            "response_data": _json_field(row.get("response_data")),
+            "response_data_app": _json_field(row.get("response_data_app")),
+            "pay_slip_data": _json_field(row.get("pay_slip_data")),
+            "incentive_html": self._as_text(row.get("incentive_html")) or "",
+            "year_month": self._as_text(row.get("year_month")) or "",
+            "created_at": self._as_datetime_text(row.get("created_at")),
+            "created_by": self._as_int(row.get("created_by")),
+            "modified_at": self._as_datetime_text(row.get("modified_at")),
+            "modified_by": self._as_int(row.get("modified_by")),
+        }
+
     def _normalize_attendance_record_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         normalized: dict[str, Any] = {}
         int_fields = {
@@ -804,6 +1168,85 @@ class WorkforceService:
                 normalized[field] = self._coerce_int(value)
             elif field in str_fields:
                 normalized[field] = self._coerce_string(value)
+        return normalized
+
+    def _normalize_payroll_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        normalized: dict[str, Any] = {}
+        int_fields = {
+            "contact_id",
+            "working_days",
+            "present_days",
+            "absent_days",
+            "wo_days",
+            "par_day",
+            "tax_amount",
+            "advance_amount",
+            "fine_amount",
+            "base_amount",
+            "incentive",
+            "deduction",
+            "addition",
+            "extra_amount",
+            "allowance",
+            "pay_mode",
+            "sub_total",
+            "salary",
+            "paid",
+            "bid",
+            "paid_holidays",
+            "leaves",
+            "wfh",
+            "half_day",
+            "optional_holiday",
+            "punch_inout",
+            "break",
+            "supplementary",
+            "park",
+            "created_by",
+            "modified_by",
+        }
+        float_fields = {
+            "total_leaves",
+            "paid_leave",
+            "unpaid_leave",
+            "leave_balance_before",
+            "leave_balance_after",
+        }
+        str_fields = {
+            "from_date",
+            "to_date",
+            "tax_comment",
+            "advance_comment",
+            "fine_comment",
+            "incentive_comment",
+            "deduction_comment",
+            "addition_comment",
+            "extra_comment",
+            "comments",
+            "paid_holidays_dates",
+            "leaves_dates",
+            "wfh_dates",
+            "half_day_dates",
+            "optional_holiday_dates",
+            "punch_inout_dates",
+            "break_dates",
+            "supplementary_dates",
+            "incentive_html",
+            "year_month",
+            "created_at",
+            "modified_at",
+        }
+        json_fields = {"response_data", "response_data_app", "pay_slip_data"}
+
+        for field, value in payload.items():
+            if field in int_fields:
+                normalized[field] = self._coerce_int(value)
+            elif field in float_fields:
+                normalized[field] = self._coerce_float(value)
+            elif field in str_fields:
+                normalized[field] = self._coerce_string(value)
+            elif field in json_fields:
+                normalized[field] = self._coerce_json(value)
         return normalized
 
     @staticmethod
@@ -893,3 +1336,23 @@ class WorkforceService:
         if value is None:
             return ""
         return str(value).strip()
+
+    @staticmethod
+    def _coerce_float(value: Any) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid float value: {value}") from exc
+
+    @staticmethod
+    def _coerce_json(value: Any) -> Any:
+        if value is None:
+            return {}
+        if isinstance(value, (dict, list)):
+            return value
+        try:
+            import json
+
+            return json.loads(str(value))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON value: {value}") from exc

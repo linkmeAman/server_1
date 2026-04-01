@@ -1014,6 +1014,645 @@ class WorkforceRepository:
         )
         return {str(row._mapping["COLUMN_NAME"]) for row in result.fetchall()}
 
+    async def count_payroll_records(
+        self,
+        db: AsyncSession,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        paid: int | None = None,
+        park: int | None = None,
+        paid_nonzero: bool = False,
+    ) -> int:
+        sql, params = await self._payroll_records_query(
+            db,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            paid=paid,
+            park=park,
+            select_sql="SELECT COUNT(*) AS total",
+            paid_nonzero=paid_nonzero,
+        )
+        result = await db.execute(text(sql), params)
+        row = result.fetchone()
+        return int(row._mapping["total"]) if row else 0
+
+    async def sum_payroll_salary(
+        self,
+        db: AsyncSession,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+    ) -> int:
+        sql, params = await self._payroll_records_query(
+            db,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            paid=None,
+            park=0,
+            select_sql="SELECT COALESCE(SUM(s.salary), 0) AS total",
+        )
+        result = await db.execute(text(sql), params)
+        row = result.fetchone()
+        return int(row._mapping["total"]) if row else 0
+
+    async def sum_payroll_paid(
+        self,
+        db: AsyncSession,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+    ) -> int:
+        sql, params = await self._payroll_records_query(
+            db,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            paid=None,
+            park=0,
+            select_sql="SELECT COALESCE(SUM(s.paid), 0) AS total",
+        )
+        result = await db.execute(text(sql), params)
+        row = result.fetchone()
+        return int(row._mapping["total"]) if row else 0
+
+    async def list_payroll_records(
+        self,
+        db: AsyncSession,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        paid: int | None,
+        park: int | None,
+        limit: int,
+        offset: int,
+        paid_nonzero: bool = False,
+    ) -> list[dict[str, Any]]:
+        sql, params = await self._payroll_records_query(
+            db,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            paid=paid,
+            park=park,
+            paid_nonzero=paid_nonzero,
+            select_sql="""
+                SELECT
+                    s.id,
+                    e.id AS employee_id,
+                    s.contact_id,
+                    s.from_date,
+                    s.to_date,
+                    s.working_days,
+                    s.present_days,
+                    s.absent_days,
+                    s.wo_days,
+                    s.par_day,
+                    s.total_leaves,
+                    s.paid_leave,
+                    s.unpaid_leave,
+                    s.leave_balance_before,
+                    s.leave_balance_after,
+                    s.tax_amount,
+                    s.tax_comment,
+                    s.advance_amount,
+                    s.advance_comment,
+                    s.fine_amount,
+                    s.fine_comment,
+                    s.base_amount,
+                    s.incentive,
+                    s.incentive_comment,
+                    s.deduction,
+                    s.deduction_comment,
+                    s.addition,
+                    s.addition_comment,
+                    s.extra_amount,
+                    s.extra_comment,
+                    s.allowance,
+                    s.pay_mode,
+                    s.sub_total,
+                    s.salary,
+                    s.paid,
+                    s.bid,
+                    s.comments,
+                    s.paid_holidays,
+                    s.paid_holidays_dates,
+                    s.leaves,
+                    s.leaves_dates,
+                    s.wfh,
+                    s.wfh_dates,
+                    s.half_day,
+                    s.half_day_dates,
+                    s.optional_holiday,
+                    s.optional_holiday_dates,
+                    s.punch_inout,
+                    s.punch_inout_dates,
+                    s.`break`,
+                    s.break_dates,
+                    s.supplementary,
+                    s.supplementary_dates,
+                    s.park,
+                    s.response_data,
+                    s.response_data_app,
+                    s.pay_slip_data,
+                    s.incentive_html,
+                    s.year_month,
+                    s.created_at,
+                    s.created_by,
+                    s.modified_at,
+                    s.modified_by,
+                    c.fname,
+                    c.mname,
+                    c.lname,
+                    c.email,
+                    c.mobile,
+                    CONCAT_WS(' ', NULLIF(TRIM(c.fname), ''), NULLIF(TRIM(c.mname), ''), NULLIF(TRIM(c.lname), '')) AS full_name
+            """,
+        )
+        sql += """
+            ORDER BY s.from_date DESC, s.id DESC
+            LIMIT :limit OFFSET :offset
+        """
+        params["limit"] = int(limit)
+        params["offset"] = int(offset)
+        result = await db.execute(text(sql), params)
+        return [dict(row._mapping) for row in result.fetchall()]
+
+    async def get_payroll_record(self, db: AsyncSession, record_id: int) -> dict[str, Any] | None:
+        result = await db.execute(
+            text(
+                """
+                SELECT
+                    s.id,
+                    e.id AS employee_id,
+                    s.contact_id,
+                    s.from_date,
+                    s.to_date,
+                    s.working_days,
+                    s.present_days,
+                    s.absent_days,
+                    s.wo_days,
+                    s.par_day,
+                    s.total_leaves,
+                    s.paid_leave,
+                    s.unpaid_leave,
+                    s.leave_balance_before,
+                    s.leave_balance_after,
+                    s.tax_amount,
+                    s.tax_comment,
+                    s.advance_amount,
+                    s.advance_comment,
+                    s.fine_amount,
+                    s.fine_comment,
+                    s.base_amount,
+                    s.incentive,
+                    s.incentive_comment,
+                    s.deduction,
+                    s.deduction_comment,
+                    s.addition,
+                    s.addition_comment,
+                    s.extra_amount,
+                    s.extra_comment,
+                    s.allowance,
+                    s.pay_mode,
+                    s.sub_total,
+                    s.salary,
+                    s.paid,
+                    s.bid,
+                    s.comments,
+                    s.paid_holidays,
+                    s.paid_holidays_dates,
+                    s.leaves,
+                    s.leaves_dates,
+                    s.wfh,
+                    s.wfh_dates,
+                    s.half_day,
+                    s.half_day_dates,
+                    s.optional_holiday,
+                    s.optional_holiday_dates,
+                    s.punch_inout,
+                    s.punch_inout_dates,
+                    s.`break`,
+                    s.break_dates,
+                    s.supplementary,
+                    s.supplementary_dates,
+                    s.park,
+                    s.response_data,
+                    s.response_data_app,
+                    s.pay_slip_data,
+                    s.incentive_html,
+                    s.year_month,
+                    s.created_at,
+                    s.created_by,
+                    s.modified_at,
+                    s.modified_by,
+                    c.fname,
+                    c.mname,
+                    c.lname,
+                    c.email,
+                    c.mobile,
+                    CONCAT_WS(' ', NULLIF(TRIM(c.fname), ''), NULLIF(TRIM(c.mname), ''), NULLIF(TRIM(c.lname), '')) AS full_name
+                FROM salary s
+                LEFT JOIN employee e ON e.contact_id = s.contact_id AND (e.park IS NULL OR e.park = 0)
+                LEFT JOIN contact c ON c.id = s.contact_id
+                WHERE s.id = :record_id
+                LIMIT 1
+                """
+            ),
+            {"record_id": int(record_id)},
+        )
+        row = result.fetchone()
+        return dict(row._mapping) if row else None
+
+    async def update_payroll_record(
+        self,
+        db: AsyncSession,
+        *,
+        record_id: int,
+        payload: dict[str, Any],
+        modified_by: int,
+    ) -> None:
+        allowed_fields = {
+            "contact_id",
+            "from_date",
+            "to_date",
+            "working_days",
+            "present_days",
+            "absent_days",
+            "wo_days",
+            "par_day",
+            "total_leaves",
+            "paid_leave",
+            "unpaid_leave",
+            "leave_balance_before",
+            "leave_balance_after",
+            "tax_amount",
+            "tax_comment",
+            "advance_amount",
+            "advance_comment",
+            "fine_amount",
+            "fine_comment",
+            "base_amount",
+            "incentive",
+            "incentive_comment",
+            "deduction",
+            "deduction_comment",
+            "addition",
+            "addition_comment",
+            "extra_amount",
+            "extra_comment",
+            "allowance",
+            "pay_mode",
+            "sub_total",
+            "salary",
+            "paid",
+            "bid",
+            "comments",
+            "paid_holidays",
+            "paid_holidays_dates",
+            "leaves",
+            "leaves_dates",
+            "wfh",
+            "wfh_dates",
+            "half_day",
+            "half_day_dates",
+            "optional_holiday",
+            "optional_holiday_dates",
+            "punch_inout",
+            "punch_inout_dates",
+            "break",
+            "break_dates",
+            "supplementary",
+            "supplementary_dates",
+            "park",
+            "response_data",
+            "response_data_app",
+            "pay_slip_data",
+            "incentive_html",
+            "year_month",
+            "modified_at",
+            "modified_by",
+        }
+        json_fields = {"response_data", "response_data_app", "pay_slip_data"}
+        assignments: list[str] = []
+        params: dict[str, Any] = {"record_id": int(record_id), "modified_by": int(modified_by)}
+        for field, value in payload.items():
+            if field not in allowed_fields:
+                continue
+            # Reserved-like identifiers must be escaped for MySQL parser safety.
+            if field in {"break", "year_month"}:
+                column_name = f"`{field}`"
+            else:
+                column_name = field
+            assignments.append(f"{column_name} = :{field}")
+            if field in json_fields:
+                import json
+
+                params[field] = json.dumps(value)
+            else:
+                params[field] = value
+        if not assignments:
+            return
+        assignments.append("modified_by = :modified_by")
+        await db.execute(
+            text(
+                f"""
+                UPDATE salary
+                SET {", ".join(assignments)}
+                WHERE id = :record_id
+                """
+            ),
+            params,
+        )
+
+    async def create_payroll_record(
+        self,
+        db: AsyncSession,
+        *,
+        payload: dict[str, Any],
+        created_by: int,
+    ) -> int:
+        import json
+
+        params = {
+            "contact_id": int(payload.get("contact_id", 0)),
+            "from_date": payload.get("from_date", "1970-01-01"),
+            "to_date": payload.get("to_date", "1970-01-01"),
+            "working_days": int(payload.get("working_days", 0)),
+            "present_days": int(payload.get("present_days", 0)),
+            "absent_days": int(payload.get("absent_days", 0)),
+            "wo_days": int(payload.get("wo_days", 0)),
+            "par_day": int(payload.get("par_day", 0)),
+            "total_leaves": float(payload.get("total_leaves", 0.0)),
+            "paid_leave": float(payload.get("paid_leave", 0.0)),
+            "unpaid_leave": float(payload.get("unpaid_leave", 0.0)),
+            "leave_balance_before": float(payload.get("leave_balance_before", 0.0)),
+            "leave_balance_after": float(payload.get("leave_balance_after", 0.0)),
+            "tax_amount": int(payload.get("tax_amount", 0)),
+            "tax_comment": payload.get("tax_comment", ""),
+            "advance_amount": int(payload.get("advance_amount", 0)),
+            "advance_comment": payload.get("advance_comment", ""),
+            "fine_amount": int(payload.get("fine_amount", 0)),
+            "fine_comment": payload.get("fine_comment", ""),
+            "base_amount": int(payload.get("base_amount", 0)),
+            "incentive": int(payload.get("incentive", 0)),
+            "incentive_comment": payload.get("incentive_comment", ""),
+            "deduction": int(payload.get("deduction", 0)),
+            "deduction_comment": payload.get("deduction_comment", ""),
+            "addition": int(payload.get("addition", 0)),
+            "addition_comment": payload.get("addition_comment", ""),
+            "extra_amount": int(payload.get("extra_amount", 0)),
+            "extra_comment": payload.get("extra_comment", ""),
+            "allowance": int(payload.get("allowance", 0)),
+            "pay_mode": int(payload.get("pay_mode", 0)),
+            "sub_total": int(payload.get("sub_total", 0)),
+            "salary": int(payload.get("salary", 0)),
+            "paid": int(payload.get("paid", 0)),
+            "bid": int(payload.get("bid", 0)),
+            "comments": payload.get("comments", ""),
+            "paid_holidays": int(payload.get("paid_holidays", 0)),
+            "paid_holidays_dates": payload.get("paid_holidays_dates", ""),
+            "leaves": int(payload.get("leaves", 0)),
+            "leaves_dates": payload.get("leaves_dates", ""),
+            "wfh": int(payload.get("wfh", 0)),
+            "wfh_dates": payload.get("wfh_dates", ""),
+            "half_day": int(payload.get("half_day", 0)),
+            "half_day_dates": payload.get("half_day_dates", ""),
+            "optional_holiday": int(payload.get("optional_holiday", 0)),
+            "optional_holiday_dates": payload.get("optional_holiday_dates", ""),
+            "punch_inout": int(payload.get("punch_inout", 0)),
+            "punch_inout_dates": payload.get("punch_inout_dates", ""),
+            "break": int(payload.get("break", 0)),
+            "break_dates": payload.get("break_dates", ""),
+            "supplementary": int(payload.get("supplementary", 0)),
+            "supplementary_dates": payload.get("supplementary_dates", ""),
+            "park": int(payload.get("park", 0)),
+            "response_data": json.dumps(payload.get("response_data", {})),
+            "response_data_app": json.dumps(payload.get("response_data_app", {})),
+            "pay_slip_data": json.dumps(payload.get("pay_slip_data", {})),
+            "incentive_html": payload.get("incentive_html", ""),
+            "year_month": payload.get("year_month", "1970-01"),
+            "created_by": int(created_by),
+            "modified_by": int(created_by),
+            "created_at": payload.get("created_at"),
+            "modified_at": payload.get("modified_at"),
+        }
+        result = await db.execute(
+            text(
+                """
+                INSERT INTO salary (
+                    contact_id, from_date, to_date, working_days, present_days, absent_days, wo_days, par_day,
+                    total_leaves, paid_leave, unpaid_leave, leave_balance_before, leave_balance_after,
+                    tax_amount, tax_comment, advance_amount, advance_comment, fine_amount, fine_comment,
+                    base_amount, incentive, incentive_comment, deduction, deduction_comment, addition, addition_comment,
+                    extra_amount, extra_comment, allowance, pay_mode, sub_total, salary, paid, bid, comments,
+                    paid_holidays, paid_holidays_dates, leaves, leaves_dates, wfh, wfh_dates, half_day, half_day_dates,
+                    optional_holiday, optional_holiday_dates, punch_inout, punch_inout_dates, `break`, break_dates,
+                    supplementary, supplementary_dates, park, response_data, response_data_app, pay_slip_data,
+                    incentive_html, `year_month`, created_at, created_by, modified_at, modified_by
+                ) VALUES (
+                    :contact_id, :from_date, :to_date, :working_days, :present_days, :absent_days, :wo_days, :par_day,
+                    :total_leaves, :paid_leave, :unpaid_leave, :leave_balance_before, :leave_balance_after,
+                    :tax_amount, :tax_comment, :advance_amount, :advance_comment, :fine_amount, :fine_comment,
+                    :base_amount, :incentive, :incentive_comment, :deduction, :deduction_comment, :addition, :addition_comment,
+                    :extra_amount, :extra_comment, :allowance, :pay_mode, :sub_total, :salary, :paid, :bid, :comments,
+                    :paid_holidays, :paid_holidays_dates, :leaves, :leaves_dates, :wfh, :wfh_dates, :half_day, :half_day_dates,
+                    :optional_holiday, :optional_holiday_dates, :punch_inout, :punch_inout_dates, :break, :break_dates,
+                    :supplementary, :supplementary_dates, :park, :response_data, :response_data_app, :pay_slip_data,
+                    :incentive_html, :year_month, COALESCE(:created_at, CURRENT_TIMESTAMP), :created_by,
+                    COALESCE(:modified_at, CURRENT_TIMESTAMP), :modified_by
+                )
+                """
+            ),
+            params,
+        )
+        inserted_id = getattr(result, "lastrowid", None)
+        return int(inserted_id or 0)
+
+    async def delete_payroll_record(
+        self,
+        db: AsyncSession,
+        *,
+        record_id: int,
+    ) -> None:
+        await db.execute(
+            text(
+                """
+                DELETE FROM salary
+                WHERE id = :record_id
+                """
+            ),
+            {"record_id": int(record_id)},
+        )
+
+    async def count_salary_track(
+        self,
+        db: AsyncSession,
+        *,
+        employee_id: int | None,
+    ) -> int:
+        sql = "SELECT COUNT(*) AS total FROM employee e WHERE (e.park IS NULL OR e.park = 0)"
+        params: dict[str, Any] = {}
+        if employee_id is not None:
+            sql += " AND e.id = :employee_id"
+            params["employee_id"] = int(employee_id)
+        result = await db.execute(text(sql), params)
+        row = result.fetchone()
+        return int(row._mapping["total"]) if row else 0
+
+    async def list_salary_track(
+        self,
+        db: AsyncSession,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        limit: int,
+        offset: int,
+    ) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {}
+        salary_conditions: list[str] = []
+
+        # Derive target year_month (YYYYMM) from from_date; fall back to to_date.
+        # This avoids the "date overlap" trap where e.g. a March salary record
+        # (to_date 2026-03-31) never satisfies `to_date >= 2026-04-01`.
+        target_ym: str | None = None
+        ref_date = from_date or to_date
+        if ref_date:
+            parts = ref_date.split("-")
+            if len(parts) >= 2:
+                target_ym = parts[0] + parts[1]  # "2026-03-01" → "202603"
+
+        if target_ym:
+            salary_conditions.append("s_inner.year_month = :target_ym")
+            params["target_ym"] = target_ym
+
+        salary_where = ("WHERE " + " AND ".join(salary_conditions)) if salary_conditions else ""
+
+        sql = f"""
+            SELECT
+                e.id AS employee_id,
+                e.contact_id,
+                NULLIF(TRIM(CONCAT(COALESCE(c.fname, ''), ' ', COALESCE(c.lname, ''))), '') AS full_name,
+                c.email,
+                c.mobile,
+                ep.position AS position,
+                s.id AS salary_id,
+                s.salary,
+                s.paid,
+                s.pay_mode,
+                s.year_month,
+                s.from_date,
+                s.to_date,
+                CASE
+                    WHEN s.id IS NULL THEN 'not_generated'
+                    WHEN s.paid > 0 THEN 'paid'
+                    ELSE 'processing'
+                END AS salary_status
+            FROM employee e
+            LEFT JOIN contact c ON c.id = e.contact_id
+            LEFT JOIN employee_position ep ON ep.id = e.position_id
+            LEFT JOIN (
+                SELECT
+                    s_inner.id,
+                    s_inner.contact_id,
+                    s_inner.salary,
+                    s_inner.paid,
+                    s_inner.pay_mode,
+                    s_inner.year_month,
+                    s_inner.from_date,
+                    s_inner.to_date,
+                    ROW_NUMBER() OVER (PARTITION BY s_inner.contact_id ORDER BY s_inner.id DESC) AS rn
+                FROM salary s_inner
+                {salary_where}
+            ) s ON s.contact_id = e.contact_id AND s.rn = 1
+            WHERE (e.park IS NULL OR e.park = 0)
+        """
+        if employee_id is not None:
+            sql += " AND e.id = :employee_id"
+            params["employee_id"] = int(employee_id)
+        sql += " ORDER BY e.id DESC LIMIT :limit OFFSET :offset"
+        params["limit"] = int(limit)
+        params["offset"] = int(offset)
+
+        result = await db.execute(text(sql), params)
+        rows = result.fetchall()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            m = dict(row._mapping)
+            out.append({
+                "employee_id": m.get("employee_id"),
+                "contact_id": m.get("contact_id"),
+                "full_name": m.get("full_name"),
+                "position": str(m["position"]).strip() if m.get("position") else None,
+                "email": m.get("email"),
+                "mobile": m.get("mobile"),
+                "salary_id": m.get("salary_id"),
+                "salary": int(m["salary"]) if m.get("salary") is not None else None,
+                "paid": int(m["paid"]) if m.get("paid") is not None else None,
+                "pay_mode": m.get("pay_mode"),
+                "year_month": str(m["year_month"]) if m.get("year_month") is not None else None,
+                "from_date": str(m["from_date"]) if m.get("from_date") is not None else None,
+                "to_date": str(m["to_date"]) if m.get("to_date") is not None else None,
+                "salary_status": m.get("salary_status", "not_generated"),
+            })
+        return out
+
+    async def _payroll_records_query(
+        self,
+        db: AsyncSession,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        paid: int | None,
+        park: int | None,
+        select_sql: str,
+        paid_nonzero: bool = False,
+    ) -> tuple[str, dict[str, Any]]:
+        sql = f"""
+            {select_sql}
+            FROM salary s
+            LEFT JOIN employee e ON e.contact_id = s.contact_id AND (e.park IS NULL OR e.park = 0)
+            LEFT JOIN contact c ON c.id = s.contact_id
+            WHERE 1 = 1
+        """
+        params: dict[str, Any] = {}
+        if employee_id is not None:
+            contact_id = await self.resolve_contact_id_for_employee(db, employee_id)
+            if contact_id is None:
+                sql += " AND 1 = 0"
+                return sql, params
+            sql += " AND s.contact_id = :contact_id"
+            params["contact_id"] = int(contact_id)
+        # Date range overlap semantics:
+        # record [s.from_date, s.to_date] overlaps filter [from_date, to_date]
+        if from_date and to_date:
+            sql += " AND s.from_date <= :to_date AND s.to_date >= :from_date"
+            params["from_date"] = from_date
+            params["to_date"] = to_date
+        elif from_date:
+            sql += " AND s.to_date >= :from_date"
+            params["from_date"] = from_date
+        elif to_date:
+            sql += " AND s.from_date <= :to_date"
+            params["to_date"] = to_date
+        if paid is not None:
+            sql += " AND s.paid = :paid"
+            params["paid"] = int(paid)
+        elif paid_nonzero:
+            sql += " AND s.paid > 0"
+        if park is not None:
+            sql += " AND s.park = :park"
+            params["park"] = int(park)
+        return sql, params
+
     @staticmethod
     def _first_matching_column(columns: set[str], candidates: list[str]) -> str | None:
         for candidate in candidates:

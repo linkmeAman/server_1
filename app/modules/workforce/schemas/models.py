@@ -17,3 +17,10 @@ FUTURE_SCOPE_ATTENDANCE: Final[list[str]] = [
     "leave_approval_workflows",
     "shift_planning_and_rosters",
 ]
+
+FUTURE_SCOPE_PAYROLL: Final[list[str]] = [
+    "payroll_auto_generation",
+    "payroll_approval_workflow",
+    "payslip_distribution",
+    "compliance_exports",
+]
