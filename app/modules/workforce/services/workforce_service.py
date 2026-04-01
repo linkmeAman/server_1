@@ -681,7 +681,6 @@ class WorkforceService:
         employee_id: int | None,
         from_date: str | None,
         to_date: str | None,
-        year_month: str | None,
         paid: int | None,
         park: int | None,
         limit: int,
@@ -692,7 +691,6 @@ class WorkforceService:
             employee_id=employee_id,
             from_date=from_date,
             to_date=to_date,
-            year_month=year_month,
             paid=paid,
             park=park,
             limit=limit,
@@ -703,7 +701,6 @@ class WorkforceService:
             employee_id=employee_id,
             from_date=from_date,
             to_date=to_date,
-            year_month=year_month,
             paid=paid,
             park=park,
         )

@@ -1021,7 +1021,6 @@ class WorkforceRepository:
         employee_id: int | None,
         from_date: str | None,
         to_date: str | None,
-        year_month: str | None = None,
         paid: int | None = None,
         park: int | None = None,
     ) -> int:
@@ -1030,7 +1029,6 @@ class WorkforceRepository:
             employee_id=employee_id,
             from_date=from_date,
             to_date=to_date,
-            year_month=year_month,
             paid=paid,
             park=park,
             select_sql="SELECT COUNT(*) AS total",
@@ -1052,7 +1050,6 @@ class WorkforceRepository:
             employee_id=employee_id,
             from_date=from_date,
             to_date=to_date,
-            year_month=None,
             paid=None,
             park=0,
             select_sql="SELECT COALESCE(SUM(s.salary), 0) AS total",
@@ -1074,7 +1071,6 @@ class WorkforceRepository:
             employee_id=employee_id,
             from_date=from_date,
             to_date=to_date,
-            year_month=None,
             paid=None,
             park=0,
             select_sql="SELECT COALESCE(SUM(s.paid), 0) AS total",
@@ -1090,7 +1086,6 @@ class WorkforceRepository:
         employee_id: int | None,
         from_date: str | None,
         to_date: str | None,
-        year_month: str | None,
         paid: int | None,
         park: int | None,
         limit: int,
@@ -1101,7 +1096,6 @@ class WorkforceRepository:
             employee_id=employee_id,
             from_date=from_date,
             to_date=to_date,
-            year_month=year_month,
             paid=paid,
             park=park,
             select_sql="""
@@ -1479,7 +1473,6 @@ class WorkforceRepository:
         employee_id: int | None,
         from_date: str | None,
         to_date: str | None,
-        year_month: str | None,
         paid: int | None,
         park: int | None,
         select_sql: str,
@@ -1499,15 +1492,18 @@ class WorkforceRepository:
                 return sql, params
             sql += " AND s.contact_id = :contact_id"
             params["contact_id"] = int(contact_id)
-        if from_date:
-            sql += " AND s.from_date >= :from_date"
+        # Date range overlap semantics:
+        # record [s.from_date, s.to_date] overlaps filter [from_date, to_date]
+        if from_date and to_date:
+            sql += " AND s.from_date <= :to_date AND s.to_date >= :from_date"
             params["from_date"] = from_date
-        if to_date:
-            sql += " AND s.to_date <= :to_date"
             params["to_date"] = to_date
-        if year_month:
-            sql += " AND s.year_month = :year_month"
-            params["year_month"] = year_month
+        elif from_date:
+            sql += " AND s.to_date >= :from_date"
+            params["from_date"] = from_date
+        elif to_date:
+            sql += " AND s.from_date <= :to_date"
+            params["to_date"] = to_date
         if paid is not None:
             sql += " AND s.paid = :paid"
             params["paid"] = int(paid)
