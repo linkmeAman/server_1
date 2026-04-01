@@ -829,6 +829,19 @@ class WorkforceService:
             raise HTTPException(status_code=500, detail="Created payroll record could not be loaded")
         return {"row": self._serialize_payroll_record_row(created)}
 
+    async def delete_payroll_record(
+        self,
+        main_db: AsyncSession,
+        *,
+        record_id: int,
+    ) -> None:
+        existing = await self.repo.get_payroll_record(main_db, record_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Payroll record not found")
+
+        await self.repo.delete_payroll_record(main_db, record_id=record_id)
+        await main_db.commit()
+
     def _serialize_employee_row(
         self,
         row: dict[str, Any],

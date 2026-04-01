@@ -1471,6 +1471,22 @@ class WorkforceRepository:
         inserted_id = getattr(result, "lastrowid", None)
         return int(inserted_id or 0)
 
+    async def delete_payroll_record(
+        self,
+        db: AsyncSession,
+        *,
+        record_id: int,
+    ) -> None:
+        await db.execute(
+            text(
+                """
+                DELETE FROM salary
+                WHERE id = :record_id
+                """
+            ),
+            {"record_id": int(record_id)},
+        )
+
     async def _payroll_records_query(
         self,
         db: AsyncSession,

@@ -490,3 +490,16 @@ async def create_workforce_payroll_record(
         created_by=caller.user_id,
     )
     return success_response(data=data, message="Payroll record created").model_dump(mode="json")
+
+
+@router.delete("/payroll/records/{record_id}")
+async def delete_workforce_payroll_record(
+    record_id: int,
+    _: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+):
+    await service.delete_payroll_record(
+        main_db,
+        record_id=record_id,
+    )
+    return success_response(data={"record_id": record_id}, message="Payroll record deleted").model_dump(mode="json")
