@@ -509,10 +509,25 @@ async def _compute_cache_data(user_id: int, db: AsyncSession) -> Dict[str, Any]:
     )
     has_boundary = boundary_row.fetchone() is not None
 
+    # ── check if any active resource policies exist ───────────────────────
+    # Resource policies are evaluated against resource_type/resource_id at
+    # request time, so cache-only action decisions are not sufficient.
+    resource_policy_row = await db.execute(
+        text(
+            "SELECT ps.id "
+            "FROM prism_policy_statements ps "
+            "JOIN prism_policies p ON p.id = ps.policy_id "
+            "WHERE p.is_active = 1 AND p.type = 'resource' AND ps.is_active = 1 "
+            "LIMIT 1"
+        )
+    )
+    has_active_resource_policies = resource_policy_row.fetchone() is not None
+
     # ── classify statements ───────────────────────────────────────────────
     static_allows: List[str] = []
     static_denies: List[str] = []
-    needs_full_pdp = has_boundary  # boundary always requires full PDP
+    # Boundary and resource policies always require request-time PDP checks.
+    needs_full_pdp = has_boundary or has_active_resource_policies
 
     for stmt in all_stmts:
         try:

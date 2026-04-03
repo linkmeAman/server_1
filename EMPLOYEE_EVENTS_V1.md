@@ -268,7 +268,143 @@ Per row:
 - `freeze`
 - `date`
 
-### 5) Workshift Calendar Batch Query
+### 5) Demo Events by Venue Query
+
+- `POST /api/employee-events/v1/demo/venues/query`
+
+Request:
+
+```json
+{
+  "venue_ids": [10, 20],
+  "from_date": "2026-03-01",
+  "to_date": "2026-03-31",
+  "statuses": [1, 2],
+  "types": [1],
+  "batch_ids": [5]
+}
+```
+
+Rules:
+
+- `venue_ids` is required
+- accepts `1..25` unique venue ids after first-seen dedupe
+- values must be positive integers
+- `from_date` and `to_date` are required in `YYYY-MM-DD` format
+- range is inclusive and must be `<= 62` days
+- reads from `demo_link_view`
+- fixed filters:
+  - `start_date >= from_date`
+  - `start_date <= to_date`
+  - `park = 0`
+  - `demoApproval = 1`
+- optional filters:
+  - `statuses` -> `demo_status`
+  - `types` -> `demo_type`
+  - `batch_ids` -> `batch_id`
+- optional arrays are deduped; `[]` means no filter (same as omitted)
+
+Response data:
+
+- `from_date`
+- `to_date`
+- `range_day_count`
+- `venue_count`
+- `matched_count`
+- `total_demos`
+- `venues`
+
+Per venue:
+
+- `venue_id`
+- `demo_count`
+- `demos`
+
+`demos` rows:
+
+- each row is returned directly from `demo_link_view`
+- rows are sorted by `start_date ASC, id ASC`
+- key fields commonly used by the UI include:
+  - `id`
+  - `demo_type`
+  - `demo_status`
+  - `demoApproval`
+  - `name`
+  - `date`
+  - `start_date`
+  - `end_date`
+  - `start_time`
+  - `end_time`
+  - `batch_id`
+  - `venue_id`
+  - `venue`
+  - `venue_display_name`
+  - `host_employee_id`
+  - `host_contact_id`
+  - `sc_employee_id`
+  - `sc_contact_id`
+  - `so_employee_id`
+  - `so_contact_id`
+  - `owner_id`
+  - `owner_name`
+  - `owner_contact_id`
+  - `created_at`
+  - `modified_at`
+
+Sample response:
+
+```json
+{
+  "success": true,
+  "message": "Demo events fetched successfully",
+  "data": {
+    "from_date": "2026-03-01",
+    "to_date": "2026-03-31",
+    "range_day_count": 31,
+    "venue_count": 2,
+    "matched_count": 1,
+    "total_demos": 2,
+    "venues": [
+      {
+        "venue_id": 10,
+        "demo_count": 2,
+        "demos": [
+          {
+            "id": 101,
+            "demo_type": 1,
+            "demo_status": 1,
+            "demoApproval": 1,
+            "name": "Saturday Demo",
+            "date": "2026-03-08",
+            "start_date": "2026-03-08",
+            "end_date": "2026-03-08",
+            "start_time": "10:00",
+            "end_time": "11:00",
+            "batch_id": 5,
+            "venue_id": 10,
+            "venue": "Andheri Center",
+            "venue_display_name": "Andheri Center",
+            "host_employee_id": 1,
+            "host_contact_id": 100,
+            "owner_id": 50,
+            "owner_name": "Owner A",
+            "owner_contact_id": 500,
+            "created_at": "2026-03-07 12:00:00",
+            "modified_at": "2026-03-07 14:00:00"
+          }
+        ]
+      },
+      {
+        "venue_id": 20,
+        "demo_count": 0,
+        "demos": []
+      }
+    ]
+  }
+}
+```
+
+### 6) Workshift Calendar Batch Query
 
 - `POST /api/employee-events/v1/employees/workshift-calendar/query`
 
@@ -342,7 +478,7 @@ Behavior:
 - missing employees are returned as `result_status="not_found"` inside the batch, not as `404`
 - invalid `week_off_code` tokens are ignored for expansion and surfaced in `warnings`
 
-### 6) Leave Calendar Batch Query
+### 7) Leave Calendar Batch Query
 
 - `POST /api/employee-events/v1/employees/leave-calendar/query`
 
@@ -435,7 +571,7 @@ Result status examples:
 - `no_events`: employee exists but no leave rows matched after filters
 - `not_found`: employee id is not active/matched
 
-### 7) Unified Calendar Events (Employee + Trainer Batch/Demo)
+### 8) Unified Calendar Events (Employee + Trainer Batch/Demo)
 
 - `GET /api/employee-events/v1/calendar/events`
 - Breaking change: this endpoint now returns a unified schema (`source`, `source_event_id`, `title`, `start`, `end`, `is_read_only`, `raw`) instead of trainer-only rows.

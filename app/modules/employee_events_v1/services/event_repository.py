@@ -894,6 +894,139 @@ class EmployeeEventsRepository:
             ).mappings().all()
         return [dict(row) for row in rows]
 
+    def list_active_venues(self) -> List[Dict[str, Any]]:
+        """
+        Fetch venue selector options from venue table using fixed business filters.
+
+        Filters:
+        - park = 0
+        - status = 0
+        """
+        engine = self._get_main_engine()
+        sql = text(
+            """
+            SELECT id, venue, display_name
+            FROM venue
+            WHERE park = :park
+              AND status = :status
+            ORDER BY venue ASC, id ASC
+            """
+        )
+        with engine.connect() as conn:
+            rows = conn.execute(
+                sql,
+                {"park": "0", "status": "0"},
+            ).mappings().all()
+        return [dict(row) for row in rows]
+
+    def list_active_batches_by_venue_ids(self, venue_ids: List[int]) -> List[Dict[str, Any]]:
+        if not venue_ids:
+            return []
+
+        engine = self._get_main_engine()
+        view_columns = self._get_table_columns("batch_employee_time_view")
+
+        venue_placeholders = []
+        params: Dict[str, Any] = {}
+        for idx, venue_id in enumerate(venue_ids):
+            key = f"venue_id_{idx}"
+            venue_placeholders.append(f":{key}")
+            params[key] = int(venue_id)
+
+        sql = f"""
+        SELECT
+            b.id,
+            b.batch,
+            b.display_name,
+            b.venue_id,
+            b.parent_id,
+            b.date,
+            b.start_date,
+            b.end_date,
+            b.start_time,
+            b.end_time,
+            b.day_code,
+            b.title,
+            b.venue,
+            b.timezone_id,
+            b.contact_id,
+            b.code,
+            b.category,
+            b.branch,
+            b.bid,
+            b.employee_id,
+            b.associate_fullname,
+            b.modified_at,
+            p.batch AS parent_batch_name
+        FROM batch_employee_time_view b
+        LEFT JOIN batch_employee_time_view p
+            ON p.id = b.parent_id
+        WHERE b.venue_id IN ({", ".join(venue_placeholders)})
+          AND COALESCE(b.park, 0) = 0
+          AND COALESCE(b.inactive, 0) = 0
+          AND COALESCE(b.hide, 0) = 0
+          AND COALESCE(b.cont_park, 0) = 0
+        """
+
+        if "demo_class" in view_columns:
+            sql += " AND COALESCE(b.demo_class, 0) = 0"
+        if "training_assign" in view_columns:
+            sql += " AND COALESCE(b.training_assign, 0) = 0"
+
+        sql += " ORDER BY b.venue_id ASC, b.batch ASC, b.id ASC"
+
+        with engine.connect() as conn:
+            rows = conn.execute(text(sql), params).mappings().all()
+        return [dict(row) for row in rows]
+
+    def list_batch_kids_present(
+        self,
+        batch_id: int,
+        from_date: str,
+        to_date: str,
+    ) -> List[Dict[str, Any]]:
+        engine = self._get_main_engine()
+        sql = text(
+            """
+            SELECT
+                invoice_id,
+                item_id,
+                invoice,
+                code_name,
+                sessions,
+                sessions_used,
+                dob,
+                counsellor_name,
+                balance,
+                dropout,
+                freeze,
+                date
+            FROM invoice_invoiceitem_view
+            WHERE start_date <= :to_date
+              AND end_date >= :from_date
+              AND batch_id = :batch_id
+              AND park = :park
+              AND renew = :renew
+              AND dropout = :dropout
+              AND freeze = :freeze
+            ORDER BY start_date ASC, end_date ASC, item_id ASC
+            """
+        )
+        with engine.connect() as conn:
+            rows = conn.execute(
+                sql,
+                {
+                    "batch_id": int(batch_id),
+                    "from_date": from_date,
+                    "to_date": to_date,
+                    "park": "0",
+                    "renew": "0",
+                    "dropout": "0",
+                    "freeze": "0",
+                },
+            ).mappings().all()
+        return [dict(row) for row in rows]
+
     def get_demo_events(
         self,
         employee_ids: List[int],
@@ -1046,6 +1179,159 @@ class EmployeeEventsRepository:
                 venue_placeholders.append(f":{key}")
                 params[key] = int(venue_id)
             sql += f" AND venue_id IN ({', '.join(venue_placeholders)})"
+
+        if batch_ids:
+            batch_placeholders = []
+            for idx, batch_id in enumerate(batch_ids):
+                key = f"batch_id_{idx}"
+                batch_placeholders.append(f":{key}")
+                params[key] = int(batch_id)
+            sql += f" AND batch_id IN ({', '.join(batch_placeholders)})"
+
+        sql += " ORDER BY start_date ASC, id ASC"
+
+        with engine.connect() as conn:
+            rows = conn.execute(text(sql), params).mappings().all()
+        return [dict(row) for row in rows]
+
+    def get_demo_events_by_venue_ids(
+        self,
+        venue_ids: List[int],
+        from_date: str,
+        to_date: str,
+        statuses: Optional[List[int]] = None,
+        types: Optional[List[int]] = None,
+        batch_ids: Optional[List[int]] = None,
+    ) -> List[Dict[str, Any]]:
+        if not venue_ids:
+            return []
+
+        engine = self._get_main_engine()
+
+        venue_placeholders = []
+        params: Dict[str, Any] = {
+            "from_date": from_date,
+            "to_date": to_date,
+        }
+        for idx, venue_id in enumerate(venue_ids):
+            key = f"venue_id_{idx}"
+            venue_placeholders.append(f":{key}")
+            params[key] = int(venue_id)
+
+        sql = f"""
+        SELECT
+            id,
+            demo_type,
+            otp,
+            hashed_otp,
+            demo_link,
+            demo_venue_link,
+            name,
+            demoApproval,
+            date,
+            start_date,
+            end_date,
+            demo_status,
+            start_time,
+            start_time_hour,
+            end_time,
+            end_time_hour,
+            include_time,
+            existing_batch,
+            batch_id,
+            venue_id,
+            amount,
+            currency,
+            infant,
+            ad_hoc,
+            upi_id,
+            venue,
+            storytelling_location,
+            workshop_location,
+            demo_information,
+            select_paid_demo,
+            paid_demo,
+            select_free_demo,
+            free_demo,
+            city,
+            venue_display_name,
+            venue_address,
+            venue_short_address,
+            venue_addr_for_post,
+            venue_address_link,
+            timezone_abbr_offset,
+            timezone_gmt_offset_name,
+            timezone_zone_name,
+            host_employee_id,
+            host_contact_id,
+            zone_time_str,
+            zone_time_details,
+            host_name,
+            sc_employee_id,
+            sc_contact_id,
+            sc_host_name,
+            sc_host_fullname,
+            sc_host_email,
+            so_employee_id,
+            so_host_name,
+            so_contact_id,
+            so_host_fullname,
+            so_host_email,
+            comment,
+            stop_response,
+            response_count,
+            response_limit_flag,
+            response_limit,
+            seats_left,
+            ads,
+            ads_comment,
+            all_fields_filled,
+            demo_ad_status,
+            bid,
+            branch,
+            type,
+            owner_id,
+            owner_name,
+            owner_contact_id,
+            owner_email,
+            mobile_country_code,
+            mobile_number,
+            optional_mobile_country_code,
+            optional_mobile_number,
+            park,
+            demo_date_string,
+            day_code,
+            demo_day,
+            day,
+            created_at,
+            created_by,
+            modified_at,
+            modified_by,
+            modified_by_fname,
+            hybrid
+        FROM demo_link_view
+        WHERE venue_id IN ({", ".join(venue_placeholders)})
+          AND start_date >= :from_date
+          AND start_date <= :to_date
+          AND park = 0
+          AND demoApproval = 1
+        """
+
+        if statuses:
+            status_placeholders = []
+            for idx, status_value in enumerate(statuses):
+                key = f"status_{idx}"
+                status_placeholders.append(f":{key}")
+                params[key] = int(status_value)
+            sql += f" AND demo_status IN ({', '.join(status_placeholders)})"
+
+        if types:
+            type_placeholders = []
+            for idx, type_value in enumerate(types):
+                key = f"type_{idx}"
+                type_placeholders.append(f":{key}")
+                params[key] = int(type_value)
+            sql += f" AND demo_type IN ({', '.join(type_placeholders)})"
 
         if batch_ids:
             batch_placeholders = []

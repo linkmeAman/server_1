@@ -83,3 +83,20 @@ class DemoEventsBatchQueryRequest(BaseModel):
     types: Optional[List[Any]] = Field(default=None)
     venue_ids: Optional[List[Any]] = Field(default=None)
     batch_ids: Optional[List[Any]] = Field(default=None)
+
+
+class DemoVenueEventsQueryRequest(BaseModel):
+    venue_ids: List[Any] = Field(...)
+    from_date: str = Field(..., min_length=8, max_length=20)
+    to_date: str = Field(..., min_length=8, max_length=20)
+    statuses: Optional[List[Any]] = Field(default=None)
+    types: Optional[List[Any]] = Field(default=None)
+    batch_ids: Optional[List[Any]] = Field(default=None)
+
+
+class VenueBatchesQueryRequest(BaseModel):
+    venue_ids: List[Any] = Field(...)
+
+
+class BatchKidsPresentQueryRequest(BaseModel):
+    batch_id: int = Field(..., ge=1)

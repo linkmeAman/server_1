@@ -144,10 +144,28 @@ async def _collect_policies(user_id: int, db: AsyncSession) -> Dict[str, List[di
         {"uid": user_id},
     ))
 
+    # 1d. Resource policies are evaluated against the requested resource/action,
+    # not attached directly to user/role links. Any principal scoping should be
+    # expressed in statement conditions (for example user:id, user:department).
+    resource_policies = _rows(await db.execute(
+        text("""
+            SELECT p.id, p.name, p.type,
+                   ps.id AS stmt_id, ps.sid, ps.effect,
+                   ps.actions_json     AS actions,
+                   ps.resources_json   AS resources,
+                   ps.conditions_json  AS conditions,
+                   ps.priority
+            FROM   prism_policies p
+            JOIN   prism_policy_statements ps ON ps.policy_id = p.id AND ps.is_active = 1
+            WHERE  p.is_active = 1
+              AND  p.type = 'resource'
+        """),
+    ))
+
     return {
         "identity": user_policies + role_policies,
         "boundary": boundary_policies,
-        "resource":  [],   # Phase 5: resource-based policies require resourceId index
+        "resource": resource_policies,
     }
 
 
@@ -479,6 +497,7 @@ def _statement_matches(
 def _decide(
     identity_stmts: List[Tuple[dict, str]],  # (stmt, effect) matched pairs
     boundary_stmts: List[Tuple[dict, str]],
+    resource_stmts: List[Tuple[dict, str]],
     has_boundary: bool,
 ) -> Tuple[str, str, Optional[dict]]:
     """Return (decision, reason, winning_stmt) following the 5-step algorithm."""
@@ -487,6 +506,11 @@ def _decide(
     for stmt, effect in identity_stmts:
         if effect == "Deny":
             return "Deny", f"Explicit Deny in statement sid={stmt.get('sid', stmt.get('stmt_id'))}", stmt
+
+    # Explicit Deny in resource policy also overrides all allows
+    for stmt, effect in resource_stmts:
+        if effect == "Deny":
+            return "Deny", f"Explicit Deny in resource statement sid={stmt.get('sid', stmt.get('stmt_id'))}", stmt
 
     # 4b — Allow in identity, gated by boundary
     identity_allows = [(s, e) for s, e in identity_stmts if e == "Allow"]
@@ -501,8 +525,17 @@ def _decide(
             return "Allow", "Allow in identity policy AND boundary policy", s
         return "Deny", "Identity policy grants Allow but permission boundary does not", None
 
-    # 4c — Resource-based policies (Phase 5; not yet populated)
-    # (no resource_stmts in current iteration)
+    # 4c — Allow in resource policy, still bounded when a permission boundary exists
+    resource_allows = [(s, e) for s, e in resource_stmts if e == "Allow"]
+    if resource_allows:
+        if not has_boundary:
+            s, _ = resource_allows[0]
+            return "Allow", "Allow in resource policy (no boundary)", s
+        boundary_allows = [s for s, e in boundary_stmts if e == "Allow"]
+        if boundary_allows:
+            s, _ = resource_allows[0]
+            return "Allow", "Allow in resource policy AND boundary policy", s
+        return "Deny", "Resource policy grants Allow but permission boundary does not", None
 
     # 4d — Default Deny
     return "Deny", "No matching Allow statement found (default deny)", None
@@ -624,7 +657,8 @@ async def evaluate(req: PDPRequest, db: AsyncSession) -> PDPResult:
 
     total_policies = (
         len({s["id"] for s in policy_buckets["identity"]}) +
-        len({s["id"] for s in policy_buckets["boundary"]})
+        len({s["id"] for s in policy_buckets["boundary"]}) +
+        len({s["id"] for s in policy_buckets["resource"]})
     )
 
     # ── STEP 2: build attribute context ───────────────────────────────────
@@ -654,11 +688,19 @@ async def evaluate(req: PDPRequest, db: AsyncSession) -> PDPResult:
         if matched:
             boundary_matched.append((stmt, effect))
 
+    resource_matched: List[Tuple[dict, str]] = []
+    for stmt in policy_buckets["resource"]:
+        matched, effect = _statement_matches(
+            stmt, req.action, req.resource_type, req.resource_id, ctx
+        )
+        if matched:
+            resource_matched.append((stmt, effect))
+
     has_boundary = len(policy_buckets["boundary"]) > 0
 
     # ── STEP 4: decide ────────────────────────────────────────────────────
     decision, reason, winning_stmt = _decide(
-        identity_matched, boundary_matched, has_boundary
+        identity_matched, boundary_matched, resource_matched, has_boundary
     )
 
     matched_policy_id   = winning_stmt["id"]      if winning_stmt else None
