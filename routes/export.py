@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import io
-import re
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
+from app.core.prism_guard import require_any_caller
 from db.connection import db_cursor
 from db.query_validator import MAX_ROWS
+from routes.db_explorer_security import normalize_database_name, validate_identifier
 
-router = APIRouter(prefix="/api", tags=["db-explorer"])
-_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+router = APIRouter(
+    prefix="/api",
+    tags=["db-explorer"],
+    dependencies=[Depends(require_any_caller)],
+)
 _ALLOWED_FILTER_OPERATORS = {
     "=", ">", ">=", "<", "<=", "!=", 
     "like", "like %...%", "not like", "not like %...%", 
@@ -23,9 +27,7 @@ _ALLOWED_FILTER_OPERATORS = {
 
 
 def _validate_identifier(name: str, field_name: str) -> str:
-    if not _IDENTIFIER_RE.match(name or ""):
-        raise HTTPException(status_code=400, detail=f"Invalid {field_name}")
-    return name
+    return validate_identifier(name, field_name)
 
 
 def _quoted(name: str) -> str:
@@ -33,12 +35,7 @@ def _quoted(name: str) -> str:
 
 
 def _optional_db_name(db: str | None) -> str | None:
-    if db is None:
-        return None
-    cleaned = db.strip()
-    if not cleaned:
-        return None
-    return _validate_identifier(cleaned, "database name")
+    return normalize_database_name(db)
 
 
 def _build_filter_clause(
