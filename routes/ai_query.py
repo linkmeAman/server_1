@@ -8,14 +8,21 @@ import re
 from typing import Any, List, Literal
 
 import httpx
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field as PydanticField
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field as PydanticField, ValidationError
 
+from app.core.prism_guard import require_any_caller
 from app.modules.llm import service as local_llm
 from db.connection import db_cursor
 from db.query_validator import QueryValidationError, apply_row_limit, validate_query
+from routes.db_explorer_security import normalize_database_name
+from routes.query_transport_crypto import build_response, parse_request_payload
 
-router = APIRouter(prefix="/api", tags=["db-explorer"])
+router = APIRouter(
+    prefix="/api",
+    tags=["db-explorer"],
+    dependencies=[Depends(require_any_caller)],
+)
 
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _SINGLE_QUOTED_TABLE_RE = re.compile(r"'([A-Za-z_][A-Za-z0-9_]*)'")
@@ -69,7 +76,7 @@ def _extract_prompt_tables(prompt: str, primary_table: str) -> list[str]:
 
 def _load_table_schema_from_db(table_name: str, database_name: str | None = None) -> list[SchemaColumn]:
     safe_table = _validate_identifier(table_name)
-    selected_db = _validate_identifier(database_name) if database_name else None
+    selected_db = normalize_database_name(database_name)
     with db_cursor(database=selected_db) as cursor:
         cursor.execute(f"DESCRIBE {_quoted(safe_table)}")
         rows = cursor.fetchall() or []
@@ -251,7 +258,13 @@ async def _generate_local_llm_query(payload: AIQueryRequest) -> str:
 
 
 @router.post("/ai-query")
-async def generate_ai_query(payload: AIQueryRequest) -> dict[str, Any]:
+async def generate_ai_query(request: Request) -> dict[str, Any]:
+    payload_data = await parse_request_payload(request)
+    try:
+        payload = AIQueryRequest.model_validate(payload_data)
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail="Invalid AI query request payload") from exc
+
     if payload.provider == "local":
         generated_query = await _generate_local_llm_query(payload)
     else:
@@ -265,4 +278,4 @@ async def generate_ai_query(payload: AIQueryRequest) -> dict[str, Any]:
     except QueryValidationError as exc:
         raise HTTPException(status_code=502, detail=f"AI generated invalid SQL: {exc}") from exc
 
-    return {"query": safe_query}
+    return build_response({"query": safe_query}, request)

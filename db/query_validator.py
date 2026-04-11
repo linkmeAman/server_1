@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 
 import sqlparse
@@ -11,7 +12,7 @@ class QueryValidationError(ValueError):
     """Raised when an incoming SQL query violates explorer safety rules."""
 
 
-MAX_ROWS = 1000
+MAX_ROWS = int(os.getenv('MAX_QUERY_ROWS', '1000'))
 BLOCKED_KEYWORDS = (
     "insert",
     "update",
