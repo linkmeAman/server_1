@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.core.prism_guard import require_any_caller
-
 from db.connection import db_cursor
 from db.query_validator import MAX_ROWS
+from routes.db_explorer_permissions import require_db_explorer_access
 from routes.db_explorer_security import (
     filter_database_list,
     normalize_database_name,
@@ -17,7 +16,7 @@ from routes.db_explorer_security import (
 router = APIRouter(
     prefix="/api",
     tags=["db-explorer"],
-    dependencies=[Depends(require_any_caller)],
+    dependencies=[Depends(require_db_explorer_access)],
 )
 DEFAULT_LIMIT = 50
 _ALLOWED_FILTER_OPERATORS = {
