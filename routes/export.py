@@ -8,15 +8,15 @@ import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
-from app.core.prism_guard import require_any_caller
 from db.connection import db_cursor
 from db.query_validator import MAX_ROWS
+from routes.db_explorer_permissions import require_db_explorer_access
 from routes.db_explorer_security import normalize_database_name, validate_identifier
 
 router = APIRouter(
     prefix="/api",
     tags=["db-explorer"],
-    dependencies=[Depends(require_any_caller)],
+    dependencies=[Depends(require_db_explorer_access)],
 )
 _ALLOWED_FILTER_OPERATORS = {
     "=", ">", ">=", "<", "<=", "!=", 

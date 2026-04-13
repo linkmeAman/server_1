@@ -5,16 +5,16 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ValidationError
 
-from app.core.prism_guard import require_any_caller
 from db.connection import db_cursor
 from db.query_validator import MAX_ROWS, QueryValidationError, apply_row_limit, validate_query
+from routes.db_explorer_permissions import require_db_explorer_access
 from routes.db_explorer_security import normalize_database_name
 from routes.query_transport_crypto import build_response, parse_request_payload
 
 router = APIRouter(
     prefix="/api",
     tags=["db-explorer"],
-    dependencies=[Depends(require_any_caller)],
+    dependencies=[Depends(require_db_explorer_access)],
 )
 
 
