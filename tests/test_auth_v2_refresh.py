@@ -144,7 +144,7 @@ class TestAuthV2Refresh(unittest.TestCase):
         self._override_sessions(_FakeMainSession(True), central)
 
         with patch(
-            "app.modules.auth.handlers.refresh.verify_v2_refresh_token",
+            "app.modules.auth.handlers.refresh.verify_refresh_token",
             return_value=self._base_claims(),
         ), patch(
             "app.modules.auth.handlers.refresh.AuthorizationResolver.resolve_employee_authorization",
@@ -168,7 +168,7 @@ class TestAuthV2Refresh(unittest.TestCase):
             "app.modules.auth.handlers.refresh.compute_device_fingerprint",
             return_value="fp-1",
         ), patch(
-            "app.modules.auth.handlers.refresh.issue_v2_token_pair",
+            "app.modules.auth.handlers.refresh.issue_token_pair",
             return_value={"access_token": "new-a", "refresh_token": "new-r", "jti": "new-jti"},
         ):
             client = TestClient(main.app)
@@ -186,7 +186,7 @@ class TestAuthV2Refresh(unittest.TestCase):
         self.assertEqual([{"role_code": "ops", "role_name": "Ops"}], response.json()["data"]["roles"])
         self.assertTrue(any("FOR UPDATE" in q for q in central.queries))
 
-    def test_replay_detection_returns_401_and_session_family_revoked(self):
+    def test_replay_detection_returns_401_and_session_chain_revoked(self):
         if not testclient_requests_work():
             self.skipTest("TestClient request execution is not responsive in this runtime")
 
@@ -196,13 +196,13 @@ class TestAuthV2Refresh(unittest.TestCase):
         self._override_sessions(_FakeMainSession(True), central)
 
         with patch(
-            "app.modules.auth.handlers.refresh.verify_v2_refresh_token",
+            "app.modules.auth.handlers.refresh.verify_refresh_token",
             return_value=self._base_claims(),
         ), patch(
             "app.modules.auth.handlers.refresh.refresh_token_hash",
             return_value="hashed-token",
         ), patch(
-            "app.modules.auth.handlers.refresh.revoke_session_family",
+            "app.modules.auth.handlers.refresh.revoke_session_chain",
             new=AsyncMock(return_value=3),
         ) as revoke_mock:
             client = TestClient(main.app)
@@ -228,7 +228,7 @@ class TestAuthV2Refresh(unittest.TestCase):
         self._override_sessions(_FakeMainSession(True), central)
 
         with patch(
-            "app.modules.auth.handlers.refresh.verify_v2_refresh_token",
+            "app.modules.auth.handlers.refresh.verify_refresh_token",
             return_value=self._base_claims(),
         ), patch(
             "app.modules.auth.handlers.refresh.AuthorizationResolver.resolve_employee_authorization",
@@ -252,10 +252,10 @@ class TestAuthV2Refresh(unittest.TestCase):
             "app.modules.auth.handlers.refresh.compute_device_fingerprint",
             return_value="fp-1",
         ), patch(
-            "app.modules.auth.handlers.refresh.issue_v2_token_pair",
+            "app.modules.auth.handlers.refresh.issue_token_pair",
             return_value={"access_token": "new-a", "refresh_token": "new-r", "jti": "new-jti"},
         ), patch(
-            "app.modules.auth.handlers.refresh.revoke_session_family",
+            "app.modules.auth.handlers.refresh.revoke_session_chain",
             new=AsyncMock(return_value=2),
         ):
             client = TestClient(main.app)
@@ -278,7 +278,7 @@ class TestAuthV2Refresh(unittest.TestCase):
         self._override_sessions(_FakeMainSession(True), central)
 
         with patch(
-            "app.modules.auth.handlers.refresh.verify_v2_refresh_token",
+            "app.modules.auth.handlers.refresh.verify_refresh_token",
             return_value=self._base_claims(),
         ), patch(
             "app.modules.auth.handlers.refresh.refresh_token_hash",
@@ -305,7 +305,7 @@ class TestAuthV2Refresh(unittest.TestCase):
         self._override_sessions(_FakeMainSession(False), central)
 
         with patch(
-            "app.modules.auth.handlers.refresh.verify_v2_refresh_token",
+            "app.modules.auth.handlers.refresh.verify_refresh_token",
             return_value=self._base_claims(),
         ), patch(
             "app.modules.auth.handlers.refresh.refresh_token_hash",
@@ -332,7 +332,7 @@ class TestAuthV2Refresh(unittest.TestCase):
         self._override_sessions(_FakeMainSession(True), central)
 
         with patch(
-            "app.modules.auth.handlers.refresh.verify_v2_refresh_token",
+            "app.modules.auth.handlers.refresh.verify_refresh_token",
             return_value=self._base_claims(),
         ), patch(
             "app.modules.auth.handlers.refresh.AuthorizationResolver.resolve_employee_authorization",
@@ -356,7 +356,7 @@ class TestAuthV2Refresh(unittest.TestCase):
             "app.modules.auth.handlers.refresh.compute_device_fingerprint",
             return_value="fp-1",
         ), patch(
-            "app.modules.auth.handlers.refresh.issue_v2_token_pair",
+            "app.modules.auth.handlers.refresh.issue_token_pair",
             return_value={"access_token": "new-a", "refresh_token": "new-r", "jti": "new-jti"},
         ):
             client = TestClient(main.app)
@@ -374,5 +374,6 @@ class TestAuthV2Refresh(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

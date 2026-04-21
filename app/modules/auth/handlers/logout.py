@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,13 +15,14 @@ from app.modules.auth.constants import (
 from app.modules.auth.schemas.models import LogoutRequest
 from app.modules.auth.services.audit import write_audit_event
 from app.modules.auth.services.common import (
+    refresh_token_hash,
     client_ip,
     error_json_response,
     request_id,
     success_json_response,
     user_agent,
 )
-from app.modules.auth.services.session_revocation import revoke_session_family
+from app.modules.auth.services.session_revocation import revoke_session_chain
 from app.modules.auth.services.token_service import verify_refresh_token
 from app.core.database import get_central_db_session
 
@@ -59,57 +58,35 @@ async def logout(
 
     try:
         async with central_db.begin():
-            token_hash = None
-            try:
-                from app.modules.auth.services.common import refresh_token_hash
-
-                token_hash = refresh_token_hash(payload.refresh_token)
-            except Exception:
-                token_hash = None
-
-            if token_hash:
-                row_result = await central_db.execute(
-                    text(
-                        """
-                        SELECT id
-                        FROM auth_refresh_token
-                        WHERE user_id = :user_id
-                          AND employee_id = :employee_id
-                          AND token_hash = :token_hash
-                        LIMIT 1
-                        FOR UPDATE
-                        """
-                    ),
-                    {
-                        "user_id": int(user_id),
-                        "employee_id": int(employee_id),
-                        "token_hash": token_hash,
-                    },
-                )
-                row = row_result.fetchone()
-                if row is not None:
-                    await central_db.execute(
-                        text(
-                            """
-                            UPDATE auth_refresh_token
-                            SET revoked_at = :revoked_at,
-                                revoke_reason = :revoke_reason
-                            WHERE id = :id
-                            """
-                        ),
-                        {
-                            "revoked_at": datetime.utcnow(),
-                            "revoke_reason": REVOKE_REASON_LOGOUT,
-                            "id": int(row._mapping["id"]),
-                        },
-                    )
-
-            revoked_count = await revoke_session_family(
-                user_id=int(user_id),
-                employee_id=int(employee_id),
-                reason=REVOKE_REASON_LOGOUT,
-                db=central_db,
+            token_hash = refresh_token_hash(payload.refresh_token)
+            row_result = await central_db.execute(
+                text(
+                    """
+                    SELECT id
+                    FROM auth_refresh_token
+                    WHERE user_id = :user_id
+                      AND employee_id = :employee_id
+                      AND token_hash = :token_hash
+                    LIMIT 1
+                    FOR UPDATE
+                    """
+                ),
+                {
+                    "user_id": int(user_id),
+                    "employee_id": int(employee_id),
+                    "token_hash": token_hash,
+                },
             )
+            row = row_result.fetchone()
+            revoked_count = 0
+            if row is not None:
+                revoked_count = await revoke_session_chain(
+                    anchor_token_id=int(row._mapping["id"]),
+                    reason=REVOKE_REASON_LOGOUT,
+                    db=central_db,
+                    user_id=int(user_id),
+                    employee_id=int(employee_id),
+                )
 
             await write_audit_event(
                 central_db,
