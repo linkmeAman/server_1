@@ -49,7 +49,7 @@ class TestAuthV2Logout(unittest.TestCase):
     def tearDown(self):
         main.app.dependency_overrides = {}
 
-    def test_logout_revokes_session_family(self):
+    def test_logout_revokes_only_session_chain(self):
         if not testclient_requests_work():
             self.skipTest("TestClient request execution is not responsive in this runtime")
 
@@ -59,14 +59,14 @@ class TestAuthV2Logout(unittest.TestCase):
         main.app.dependency_overrides[get_central_db_session] = _central_dep
 
         with patch(
-            "app.modules.auth.handlers.logout.verify_v2_refresh_token",
+            "app.modules.auth.handlers.logout.verify_refresh_token",
             return_value={"user_id": 1, "contact_id": 2, "employee_id": 3},
         ), patch(
             "app.modules.auth.handlers.logout.refresh_token_hash",
             return_value="hash",
         ), patch(
-            "app.modules.auth.handlers.logout.revoke_session_family",
-            new=AsyncMock(return_value=4),
+            "app.modules.auth.handlers.logout.revoke_session_chain",
+            new=AsyncMock(return_value=1),
         ) as revoke_mock:
             client = TestClient(main.app)
             try:
@@ -79,7 +79,7 @@ class TestAuthV2Logout(unittest.TestCase):
                 client.close()
 
         self.assertEqual(200, response.status_code)
-        self.assertEqual(4, response.json()["data"]["revoked"])
+        self.assertEqual(1, response.json()["data"]["revoked"])
         self.assertEqual(1, revoke_mock.await_count)
 
 

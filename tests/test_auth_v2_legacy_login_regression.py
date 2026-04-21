@@ -26,6 +26,9 @@ class _FakeDb:
     def add(self, item):
         return None
 
+    def execute(self, statement, params=None):
+        return None
+
     def commit(self):
         return None
 
@@ -43,6 +46,12 @@ class TestLegacyLoginRegression(unittest.TestCase):
             return_value=(_FakeUser(), _FakeIdentity()),
         ), patch("app.modules.auth.legacy_router.create_access_token", return_value="legacy-access"), patch(
             "app.modules.auth.legacy_router.create_refresh_token", return_value="legacy-refresh"
+        ), patch(
+            "app.modules.auth.legacy_router._legacy_parse_refresh_claims",
+            return_value=(123, "legacy-jti", None, None),
+        ), patch(
+            "app.modules.auth.legacy_router._legacy_insert_refresh_row",
+            return_value=None,
         ):
             client = TestClient(main.app)
             try:

@@ -17,13 +17,12 @@ from app.modules.auth.constants import (
     AUTH_SESSION_BINDING_FAILED,
     AUTH_SUPREME_USER_NOT_FOUND,
     EVENT_REFRESH,
-    EVENT_REFRESH_SESSION_FAMILY_WIPE,
+    EVENT_REFRESH_REPLAY,
     OUTCOME_FAILURE,
     OUTCOME_SECURITY,
     OUTCOME_SUCCESS,
     REVOKE_REASON_EMPLOYEE_INACTIVE,
     REVOKE_REASON_REPLAY,
-    REVOKE_REASON_SESSION_FAMILY_WIPE,
 )
 from app.modules.auth.schemas.models import RefreshRequest
 from app.modules.auth.services.audit import write_audit_event
@@ -39,7 +38,7 @@ from app.modules.auth.services.common import (
     utcnow,
 )
 from app.modules.auth.services.device_fingerprint import compute_device_fingerprint
-from app.modules.auth.services.session_revocation import revoke_session_family
+from app.modules.auth.services.session_revocation import revoke_session_chain
 from app.modules.auth.services.token_service import issue_token_pair, verify_refresh_token
 from app.core.database import get_central_db_session, get_main_db_session
 from app.core.settings import get_settings
@@ -131,31 +130,16 @@ async def refresh(
             else:
                 token_row = dict(row._mapping)
                 if token_row.get("used_at") is not None or token_row.get("revoked_at") is not None:
-                    now = datetime.utcnow()
-                    await central_db.execute(
-                        text(
-                            """
-                            UPDATE auth_refresh_token
-                            SET revoked_at = COALESCE(revoked_at, :revoked_at),
-                                revoke_reason = :revoke_reason
-                            WHERE id = :id
-                            """
-                        ),
-                        {
-                            "revoked_at": now,
-                            "revoke_reason": REVOKE_REASON_REPLAY,
-                            "id": int(token_row["id"]),
-                        },
-                    )
-                    await revoke_session_family(
+                    revoked_count = await revoke_session_chain(
+                        anchor_token_id=int(token_row["id"]),
+                        reason=REVOKE_REASON_REPLAY,
+                        db=central_db,
                         user_id=user_id,
                         employee_id=employee_id,
-                        reason=REVOKE_REASON_SESSION_FAMILY_WIPE,
-                        db=central_db,
                     )
                     await write_audit_event(
                         central_db,
-                        event_type=EVENT_REFRESH_SESSION_FAMILY_WIPE,
+                        event_type=EVENT_REFRESH_REPLAY,
                         outcome=OUTCOME_SECURITY,
                         reason_code=AUTH_REFRESH_REPLAY_DETECTED,
                         user_id=user_id,
@@ -164,7 +148,11 @@ async def refresh(
                         ip=ip_value,
                         user_agent=ua_value,
                         request_id=rid,
-                        details_json={"token_id": int(token_row["id"])},
+                        details_json={
+                            "token_id": int(token_row["id"]),
+                            "revoked_count": int(revoked_count),
+                            "scope": "session_chain",
+                        },
                     )
                     pending_error = AuthError(
                         AUTH_REFRESH_REPLAY_DETECTED,
