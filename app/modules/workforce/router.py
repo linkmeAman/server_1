@@ -71,6 +71,36 @@ class EmployeeCreateRequest(BaseModel):
     employee_type: int | None = Field(default=0)
     status: int | None = Field(default=1)
     grade: int | None = Field(default=None)
+    # Contact additions
+    mobile2: str | None = Field(default=None, max_length=20)
+    country_code_2: str | None = Field(default="+91", max_length=10)
+    phone_no: str | None = Field(default=None, max_length=15)
+    # Emergency contact
+    ename: str | None = Field(default=None, max_length=100)
+    emobile: str | None = Field(default=None, max_length=20)
+    ecountry_code: str | None = Field(default="+91", max_length=10)
+    relation: str | None = Field(default=None, max_length=50)
+    # Official additions
+    exit_date: str | None = Field(default=None)
+    # Toggles (0 or 1)
+    user_account: int | None = Field(default=0)
+    is_admin: int | None = Field(default=0)
+    calculate_salary: int | None = Field(default=0)
+    is_parent: int | None = Field(default=0)
+    demo_owner: int | None = Field(default=0)
+    cash_collector: int | None = Field(default=0)
+    auto_assign_inq: int | None = Field(default=0)
+    qualifier: int | None = Field(default=0)
+    # Financial
+    tds_type: int | None = Field(default=0)
+    tds_percent: float | None = Field(default=None, ge=0, le=100)
+    rate_multiplier: float | None = Field(default=0.0, ge=0)
+    incentive_new: float | None = Field(default=None, ge=0)
+    incentive_renew: float | None = Field(default=None, ge=0)
+    p_incentive_c: float | None = Field(default=None, ge=0)
+    p_incentive_sc: float | None = Field(default=None, ge=0)
+    trainer_incentive: float | None = Field(default=None, ge=0)
+    mt_incentive: float | None = Field(default=None, ge=0)
 
     @field_validator("mobile")
     @classmethod
@@ -87,22 +117,13 @@ class EmployeeCreateRequest(BaseModel):
             raise ValueError("doj must be YYYY-MM-DD")
         return v.strip()
 
-    @field_validator("doe")
+    @field_validator("doe", "dob", "exit_date")
     @classmethod
-    def validate_doe(cls, v: str | None) -> str | None:
+    def validate_optional_dates(cls, v: str | None) -> str | None:
         if v is None:
             return None
         if not _DATE_RE.match(v.strip()):
-            raise ValueError("doe must be YYYY-MM-DD")
-        return v.strip()
-
-    @field_validator("dob")
-    @classmethod
-    def validate_dob(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
-        if not _DATE_RE.match(v.strip()):
-            raise ValueError("dob must be YYYY-MM-DD")
+            raise ValueError("date must be YYYY-MM-DD")
         return v.strip()
 
     @field_validator("gender")
@@ -161,6 +182,36 @@ class EmployeeUpdateRequest(BaseModel):
     employee_type: int | None = Field(default=None)
     status: int | None = Field(default=None)
     grade: int | None = Field(default=None)
+    # Contact additions
+    mobile2: str | None = Field(default=None, max_length=20)
+    country_code_2: str | None = Field(default=None, max_length=10)
+    phone_no: str | None = Field(default=None, max_length=15)
+    # Emergency contact
+    ename: str | None = Field(default=None, max_length=100)
+    emobile: str | None = Field(default=None, max_length=20)
+    ecountry_code: str | None = Field(default=None, max_length=10)
+    relation: str | None = Field(default=None, max_length=50)
+    # Official additions
+    exit_date: str | None = Field(default=None)
+    # Toggles (0 or 1)
+    user_account: int | None = Field(default=None)
+    is_admin: int | None = Field(default=None)
+    calculate_salary: int | None = Field(default=None)
+    is_parent: int | None = Field(default=None)
+    demo_owner: int | None = Field(default=None)
+    cash_collector: int | None = Field(default=None)
+    auto_assign_inq: int | None = Field(default=None)
+    qualifier: int | None = Field(default=None)
+    # Financial
+    tds_type: int | None = Field(default=None)
+    tds_percent: float | None = Field(default=None, ge=0, le=100)
+    rate_multiplier: float | None = Field(default=None, ge=0)
+    incentive_new: float | None = Field(default=None, ge=0)
+    incentive_renew: float | None = Field(default=None, ge=0)
+    p_incentive_c: float | None = Field(default=None, ge=0)
+    p_incentive_sc: float | None = Field(default=None, ge=0)
+    trainer_incentive: float | None = Field(default=None, ge=0)
+    mt_incentive: float | None = Field(default=None, ge=0)
 
     @field_validator("mobile")
     @classmethod
@@ -172,7 +223,7 @@ class EmployeeUpdateRequest(BaseModel):
             raise ValueError("mobile must be a valid phone number")
         return cleaned
 
-    @field_validator("doj", "doe", "dob")
+    @field_validator("doj", "doe", "dob", "exit_date")
     @classmethod
     def validate_dates(cls, v: str | None) -> str | None:
         if v is None:

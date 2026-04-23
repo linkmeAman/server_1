@@ -1316,6 +1316,9 @@ class WorkforceService:
             "lname": self._as_text(payload.get("lname")),
             "mobile": mobile,
             "country_code": self._as_text(payload.get("country_code")) or "+91",
+            "mobile2": self._as_text(payload.get("mobile2")),
+            "country_code_2": self._as_text(payload.get("country_code_2")) or "+91",
+            "phone_no": self._as_text(payload.get("phone_no")),
             "email": self._as_text(payload.get("email")),
             "personal_email": self._as_text(payload.get("personal_email")),
             "gender": self._as_text(payload.get("gender")),
@@ -1325,6 +1328,10 @@ class WorkforceService:
             "state": self._as_text(payload.get("state")),
             "country": self._as_text(payload.get("country")),
             "pincode": self._as_text(payload.get("pincode")),
+            "ename": self._as_text(payload.get("ename")),
+            "emobile": self._as_text(payload.get("emobile")),
+            "ecountry_code": self._as_text(payload.get("ecountry_code")) or "+91",
+            "relation": self._as_text(payload.get("relation")),
             "bid": self._as_int(payload.get("bid")) or 0,
         }
         contact_data = {k: v for k, v in contact_data.items() if v is not None}
@@ -1335,6 +1342,7 @@ class WorkforceService:
             "position_id": position_id,
             "doj": doj,
             "doe": self._as_text(payload.get("doe")),
+            "exit_date": self._as_text(payload.get("exit_date")),
             "workshift_id": self._as_int(payload.get("workshift_id")),
             "workshift_in_time": self._as_text(payload.get("workshift_in_time")),
             "workshift_out_time": self._as_text(payload.get("workshift_out_time")),
@@ -1346,6 +1354,25 @@ class WorkforceService:
             "grade": self._as_int(payload.get("grade")),
             "bid": self._as_int(payload.get("bid")) or 0,
             "park": 0,
+            # Toggles
+            "user_account": self._as_int(payload.get("user_account")) or 0,
+            "is_admin": self._as_int(payload.get("is_admin")) or 0,
+            "calculate_salary": self._as_int(payload.get("calculate_salary")) or 0,
+            "is_parent": self._as_int(payload.get("is_parent")) or 0,
+            "demo_owner": self._as_int(payload.get("demo_owner")) or 0,
+            "cash_collector": self._as_int(payload.get("cash_collector")) or 0,
+            "auto_assign_inq": self._as_int(payload.get("auto_assign_inq")) or 0,
+            "qualifier": self._as_int(payload.get("qualifier")) or 0,
+            # Financial
+            "tds_type": self._as_int(payload.get("tds_type")) or 0,
+            "tds_percent": payload.get("tds_percent"),
+            "rate_multiplier": payload.get("rate_multiplier"),
+            "incentive_new": payload.get("incentive_new"),
+            "incentive_renew": payload.get("incentive_renew"),
+            "p_incentive_c": payload.get("p_incentive_c"),
+            "p_incentive_sc": payload.get("p_incentive_sc"),
+            "trainer_incentive": payload.get("trainer_incentive"),
+            "mt_incentive": payload.get("mt_incentive"),
         }
         employee_data = {k: v for k, v in employee_data.items() if v is not None}
 
@@ -1390,15 +1417,22 @@ class WorkforceService:
 
         contact_data: dict[str, Any] = {}
         for field in ("fname", "mname", "lname", "mobile", "country_code",
+                      "mobile2", "country_code_2", "phone_no",
                       "email", "personal_email", "gender", "dob",
-                      "address", "city", "state", "country", "pincode"):
+                      "address", "city", "state", "country", "pincode",
+                      "ename", "emobile", "ecountry_code", "relation"):
             if field in payload:
                 contact_data[field] = self._as_text(payload[field]) if isinstance(payload[field], str) else payload[field]
 
         employee_data: dict[str, Any] = {}
-        for field in ("ecode", "department_id", "position_id", "doj", "doe",
+        for field in ("ecode", "department_id", "position_id", "doj", "doe", "exit_date",
                       "workshift_id", "workshift_in_time", "workshift_out_time",
-                      "salary_type", "salary", "allowance", "grade"):
+                      "salary_type", "salary", "allowance", "grade",
+                      "user_account", "is_admin", "calculate_salary", "is_parent",
+                      "demo_owner", "cash_collector", "auto_assign_inq", "qualifier",
+                      "tds_type", "tds_percent", "rate_multiplier",
+                      "incentive_new", "incentive_renew", "p_incentive_c", "p_incentive_sc",
+                      "trainer_incentive", "mt_incentive"):
             if field in payload:
                 employee_data[field] = payload[field]
         if "employee_type" in payload:

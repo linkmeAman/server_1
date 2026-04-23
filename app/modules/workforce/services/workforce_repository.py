@@ -1715,9 +1715,11 @@ class WorkforceRepository:
         fields = [
             "fname", "mname", "lname",
             "mobile", "country_code",
+            "mobile2", "country_code_2", "phone_no",
             "email", "personal_email",
             "gender", "dob",
             "address", "city", "state", "country", "pincode",
+            "ename", "emobile", "ecountry_code", "relation",
             "bid",
         ]
         cols = [f for f in fields if data.get(f) is not None]
@@ -1746,9 +1748,11 @@ class WorkforceRepository:
         allowed = {
             "fname", "mname", "lname",
             "mobile", "country_code",
+            "mobile2", "country_code_2", "phone_no",
             "email", "personal_email",
             "gender", "dob",
             "address", "city", "state", "country", "pincode",
+            "ename", "emobile", "ecountry_code", "relation",
         }
         to_set = {k: v for k, v in data.items() if k in allowed}
         if not to_set:
@@ -1772,6 +1776,11 @@ class WorkforceRepository:
             "workshift_id", "workshift_in_time", "workshift_out_time", "workshift_hours",
             "salary_type", "salary", "allowance",
             "type", "status", "grade", "bid", "park",
+            "user_account", "is_admin", "calculate_salary", "is_parent",
+            "demo_owner", "cash_collector", "auto_assign_inq", "qualifier",
+            "tds_type", "tds_percent", "rate_multiplier",
+            "incentive_new", "incentive_renew", "p_incentive_c", "p_incentive_sc",
+            "trainer_incentive", "mt_incentive",
         ]
         cols = [f for f in fields if data.get(f) is not None]
         col_sql = ", ".join(cols)
@@ -1799,6 +1808,11 @@ class WorkforceRepository:
             "workshift_id", "workshift_in_time", "workshift_out_time", "workshift_hours",
             "salary_type", "salary", "allowance",
             "type", "status", "grade",
+            "user_account", "is_admin", "calculate_salary", "is_parent",
+            "demo_owner", "cash_collector", "auto_assign_inq", "qualifier",
+            "tds_type", "tds_percent", "rate_multiplier",
+            "incentive_new", "incentive_renew", "p_incentive_c", "p_incentive_sc",
+            "trainer_incentive", "mt_incentive",
         }
         to_set = {k: v for k, v in data.items() if k in allowed}
         if not to_set:
