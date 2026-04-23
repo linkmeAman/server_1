@@ -1253,6 +1253,179 @@ class WorkforceService:
                 normalized[field] = self._coerce_json(value)
         return normalized
 
+    # -------------------------------------------------------------------------
+    # Employee form-meta / create / update
+    # -------------------------------------------------------------------------
+
+    async def get_employee_form_meta(
+        self,
+        main_db: AsyncSession,
+        central_db: AsyncSession,
+    ) -> dict[str, Any]:
+        departments = await self.repo.list_departments(central_db)
+        positions = await self.repo.list_positions(central_db)
+        workshifts = await self.repo.list_workshifts(main_db)
+        return {
+            "departments": departments,
+            "positions": positions,
+            "workshifts": workshifts,
+            "statuses": self.STATUS_OPTIONS,
+            "genders": [
+                {"value": "Male", "label": "Male"},
+                {"value": "Female", "label": "Female"},
+                {"value": "Other", "label": "Other"},
+            ],
+            "salary_types": [
+                {"value": 1, "label": "Fixed Salary"},
+                {"value": 2, "label": "Per Day"},
+                {"value": 3, "label": "Per Hour"},
+            ],
+            "employee_types": [
+                {"value": 0, "label": "Regular"},
+                {"value": 1, "label": "Franchisee"},
+            ],
+        }
+
+    async def create_employee(
+        self,
+        main_db: AsyncSession,
+        central_db: AsyncSession,
+        payload: dict[str, Any],
+        created_by: int,
+    ) -> dict[str, Any]:
+        mobile = self._as_text(payload.get("mobile"))
+        if not mobile:
+            raise HTTPException(status_code=422, detail="mobile is required")
+        # Strip to digits for global uniqueness check
+        if not await self.repo.check_mobile_unique(main_db, mobile):
+            raise HTTPException(status_code=409, detail="Mobile number already registered")
+
+        fname = self._as_text(payload.get("fname"))
+        if not fname:
+            raise HTTPException(status_code=422, detail="fname (first name) is required")
+
+        department_id = self._as_int(payload.get("department_id"))
+        position_id = self._as_int(payload.get("position_id"))
+        doj = self._as_text(payload.get("doj"))
+        if not doj:
+            raise HTTPException(status_code=422, detail="doj (date of joining) is required")
+
+        contact_data: dict[str, Any] = {
+            "fname": fname,
+            "mname": self._as_text(payload.get("mname")),
+            "lname": self._as_text(payload.get("lname")),
+            "mobile": mobile,
+            "country_code": self._as_text(payload.get("country_code")) or "+91",
+            "email": self._as_text(payload.get("email")),
+            "personal_email": self._as_text(payload.get("personal_email")),
+            "gender": self._as_text(payload.get("gender")),
+            "dob": self._as_text(payload.get("dob")),
+            "address": self._as_text(payload.get("address")),
+            "city": self._as_text(payload.get("city")),
+            "state": self._as_text(payload.get("state")),
+            "country": self._as_text(payload.get("country")),
+            "pincode": self._as_text(payload.get("pincode")),
+            "bid": self._as_int(payload.get("bid")) or 0,
+        }
+        contact_data = {k: v for k, v in contact_data.items() if v is not None}
+
+        employee_data: dict[str, Any] = {
+            "ecode": self._as_text(payload.get("ecode")),
+            "department_id": department_id,
+            "position_id": position_id,
+            "doj": doj,
+            "doe": self._as_text(payload.get("doe")),
+            "workshift_id": self._as_int(payload.get("workshift_id")),
+            "workshift_in_time": self._as_text(payload.get("workshift_in_time")),
+            "workshift_out_time": self._as_text(payload.get("workshift_out_time")),
+            "salary_type": self._as_int(payload.get("salary_type")) or 1,
+            "salary": payload.get("salary"),
+            "allowance": payload.get("allowance"),
+            "type": self._as_int(payload.get("employee_type")) or 0,
+            "status": self._as_int(payload.get("status")) if payload.get("status") is not None else 1,
+            "grade": self._as_int(payload.get("grade")),
+            "bid": self._as_int(payload.get("bid")) or 0,
+            "park": 0,
+        }
+        employee_data = {k: v for k, v in employee_data.items() if v is not None}
+
+        contact_id = await self.repo.create_contact(main_db, contact_data)
+        employee_data["contact_id"] = contact_id
+        employee_id = await self.repo.create_employee_record(main_db, employee_data)
+        await main_db.commit()
+
+        row = await self.repo.get_employee(main_db, employee_id)
+        if row is None:
+            raise HTTPException(status_code=500, detail="Employee created but could not be loaded")
+
+        departments = await self.repo.list_departments(central_db)
+        positions = await self.repo.list_positions(central_db)
+        return {
+            "employee": self._serialize_employee_row(
+                row,
+                department_map=self._map_lookup_by_id(departments),
+                position_map=self._map_lookup_by_id(positions),
+            )
+        }
+
+    async def update_employee(
+        self,
+        main_db: AsyncSession,
+        central_db: AsyncSession,
+        employee_id: int,
+        payload: dict[str, Any],
+        modified_by: int,
+    ) -> dict[str, Any]:
+        existing = await self.repo.get_employee(main_db, employee_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Employee not found")
+
+        contact_id = self._as_int(existing.get("contact_id"))
+
+        # Mobile uniqueness check only if mobile is being changed
+        new_mobile = self._as_text(payload.get("mobile"))
+        if new_mobile and new_mobile != self._as_text(existing.get("mobile")):
+            if not await self.repo.check_mobile_unique(main_db, new_mobile, exclude_contact_id=contact_id):
+                raise HTTPException(status_code=409, detail="Mobile number already registered")
+
+        contact_data: dict[str, Any] = {}
+        for field in ("fname", "mname", "lname", "mobile", "country_code",
+                      "email", "personal_email", "gender", "dob",
+                      "address", "city", "state", "country", "pincode"):
+            if field in payload:
+                contact_data[field] = self._as_text(payload[field]) if isinstance(payload[field], str) else payload[field]
+
+        employee_data: dict[str, Any] = {}
+        for field in ("ecode", "department_id", "position_id", "doj", "doe",
+                      "workshift_id", "workshift_in_time", "workshift_out_time",
+                      "salary_type", "salary", "allowance", "grade"):
+            if field in payload:
+                employee_data[field] = payload[field]
+        if "employee_type" in payload:
+            employee_data["type"] = payload["employee_type"]
+        if "status" in payload:
+            employee_data["status"] = self._as_int(payload["status"])
+
+        if contact_id is not None and contact_data:
+            await self.repo.update_contact(main_db, contact_id, contact_data)
+        if employee_data:
+            await self.repo.update_employee_record(main_db, employee_id, employee_data)
+        await main_db.commit()
+
+        row = await self.repo.get_employee(main_db, employee_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Employee not found after update")
+
+        departments = await self.repo.list_departments(central_db)
+        positions = await self.repo.list_positions(central_db)
+        return {
+            "employee": self._serialize_employee_row(
+                row,
+                department_map=self._map_lookup_by_id(departments),
+                position_map=self._map_lookup_by_id(positions),
+            )
+        }
+
     @staticmethod
     def _normalize_full_name(full_name: Any, first_name: Any, middle_name: Any, last_name: Any) -> str | None:
         explicit_full_name = str(full_name or "").strip()

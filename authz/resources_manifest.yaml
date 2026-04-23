@@ -43,3 +43,11 @@ resources:
     name: Event Calendar
     parent: reports
     sort_order: 70
+  - code: workforce
+    name: Workforce
+    parent: null
+    sort_order: 40
+  - code: workforce.employee
+    name: Employee
+    parent: workforce
+    sort_order: 10

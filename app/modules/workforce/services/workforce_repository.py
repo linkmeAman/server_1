@@ -1661,3 +1661,151 @@ class WorkforceRepository:
             if candidate in columns:
                 return candidate
         return None
+
+    # -------------------------------------------------------------------------
+    # Employee CRUD helpers
+    # -------------------------------------------------------------------------
+
+    async def list_workshifts(self, db: AsyncSession) -> list[dict[str, Any]]:
+        """Return workshift options from the workshift table."""
+        try:
+            result = await db.execute(
+                text(
+                    """
+                    SELECT
+                        id,
+                        COALESCE(workshift_name, name, CONCAT('Workshift ', id)) AS name,
+                        COALESCE(in_time, workshift_in_time, '') AS in_time,
+                        COALESCE(out_time, workshift_out_time, '') AS out_time,
+                        COALESCE(total_hours, workshift_hours, '') AS hours
+                    FROM workshift
+                    WHERE (park IS NULL OR park = 0)
+                    ORDER BY id ASC
+                    """
+                )
+            )
+            return [dict(row._mapping) for row in result.fetchall()]
+        except Exception:
+            # Table may not exist on all tenants — return empty list gracefully
+            return []
+
+    async def check_mobile_unique(
+        self,
+        db: AsyncSession,
+        mobile: str,
+        exclude_contact_id: int | None = None,
+    ) -> bool:
+        """Return True if mobile is available (not used by any active contact)."""
+        sql = "SELECT id FROM contact WHERE mobile = :mobile AND (park IS NULL OR park = 0)"
+        params: dict[str, Any] = {"mobile": mobile.strip()}
+        if exclude_contact_id is not None:
+            sql += " AND id != :exclude_id"
+            params["exclude_id"] = int(exclude_contact_id)
+        sql += " LIMIT 1"
+        result = await db.execute(text(sql), params)
+        row = result.fetchone()
+        return row is None  # True = mobile is free
+
+    async def create_contact(
+        self,
+        db: AsyncSession,
+        data: dict[str, Any],
+    ) -> int:
+        """Insert a new contact row and return the new contact_id."""
+        fields = [
+            "fname", "mname", "lname",
+            "mobile", "country_code",
+            "email", "personal_email",
+            "gender", "dob",
+            "address", "city", "state", "country", "pincode",
+            "bid",
+        ]
+        cols = [f for f in fields if data.get(f) is not None]
+        if not cols:
+            raise ValueError("No contact fields provided")
+
+        col_sql = ", ".join(cols)
+        val_sql = ", ".join(f":{f}" for f in cols)
+        result = await db.execute(
+            text(f"INSERT INTO contact ({col_sql}) VALUES ({val_sql})"),
+            {f: data[f] for f in cols},
+        )
+        await db.flush()
+        contact_id = result.lastrowid
+        if not contact_id:
+            raise RuntimeError("Failed to insert contact row")
+        return int(contact_id)
+
+    async def update_contact(
+        self,
+        db: AsyncSession,
+        contact_id: int,
+        data: dict[str, Any],
+    ) -> None:
+        """Update writable contact fields by contact_id."""
+        allowed = {
+            "fname", "mname", "lname",
+            "mobile", "country_code",
+            "email", "personal_email",
+            "gender", "dob",
+            "address", "city", "state", "country", "pincode",
+        }
+        to_set = {k: v for k, v in data.items() if k in allowed}
+        if not to_set:
+            return
+        set_clause = ", ".join(f"{k} = :{k}" for k in to_set)
+        params = {**to_set, "contact_id": int(contact_id)}
+        await db.execute(
+            text(f"UPDATE contact SET {set_clause} WHERE id = :contact_id"),
+            params,
+        )
+
+    async def create_employee_record(
+        self,
+        db: AsyncSession,
+        data: dict[str, Any],
+    ) -> int:
+        """Insert a new employee row and return the new employee_id."""
+        fields = [
+            "contact_id", "ecode", "department_id", "position_id",
+            "doj", "doe", "exit_date",
+            "workshift_id", "workshift_in_time", "workshift_out_time", "workshift_hours",
+            "salary_type", "salary", "allowance",
+            "type", "status", "grade", "bid", "park",
+        ]
+        cols = [f for f in fields if data.get(f) is not None]
+        col_sql = ", ".join(cols)
+        val_sql = ", ".join(f":{f}" for f in cols)
+        result = await db.execute(
+            text(f"INSERT INTO employee ({col_sql}) VALUES ({val_sql})"),
+            {f: data[f] for f in cols},
+        )
+        await db.flush()
+        employee_id = result.lastrowid
+        if not employee_id:
+            raise RuntimeError("Failed to insert employee row")
+        return int(employee_id)
+
+    async def update_employee_record(
+        self,
+        db: AsyncSession,
+        employee_id: int,
+        data: dict[str, Any],
+    ) -> None:
+        """Update writable employee fields by employee_id."""
+        allowed = {
+            "ecode", "department_id", "position_id",
+            "doj", "doe", "exit_date",
+            "workshift_id", "workshift_in_time", "workshift_out_time", "workshift_hours",
+            "salary_type", "salary", "allowance",
+            "type", "status", "grade",
+        }
+        to_set = {k: v for k, v in data.items() if k in allowed}
+        if not to_set:
+            return
+        set_clause = ", ".join(f"{k} = :{k}" for k in to_set)
+        params = {**to_set, "employee_id": int(employee_id)}
+        await db.execute(
+            text(f"UPDATE employee SET {set_clause} WHERE id = :employee_id"),
+            params,
+        )
