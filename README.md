@@ -2,6 +2,14 @@
 
 Canonical Python backend layout is now rooted at `app/`.
 
+Use Python 3.10+ for local development. From the workspace root you can prepare
+this service with:
+
+```bash
+bash scripts/setup-dev.sh python
+bash scripts/dev-python.sh
+```
+
 ## Structure
 
 ```text
