@@ -1349,13 +1349,27 @@ class WorkforceService:
             "state": self._as_text(payload.get("state")),
             "country": self._as_text(payload.get("country")),
             "pincode": self._as_text(payload.get("pincode")),
-            "ename": self._as_text(payload.get("ename")),
-            "emobile": self._as_text(payload.get("emobile")),
-            "ecountry_code": self._as_text(payload.get("ecountry_code")) or "+91",
-            "relation": self._as_text(payload.get("relation")),
             "bid": self._as_int(payload.get("bid")) or 0,
         }
         contact_data = {k: v for k, v in contact_data.items() if v is not None}
+
+        # Handle emergency contact — stored as a separate contact row linked via parent_id
+        ename = self._as_text(payload.get("ename"))
+        emobile = self._as_text(payload.get("emobile"))
+        ecountry_code = self._as_text(payload.get("ecountry_code")) or "+91"
+        relation = self._as_text(payload.get("relation"))
+        if ename and emobile and relation:
+            name_parts = ename.strip().split(" ", 1)
+            emergency_data: dict[str, Any] = {
+                "fname": name_parts[0],
+                "lname": name_parts[1] if len(name_parts) > 1 else "",
+                "mobile": emobile,
+                "country_code": ecountry_code,
+                "bid": self._as_int(payload.get("bid")) or 0,
+            }
+            parent_contact_id = await self.repo.create_contact(main_db, emergency_data)
+            contact_data["parent_id"] = parent_contact_id
+            contact_data["relation"] = relation
 
         employee_data: dict[str, Any] = {
             "ecode": self._as_text(payload.get("ecode")),
@@ -1440,10 +1454,31 @@ class WorkforceService:
         for field in ("fname", "mname", "lname", "mobile", "country_code",
                       "mobile2", "country_code_2", "phone_no",
                       "email", "personal_email", "gender", "dob",
-                      "address", "city", "state", "country", "pincode",
-                      "ename", "emobile", "ecountry_code", "relation"):
+                      "address", "city", "state", "country", "pincode"):
             if field in payload:
                 contact_data[field] = self._as_text(payload[field]) if isinstance(payload[field], str) else payload[field]
+
+        # Handle emergency contact — create a new emergency contact row and link via parent_id
+        ename = self._as_text(payload.get("ename"))
+        emobile = self._as_text(payload.get("emobile"))
+        ecountry_code = self._as_text(payload.get("ecountry_code")) or "+91"
+        relation = self._as_text(payload.get("relation"))
+        if ename and emobile and relation:
+            name_parts = ename.strip().split(" ", 1)
+            emergency_data: dict[str, Any] = {
+                "fname": name_parts[0],
+                "lname": name_parts[1] if len(name_parts) > 1 else "",
+                "mobile": emobile,
+                "country_code": ecountry_code,
+                "bid": self._as_int(existing.get("bid")) or 0,
+            }
+            parent_contact_id = await self.repo.create_contact(main_db, emergency_data)
+            contact_data["parent_id"] = parent_contact_id
+            contact_data["relation"] = relation
+        elif "relation" in payload and not ename:
+            # Allow updating just the relation without changing emergency contact
+            if relation is not None:
+                contact_data["relation"] = relation
 
         employee_data: dict[str, Any] = {}
         for field in ("ecode", "department_id", "position_id", "doj", "doe", "exit_date",

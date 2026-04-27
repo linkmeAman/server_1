@@ -200,13 +200,14 @@ class WorkforceRepository:
                     c.state,
                     c.country,
                     c.pincode,
-                    c.ename,
-                    c.emobile,
-                    c.ecountry_code,
                     c.relation,
+                    CONCAT_WS(' ', NULLIF(TRIM(ec.fname), ''), NULLIF(TRIM(ec.lname), '')) AS ename,
+                    ec.mobile AS emobile,
+                    ec.country_code AS ecountry_code,
                     CONCAT_WS(' ', NULLIF(TRIM(c.fname), ''), NULLIF(TRIM(c.mname), ''), NULLIF(TRIM(c.lname), '')) AS full_name
                 FROM employee e
                 LEFT JOIN contact c ON c.id = e.contact_id
+                LEFT JOIN contact ec ON ec.id = c.parent_id
                 WHERE e.id = :employee_id
                   AND (e.park IS NULL OR e.park = 0)
                 LIMIT 1
@@ -1740,7 +1741,7 @@ class WorkforceRepository:
             "email", "personal_email",
             "gender", "dob",
             "address", "city", "state", "country", "pincode",
-            "ename", "emobile", "ecountry_code", "relation",
+            "parent_id", "relation",
             "bid",
         ]
         cols = [f for f in fields if data.get(f) is not None]
@@ -1773,7 +1774,7 @@ class WorkforceRepository:
             "email", "personal_email",
             "gender", "dob",
             "address", "city", "state", "country", "pincode",
-            "ename", "emobile", "ecountry_code", "relation",
+            "parent_id", "relation",
         }
         to_set = {k: v for k, v in data.items() if k in allowed}
         if not to_set:
