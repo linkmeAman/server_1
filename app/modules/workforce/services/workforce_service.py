@@ -962,6 +962,14 @@ class WorkforceService:
             "emobile": self._as_text(row.get("emobile")),
             "ecountry_code": self._as_text(row.get("ecountry_code")),
             "relation": self._as_text(row.get("relation")),
+            "document_type_id": self._as_int(row.get("document_type_id")),
+            "document_number": self._as_text(row.get("document_number")),
+            "document_image": self._as_text(row.get("document_image")),
+            "document_type_id_2": self._as_int(row.get("document_type_id_2")),
+            "document_number_2": self._as_text(row.get("document_number_2")),
+            "document_image_2": self._as_text(row.get("document_image_2")),
+            "document_type_id_3": self._as_int(row.get("document_type_id_3")),
+            "document_image_3": self._as_text(row.get("document_image_3")),
             "calculate_salary": self._as_int(row.get("calculate_salary")),
             "is_parent": self._as_int(row.get("is_parent")),
             "demo_owner": self._as_int(row.get("demo_owner")),
@@ -1286,15 +1294,17 @@ class WorkforceService:
         departments = await self.repo.list_departments(central_db)
         positions = await self.repo.list_positions(central_db)
         workshifts = await self.repo.list_workshifts(main_db)
+        document_types = await self.repo.list_document_types(main_db)
         return {
             "departments": departments,
             "positions": positions,
             "workshifts": workshifts,
             "statuses": self.STATUS_OPTIONS,
+            "document_types": document_types,
             "genders": [
-                {"value": "Male", "label": "Male"},
-                {"value": "Female", "label": "Female"},
-                {"value": "Other", "label": "Other"},
+                {"value": "M", "label": "Male"},
+                {"value": "F", "label": "Female"},
+                {"value": "O", "label": "Other"},
             ],
             "salary_types": [
                 {"value": 1, "label": "Fixed Salary"},
@@ -1349,6 +1359,11 @@ class WorkforceService:
             "state": self._as_text(payload.get("state")),
             "country": self._as_text(payload.get("country")),
             "pincode": self._as_text(payload.get("pincode")),
+            "document_type_id": self._as_int(payload.get("document_type_id")),
+            "document_number": self._as_text(payload.get("document_number")),
+            "document_type_id_2": self._as_int(payload.get("document_type_id_2")),
+            "document_number_2": self._as_text(payload.get("document_number_2")),
+            "document_type_id_3": self._as_int(payload.get("document_type_id_3")),
             "bid": self._as_int(payload.get("bid")) or 0,
         }
         contact_data = {k: v for k, v in contact_data.items() if v is not None}
@@ -1454,7 +1469,10 @@ class WorkforceService:
         for field in ("fname", "mname", "lname", "mobile", "country_code",
                       "mobile2", "country_code_2", "phone_no",
                       "email", "personal_email", "gender", "dob",
-                      "address", "city", "state", "country", "pincode"):
+                      "address", "city", "state", "country", "pincode",
+                      "document_type_id", "document_number",
+                      "document_type_id_2", "document_number_2",
+                      "document_type_id_3"):
             if field in payload:
                 contact_data[field] = self._as_text(payload[field]) if isinstance(payload[field], str) else payload[field]
 
@@ -1486,6 +1504,7 @@ class WorkforceService:
                       "salary_type", "salary", "allowance", "grade",
                       "user_account", "is_admin", "calculate_salary", "is_parent",
                       "demo_owner", "cash_collector", "auto_assign_inq", "qualifier",
+                      "associate", "on_notice",
                       "tds_type", "tds_percent", "rate_multiplier",
                       "incentive_new", "incentive_renew", "p_incentive_c", "p_incentive_sc",
                       "trainer_incentive", "mt_incentive"):

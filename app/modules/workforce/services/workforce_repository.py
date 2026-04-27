@@ -201,6 +201,14 @@ class WorkforceRepository:
                     c.country,
                     c.pincode,
                     c.relation,
+                    c.document_type_id,
+                    c.document_number,
+                    c.document_image,
+                    c.document_type_id_2,
+                    c.document_number_2,
+                    c.document_image_2,
+                    c.document_type_id_3,
+                    c.document_image_3,
                     CONCAT_WS(' ', NULLIF(TRIM(ec.fname), ''), NULLIF(TRIM(ec.lname), '')) AS ename,
                     ec.mobile AS emobile,
                     ec.country_code AS ecountry_code,
@@ -1711,6 +1719,23 @@ class WorkforceRepository:
             # Table may not exist on all tenants — return empty list gracefully
             return []
 
+    async def list_document_types(self, db: AsyncSession) -> list[dict[str, Any]]:
+        """Return document type options from the contact_document table."""
+        try:
+            result = await db.execute(
+                text(
+                    """
+                    SELECT id, name
+                    FROM contact_document
+                    WHERE (park IS NULL OR park = 0)
+                    ORDER BY id ASC
+                    """
+                )
+            )
+            return [dict(row._mapping) for row in result.fetchall()]
+        except Exception:
+            return []
+
     async def check_mobile_unique(
         self,
         db: AsyncSession,
@@ -1742,6 +1767,9 @@ class WorkforceRepository:
             "gender", "dob",
             "address", "city", "state", "country", "pincode",
             "parent_id", "relation",
+            "document_type_id", "document_number", "document_image",
+            "document_type_id_2", "document_number_2", "document_image_2",
+            "document_type_id_3", "document_image_3",
             "bid",
         ]
         cols = [f for f in fields if data.get(f) is not None]
@@ -1775,6 +1803,9 @@ class WorkforceRepository:
             "gender", "dob",
             "address", "city", "state", "country", "pincode",
             "parent_id", "relation",
+            "document_type_id", "document_number", "document_image",
+            "document_type_id_2", "document_number_2", "document_image_2",
+            "document_type_id_3", "document_image_3",
         }
         to_set = {k: v for k, v in data.items() if k in allowed}
         if not to_set:
