@@ -171,12 +171,16 @@ class WorkforceService:
         department_map = self._map_lookup_by_id(departments)
         position_map = self._map_lookup_by_id(positions)
 
+        parent_ids = await self.repo.get_employee_parent_ids(main_db, employee_id)
+        serialized = self._serialize_employee_row(
+            row,
+            department_map=department_map,
+            position_map=position_map,
+        )
+        serialized["parent_position_ids"] = parent_ids
+
         return {
-            "employee": self._serialize_employee_row(
-                row,
-                department_map=department_map,
-                position_map=position_map,
-            ),
+            "employee": serialized,
             "future_scope": FUTURE_SCOPE_EMPLOYEE,
         }
 
@@ -1294,13 +1298,15 @@ class WorkforceService:
         departments = await self.repo.list_departments(central_db)
         positions = await self.repo.list_positions(central_db)
         workshifts = await self.repo.list_workshifts(main_db)
-        document_types = await self.repo.list_document_types(main_db)
+        document_types = await self.repo.list_document_types(central_db)
+        all_employees = await self.repo.list_all_employees_simple(main_db)
         return {
             "departments": departments,
             "positions": positions,
             "workshifts": workshifts,
             "statuses": self.STATUS_OPTIONS,
             "document_types": document_types,
+            "all_employees": all_employees,
             "genders": [
                 {"value": "M", "label": "Male"},
                 {"value": "F", "label": "Female"},
@@ -1429,6 +1435,13 @@ class WorkforceService:
         contact_id = await self.repo.create_contact(main_db, contact_data)
         employee_data["contact_id"] = contact_id
         employee_id = await self.repo.create_employee_record(main_db, employee_data)
+
+        # Save parent positions if provided
+        parent_ids_raw = payload.get("parent_position_ids")
+        if parent_ids_raw and isinstance(parent_ids_raw, list):
+            parent_ids = [int(x) for x in parent_ids_raw if x is not None]
+            await self.repo.set_employee_parents(main_db, employee_id, parent_ids)
+
         await main_db.commit()
 
         row = await self.repo.get_employee(main_db, employee_id)
@@ -1519,6 +1532,13 @@ class WorkforceService:
             await self.repo.update_contact(main_db, contact_id, contact_data)
         if employee_data:
             await self.repo.update_employee_record(main_db, employee_id, employee_data)
+
+        # Save parent positions if provided
+        parent_ids_raw = payload.get("parent_position_ids")
+        if parent_ids_raw is not None and isinstance(parent_ids_raw, list):
+            parent_ids = [int(x) for x in parent_ids_raw if x is not None]
+            await self.repo.set_employee_parents(main_db, employee_id, parent_ids)
+
         await main_db.commit()
 
         row = await self.repo.get_employee(main_db, employee_id)

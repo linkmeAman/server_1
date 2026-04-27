@@ -1697,36 +1697,51 @@ class WorkforceRepository:
     # -------------------------------------------------------------------------
 
     async def list_workshifts(self, db: AsyncSession) -> list[dict[str, Any]]:
-        """Return workshift options from the workshift table."""
-        try:
-            result = await db.execute(
-                text(
-                    """
-                    SELECT
-                        id,
-                        COALESCE(workshift_name, name, CONCAT('Workshift ', id)) AS name,
-                        COALESCE(in_time, workshift_in_time, '') AS in_time,
-                        COALESCE(out_time, workshift_out_time, '') AS out_time,
-                        COALESCE(total_hours, workshift_hours, '') AS hours
-                    FROM workshift
-                    WHERE (park IS NULL OR park = 0)
-                    ORDER BY id ASC
-                    """
-                )
-            )
-            return [dict(row._mapping) for row in result.fetchall()]
-        except Exception:
-            # Table may not exist on all tenants — return empty list gracefully
-            return []
+        """Return workshift options from the workshift table.
+
+        Tries multiple column-name variants since the schema differs across tenants.
+        PHP confirmed the primary column is called ``workshift`` (not ``name``).
+        """
+        # Each query is tried in order; on a column-not-found error the session is
+        # rolled back and the next variant is attempted.
+        _queries = [
+            # Variant 1: 'workshift' column + in_time/out_time
+            """SELECT id, workshift AS name,
+                      COALESCE(in_time, '') AS in_time,
+                      COALESCE(out_time, '') AS out_time
+               FROM workshift
+               WHERE (park IS NULL OR park = 0)
+               ORDER BY id ASC""",
+            # Variant 2: 'workshift' column only (no in_time/out_time columns)
+            """SELECT id, workshift AS name, '' AS in_time, '' AS out_time
+               FROM workshift
+               WHERE (park IS NULL OR park = 0)
+               ORDER BY id ASC""",
+            # Variant 3: 'name' column (alternate schema)
+            """SELECT id, name, '' AS in_time, '' AS out_time
+               FROM workshift
+               WHERE (park IS NULL OR park = 0)
+               ORDER BY id ASC""",
+        ]
+        for q in _queries:
+            try:
+                result = await db.execute(text(q))
+                return [dict(row._mapping) for row in result.fetchall()]
+            except Exception:
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass
+        return []
 
     async def list_document_types(self, db: AsyncSession) -> list[dict[str, Any]]:
-        """Return document type options from the contact_document table."""
+        """Return document type options from the ``document_type`` table (pf_central DB)."""
         try:
             result = await db.execute(
                 text(
                     """
                     SELECT id, name
-                    FROM contact_document
+                    FROM document_type
                     WHERE (park IS NULL OR park = 0)
                     ORDER BY id ASC
                     """
@@ -1735,6 +1750,74 @@ class WorkforceRepository:
             return [dict(row._mapping) for row in result.fetchall()]
         except Exception:
             return []
+
+    # ------------------------------------------------------------------
+    # Parent-position (employee_parent table)
+    # ------------------------------------------------------------------
+
+    async def list_all_employees_simple(
+        self, db: AsyncSession
+    ) -> list[dict[str, Any]]:
+        """Return id + full_name for all active, non-parked employees."""
+        try:
+            result = await db.execute(
+                text(
+                    """
+                    SELECT
+                        e.id,
+                        TRIM(CONCAT_WS(' ',
+                            NULLIF(TRIM(c.fname), ''),
+                            NULLIF(TRIM(c.mname), ''),
+                            NULLIF(TRIM(c.lname), '')
+                        )) AS full_name
+                    FROM employee e
+                    JOIN contact c ON c.id = e.contact_id
+                    WHERE (e.park IS NULL OR e.park = 0)
+                      AND (c.park IS NULL OR c.park = 0)
+                      AND e.status = 1
+                    ORDER BY full_name ASC
+                    """
+                )
+            )
+            return [dict(row._mapping) for row in result.fetchall()]
+        except Exception:
+            return []
+
+    async def get_employee_parent_ids(
+        self, db: AsyncSession, employee_id: int
+    ) -> list[int]:
+        """Return the list of parent employee IDs for the given employee."""
+        try:
+            result = await db.execute(
+                text(
+                    """
+                    SELECT parent_emp_id
+                    FROM employee_parent
+                    WHERE emp_id = :emp_id
+                    """
+                ),
+                {"emp_id": employee_id},
+            )
+            return [int(row[0]) for row in result.fetchall() if row[0] is not None]
+        except Exception:
+            return []
+
+    async def set_employee_parents(
+        self, db: AsyncSession, employee_id: int, parent_ids: list[int]
+    ) -> None:
+        """Replace all parent-position rows for an employee atomically."""
+        await db.execute(
+            text("DELETE FROM employee_parent WHERE emp_id = :emp_id"),
+            {"emp_id": employee_id},
+        )
+        for pid in parent_ids:
+            await db.execute(
+                text(
+                    "INSERT INTO employee_parent (emp_id, parent_emp_id) VALUES (:emp_id, :pid)"
+                ),
+                {"emp_id": employee_id, "pid": int(pid)},
+            )
+        await db.flush()
 
     async def check_mobile_unique(
         self,

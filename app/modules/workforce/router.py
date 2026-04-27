@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import mimetypes
+import os
 import re
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -91,6 +94,8 @@ class EmployeeCreateRequest(BaseModel):
     cash_collector: int | None = Field(default=0)
     auto_assign_inq: int | None = Field(default=0)
     qualifier: int | None = Field(default=0)
+    # Parent positions
+    parent_position_ids: list[int] | None = Field(default=None)
     # Financial
     tds_type: int | None = Field(default=0)
     tds_percent: float | None = Field(default=None, ge=0, le=100)
@@ -131,9 +136,11 @@ class EmployeeCreateRequest(BaseModel):
     def validate_gender(cls, v: str | None) -> str | None:
         if v is None:
             return None
-        if v not in {"Male", "Female", "Other"}:
-            raise ValueError("gender must be Male, Female, or Other")
-        return v
+        if v not in {"M", "F", "O", "Male", "Female", "Other"}:
+            raise ValueError("gender must be M, F, or O")
+        # Normalise to single-char representation stored in DB
+        _map = {"Male": "M", "Female": "F", "Other": "O"}
+        return _map.get(v, v)
 
     @field_validator("employee_type")
     @classmethod
@@ -202,6 +209,8 @@ class EmployeeUpdateRequest(BaseModel):
     cash_collector: int | None = Field(default=None)
     auto_assign_inq: int | None = Field(default=None)
     qualifier: int | None = Field(default=None)
+    # Parent positions
+    parent_position_ids: list[int] | None = Field(default=None)
     # Financial
     tds_type: int | None = Field(default=None)
     tds_percent: float | None = Field(default=None, ge=0, le=100)
@@ -237,9 +246,10 @@ class EmployeeUpdateRequest(BaseModel):
     def validate_gender(cls, v: str | None) -> str | None:
         if v is None:
             return None
-        if v not in {"Male", "Female", "Other"}:
-            raise ValueError("gender must be Male, Female, or Other")
-        return v
+        if v not in {"M", "F", "O", "Male", "Female", "Other"}:
+            raise ValueError("gender must be M, F, or O")
+        _map = {"Male": "M", "Female": "F", "Other": "O"}
+        return _map.get(v, v)
 
     @field_validator("employee_type")
     @classmethod
@@ -455,6 +465,41 @@ async def get_employee_form_meta(
     """Return dropdown options needed to render the employee create/edit form."""
     data = await service.get_employee_form_meta(main_db, central_db)
     return success_response(data=data, message="Employee form meta fetched").model_dump(mode="json")
+
+
+# Filename validation — allow only safe chars (alphanumeric, hyphens, underscores, dots)
+_SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
+
+
+@router.get("/documents/contact/{filename}")
+async def serve_contact_document(
+    filename: str,
+    _: CallerContext = Depends(require_any_caller),
+):
+    """Serve an uploaded contact/employee document image by filename.
+
+    Files are read from ``CONTACT_DOCUMENT_PATH`` (configured via env var).
+    Only filenames matching ``[A-Za-z0-9_.\\-]+`` are accepted to prevent
+    any path-traversal attacks.
+    """
+    if not _SAFE_FILENAME_RE.match(filename):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    from app.core.settings import get_settings  # local import to avoid circular deps
+
+    settings = get_settings()
+    base_dir = os.path.realpath(settings.CONTACT_DOCUMENT_PATH)
+    target = os.path.realpath(os.path.join(base_dir, filename))
+
+    # Guard against path traversal
+    if not target.startswith(base_dir + os.sep) and target != base_dir:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    if not os.path.isfile(target):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    media_type, _ = mimetypes.guess_type(filename)
+    return FileResponse(target, media_type=media_type or "application/octet-stream")
 
 
 @router.get("/employees/{employee_id}")

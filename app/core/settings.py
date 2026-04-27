@@ -156,6 +156,13 @@ class Settings(BaseSettings):
     AUTH_V2_BOOTSTRAP_ONLY: bool = os.getenv("AUTH_V2_BOOTSTRAP_ONLY", "True").lower() == "true"
     AUTH_SUPREME_CREATE_ENABLED: bool = os.getenv("AUTH_SUPREME_CREATE_ENABLED", "False").lower() == "true"
 
+    # File storage — contact / employee documents
+    # Absolute path to the directory that holds contact_document files.
+    # On the shared server this is typically ``<web_root>/content/contact_document``.
+    CONTACT_DOCUMENT_PATH: str = os.getenv(
+        "CONTACT_DOCUMENT_PATH", "../content/contact_document"
+    )
+
     # Redis / PRISM cache (Phase 3)
     # Format: redis://:password@host:port/db  or  redis://host:port/db
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
