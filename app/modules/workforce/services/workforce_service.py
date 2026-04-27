@@ -954,6 +954,27 @@ class WorkforceService:
             "auto_assign_inq": self._as_int(row.get("auto_assign_inq")),
             "associate": self._as_int(row.get("associate")),
             "qualifier": self._as_int(row.get("qualifier")),
+            "dob": self._as_date_text(row.get("dob")),
+            "mobile2": self._as_text(row.get("mobile2")),
+            "country_code_2": self._as_text(row.get("country_code_2")),
+            "phone_no": self._as_text(row.get("phone_no")),
+            "ename": self._as_text(row.get("ename")),
+            "emobile": self._as_text(row.get("emobile")),
+            "ecountry_code": self._as_text(row.get("ecountry_code")),
+            "relation": self._as_text(row.get("relation")),
+            "calculate_salary": self._as_int(row.get("calculate_salary")),
+            "is_parent": self._as_int(row.get("is_parent")),
+            "demo_owner": self._as_int(row.get("demo_owner")),
+            "cash_collector": self._as_int(row.get("cash_collector")),
+            "tds_type": self._as_int(row.get("tds_type")),
+            "tds_percent": row.get("tds_percent"),
+            "rate_multiplier": row.get("rate_multiplier"),
+            "incentive_new": row.get("incentive_new"),
+            "incentive_renew": row.get("incentive_renew"),
+            "p_incentive_c": row.get("p_incentive_c"),
+            "p_incentive_sc": row.get("p_incentive_sc"),
+            "trainer_incentive": row.get("trainer_incentive"),
+            "mt_incentive": row.get("mt_incentive"),
         }
 
     def _serialize_attendance_record_row(self, row: dict[str, Any]) -> dict[str, Any]:
@@ -1523,8 +1544,19 @@ class WorkforceService:
 
     @staticmethod
     def _as_time_text(value: Any) -> str | None:
+        """Convert a DB TIME value (timedelta or str) to 'HH:MM:SS' string."""
         if value is None:
             return None
+        # MySQL TIME columns come back as datetime.timedelta via SQLAlchemy
+        if hasattr(value, "total_seconds"):
+            total = int(value.total_seconds())
+            h = total // 3600
+            m = (total % 3600) // 60
+            s = total % 60
+            return f"{h:02d}:{m:02d}:{s:02d}"
+        # datetime.time object
+        if hasattr(value, "strftime"):
+            return value.strftime("%H:%M:%S")
         text_value = str(value).strip()
         return text_value or None
 
