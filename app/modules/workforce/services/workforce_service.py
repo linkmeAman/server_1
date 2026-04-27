@@ -1302,7 +1302,7 @@ class WorkforceService:
                 {"value": 3, "label": "Per Hour"},
             ],
             "employee_types": [
-                {"value": 0, "label": "Regular"},
+                {"value": 0, "label": "Permanent"},
                 {"value": 1, "label": "Franchisee"},
             ],
         }
