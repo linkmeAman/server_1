@@ -169,6 +169,19 @@ class WorkforceRepository:
                     e.auto_assign_inq,
                     e.associate,
                     e.qualifier,
+                    e.calculate_salary,
+                    e.is_parent,
+                    e.demo_owner,
+                    e.cash_collector,
+                    e.tds_type,
+                    e.tds_percent,
+                    e.rate_multiplier,
+                    e.incentive_new,
+                    e.incentive_renew,
+                    e.p_incentive_c,
+                    e.p_incentive_sc,
+                    e.trainer_incentive,
+                    e.mt_incentive,
                     c.fname,
                     c.mname,
                     c.lname,
@@ -176,16 +189,33 @@ class WorkforceRepository:
                     c.personal_email,
                     c.mobile,
                     c.country_code,
+                    c.mobile2,
+                    c.country_code_2,
+                    c.phone_no,
                     c.bid,
                     c.gender,
+                    c.dob,
                     c.address,
                     c.city,
                     c.state,
                     c.country,
                     c.pincode,
+                    c.relation,
+                    c.document_type_id,
+                    c.document_number,
+                    c.document_image,
+                    c.document_type_id_2,
+                    c.document_number_2,
+                    c.document_image_2,
+                    c.document_type_id_3,
+                    c.document_image_3,
+                    CONCAT_WS(' ', NULLIF(TRIM(ec.fname), ''), NULLIF(TRIM(ec.lname), '')) AS ename,
+                    ec.mobile AS emobile,
+                    ec.country_code AS ecountry_code,
                     CONCAT_WS(' ', NULLIF(TRIM(c.fname), ''), NULLIF(TRIM(c.mname), ''), NULLIF(TRIM(c.lname), '')) AS full_name
                 FROM employee e
                 LEFT JOIN contact c ON c.id = e.contact_id
+                LEFT JOIN contact ec ON ec.id = c.parent_id
                 WHERE e.id = :employee_id
                   AND (e.park IS NULL OR e.park = 0)
                 LIMIT 1
@@ -1661,3 +1691,271 @@ class WorkforceRepository:
             if candidate in columns:
                 return candidate
         return None
+
+    # -------------------------------------------------------------------------
+    # Employee CRUD helpers
+    # -------------------------------------------------------------------------
+
+    async def list_workshifts(self, db: AsyncSession) -> list[dict[str, Any]]:
+        """Return workshift options from the workshift table.
+
+        Tries multiple column-name variants since the schema differs across tenants.
+        PHP confirmed the primary column is called ``workshift`` (not ``name``).
+        """
+        # Each query is tried in order; on a column-not-found error the session is
+        # rolled back and the next variant is attempted.
+        _queries = [
+            # Variant 1: 'workshift' column + in_time/out_time
+            """SELECT id, workshift AS name,
+                      COALESCE(in_time, '') AS in_time,
+                      COALESCE(out_time, '') AS out_time
+               FROM workshift
+               WHERE (park IS NULL OR park = 0)
+               ORDER BY id ASC""",
+            # Variant 2: 'workshift' column only (no in_time/out_time columns)
+            """SELECT id, workshift AS name, '' AS in_time, '' AS out_time
+               FROM workshift
+               WHERE (park IS NULL OR park = 0)
+               ORDER BY id ASC""",
+            # Variant 3: 'name' column (alternate schema)
+            """SELECT id, name, '' AS in_time, '' AS out_time
+               FROM workshift
+               WHERE (park IS NULL OR park = 0)
+               ORDER BY id ASC""",
+        ]
+        for q in _queries:
+            try:
+                result = await db.execute(text(q))
+                return [dict(row._mapping) for row in result.fetchall()]
+            except Exception:
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass
+        return []
+
+    async def list_document_types(self, db: AsyncSession) -> list[dict[str, Any]]:
+        """Return document type options from the ``document_type`` table (pf_central DB)."""
+        try:
+            result = await db.execute(
+                text(
+                    """
+                    SELECT id, name
+                    FROM document_type
+                    WHERE (park IS NULL OR park = 0)
+                    ORDER BY id ASC
+                    """
+                )
+            )
+            return [dict(row._mapping) for row in result.fetchall()]
+        except Exception:
+            return []
+
+    # ------------------------------------------------------------------
+    # Parent-position (employee_parent table)
+    # ------------------------------------------------------------------
+
+    async def list_all_employees_simple(
+        self, db: AsyncSession
+    ) -> list[dict[str, Any]]:
+        """Return id + full_name for all active, non-parked employees."""
+        try:
+            result = await db.execute(
+                text(
+                    """
+                    SELECT
+                        e.id,
+                        TRIM(CONCAT_WS(' ',
+                            NULLIF(TRIM(c.fname), ''),
+                            NULLIF(TRIM(c.mname), ''),
+                            NULLIF(TRIM(c.lname), '')
+                        )) AS full_name
+                    FROM employee e
+                    JOIN contact c ON c.id = e.contact_id
+                    WHERE (e.park IS NULL OR e.park = 0)
+                      AND (c.park IS NULL OR c.park = 0)
+                      AND e.status = 1
+                    ORDER BY full_name ASC
+                    """
+                )
+            )
+            return [dict(row._mapping) for row in result.fetchall()]
+        except Exception:
+            return []
+
+    async def get_employee_parent_ids(
+        self, db: AsyncSession, employee_id: int
+    ) -> list[int]:
+        """Return the list of parent employee IDs for the given employee."""
+        try:
+            result = await db.execute(
+                text(
+                    """
+                    SELECT parent_emp_id
+                    FROM employee_parent
+                    WHERE emp_id = :emp_id
+                    """
+                ),
+                {"emp_id": employee_id},
+            )
+            return [int(row[0]) for row in result.fetchall() if row[0] is not None]
+        except Exception:
+            return []
+
+    async def set_employee_parents(
+        self, db: AsyncSession, employee_id: int, parent_ids: list[int]
+    ) -> None:
+        """Replace all parent-position rows for an employee atomically."""
+        await db.execute(
+            text("DELETE FROM employee_parent WHERE emp_id = :emp_id"),
+            {"emp_id": employee_id},
+        )
+        for pid in parent_ids:
+            await db.execute(
+                text(
+                    "INSERT INTO employee_parent (emp_id, parent_emp_id) VALUES (:emp_id, :pid)"
+                ),
+                {"emp_id": employee_id, "pid": int(pid)},
+            )
+        await db.flush()
+
+    async def check_mobile_unique(
+        self,
+        db: AsyncSession,
+        mobile: str,
+        exclude_contact_id: int | None = None,
+    ) -> bool:
+        """Return True if mobile is available (not used by any active contact)."""
+        sql = "SELECT id FROM contact WHERE mobile = :mobile AND (park IS NULL OR park = 0)"
+        params: dict[str, Any] = {"mobile": mobile.strip()}
+        if exclude_contact_id is not None:
+            sql += " AND id != :exclude_id"
+            params["exclude_id"] = int(exclude_contact_id)
+        sql += " LIMIT 1"
+        result = await db.execute(text(sql), params)
+        row = result.fetchone()
+        return row is None  # True = mobile is free
+
+    async def create_contact(
+        self,
+        db: AsyncSession,
+        data: dict[str, Any],
+    ) -> int:
+        """Insert a new contact row and return the new contact_id."""
+        fields = [
+            "fname", "mname", "lname",
+            "mobile", "country_code",
+            "mobile2", "country_code_2", "phone_no",
+            "email", "personal_email",
+            "gender", "dob",
+            "address", "city", "state", "country", "pincode",
+            "parent_id", "relation",
+            "document_type_id", "document_number", "document_image",
+            "document_type_id_2", "document_number_2", "document_image_2",
+            "document_type_id_3", "document_image_3",
+            "bid",
+        ]
+        cols = [f for f in fields if data.get(f) is not None]
+        if not cols:
+            raise ValueError("No contact fields provided")
+
+        col_sql = ", ".join(cols)
+        val_sql = ", ".join(f":{f}" for f in cols)
+        result = await db.execute(
+            text(f"INSERT INTO contact ({col_sql}) VALUES ({val_sql})"),
+            {f: data[f] for f in cols},
+        )
+        await db.flush()
+        contact_id = result.lastrowid
+        if not contact_id:
+            raise RuntimeError("Failed to insert contact row")
+        return int(contact_id)
+
+    async def update_contact(
+        self,
+        db: AsyncSession,
+        contact_id: int,
+        data: dict[str, Any],
+    ) -> None:
+        """Update writable contact fields by contact_id."""
+        allowed = {
+            "fname", "mname", "lname",
+            "mobile", "country_code",
+            "mobile2", "country_code_2", "phone_no",
+            "email", "personal_email",
+            "gender", "dob",
+            "address", "city", "state", "country", "pincode",
+            "parent_id", "relation",
+            "document_type_id", "document_number", "document_image",
+            "document_type_id_2", "document_number_2", "document_image_2",
+            "document_type_id_3", "document_image_3",
+        }
+        to_set = {k: v for k, v in data.items() if k in allowed}
+        if not to_set:
+            return
+        set_clause = ", ".join(f"{k} = :{k}" for k in to_set)
+        params = {**to_set, "contact_id": int(contact_id)}
+        await db.execute(
+            text(f"UPDATE contact SET {set_clause} WHERE id = :contact_id"),
+            params,
+        )
+
+    async def create_employee_record(
+        self,
+        db: AsyncSession,
+        data: dict[str, Any],
+    ) -> int:
+        """Insert a new employee row and return the new employee_id."""
+        fields = [
+            "contact_id", "ecode", "department_id", "position_id",
+            "doj", "doe", "exit_date",
+            "workshift_id", "workshift_in_time", "workshift_out_time", "workshift_hours",
+            "salary_type", "salary", "allowance",
+            "type", "status", "grade", "bid", "park",
+            "user_account", "is_admin", "calculate_salary", "is_parent",
+            "demo_owner", "cash_collector", "auto_assign_inq", "qualifier",
+            "tds_type", "tds_percent", "rate_multiplier",
+            "incentive_new", "incentive_renew", "p_incentive_c", "p_incentive_sc",
+            "trainer_incentive", "mt_incentive",
+        ]
+        cols = [f for f in fields if data.get(f) is not None]
+        col_sql = ", ".join(cols)
+        val_sql = ", ".join(f":{f}" for f in cols)
+        result = await db.execute(
+            text(f"INSERT INTO employee ({col_sql}) VALUES ({val_sql})"),
+            {f: data[f] for f in cols},
+        )
+        await db.flush()
+        employee_id = result.lastrowid
+        if not employee_id:
+            raise RuntimeError("Failed to insert employee row")
+        return int(employee_id)
+
+    async def update_employee_record(
+        self,
+        db: AsyncSession,
+        employee_id: int,
+        data: dict[str, Any],
+    ) -> None:
+        """Update writable employee fields by employee_id."""
+        allowed = {
+            "ecode", "department_id", "position_id",
+            "doj", "doe", "exit_date",
+            "workshift_id", "workshift_in_time", "workshift_out_time", "workshift_hours",
+            "salary_type", "salary", "allowance",
+            "type", "status", "grade",
+            "user_account", "is_admin", "calculate_salary", "is_parent",
+            "demo_owner", "cash_collector", "auto_assign_inq", "qualifier",
+            "tds_type", "tds_percent", "rate_multiplier",
+            "incentive_new", "incentive_renew", "p_incentive_c", "p_incentive_sc",
+            "trainer_incentive", "mt_incentive",
+        }
+        to_set = {k: v for k, v in data.items() if k in allowed}
+        if not to_set:
+            return
+        set_clause = ", ".join(f"{k} = :{k}" for k in to_set)
+        params = {**to_set, "employee_id": int(employee_id)}
+        await db.execute(
+            text(f"UPDATE employee SET {set_clause} WHERE id = :employee_id"),
+            params,
+        )

@@ -171,12 +171,16 @@ class WorkforceService:
         department_map = self._map_lookup_by_id(departments)
         position_map = self._map_lookup_by_id(positions)
 
+        parent_ids = await self.repo.get_employee_parent_ids(main_db, employee_id)
+        serialized = self._serialize_employee_row(
+            row,
+            department_map=department_map,
+            position_map=position_map,
+        )
+        serialized["parent_position_ids"] = parent_ids
+
         return {
-            "employee": self._serialize_employee_row(
-                row,
-                department_map=department_map,
-                position_map=position_map,
-            ),
+            "employee": serialized,
             "future_scope": FUTURE_SCOPE_EMPLOYEE,
         }
 
@@ -954,6 +958,35 @@ class WorkforceService:
             "auto_assign_inq": self._as_int(row.get("auto_assign_inq")),
             "associate": self._as_int(row.get("associate")),
             "qualifier": self._as_int(row.get("qualifier")),
+            "dob": self._as_date_text(row.get("dob")),
+            "mobile2": self._as_text(row.get("mobile2")),
+            "country_code_2": self._as_text(row.get("country_code_2")),
+            "phone_no": self._as_text(row.get("phone_no")),
+            "ename": self._as_text(row.get("ename")),
+            "emobile": self._as_text(row.get("emobile")),
+            "ecountry_code": self._as_text(row.get("ecountry_code")),
+            "relation": self._as_text(row.get("relation")),
+            "document_type_id": self._as_int(row.get("document_type_id")),
+            "document_number": self._as_text(row.get("document_number")),
+            "document_image": self._as_text(row.get("document_image")),
+            "document_type_id_2": self._as_int(row.get("document_type_id_2")),
+            "document_number_2": self._as_text(row.get("document_number_2")),
+            "document_image_2": self._as_text(row.get("document_image_2")),
+            "document_type_id_3": self._as_int(row.get("document_type_id_3")),
+            "document_image_3": self._as_text(row.get("document_image_3")),
+            "calculate_salary": self._as_int(row.get("calculate_salary")),
+            "is_parent": self._as_int(row.get("is_parent")),
+            "demo_owner": self._as_int(row.get("demo_owner")),
+            "cash_collector": self._as_int(row.get("cash_collector")),
+            "tds_type": self._as_int(row.get("tds_type")),
+            "tds_percent": row.get("tds_percent"),
+            "rate_multiplier": row.get("rate_multiplier"),
+            "incentive_new": row.get("incentive_new"),
+            "incentive_renew": row.get("incentive_renew"),
+            "p_incentive_c": row.get("p_incentive_c"),
+            "p_incentive_sc": row.get("p_incentive_sc"),
+            "trainer_incentive": row.get("trainer_incentive"),
+            "mt_incentive": row.get("mt_incentive"),
         }
 
     def _serialize_attendance_record_row(self, row: dict[str, Any]) -> dict[str, Any]:
@@ -1253,6 +1286,275 @@ class WorkforceService:
                 normalized[field] = self._coerce_json(value)
         return normalized
 
+    # -------------------------------------------------------------------------
+    # Employee form-meta / create / update
+    # -------------------------------------------------------------------------
+
+    async def get_employee_form_meta(
+        self,
+        main_db: AsyncSession,
+        central_db: AsyncSession,
+    ) -> dict[str, Any]:
+        departments = await self.repo.list_departments(central_db)
+        positions = await self.repo.list_positions(central_db)
+        workshifts = await self.repo.list_workshifts(main_db)
+        document_types = await self.repo.list_document_types(central_db)
+        all_employees = await self.repo.list_all_employees_simple(main_db)
+        return {
+            "departments": departments,
+            "positions": positions,
+            "workshifts": workshifts,
+            "statuses": self.STATUS_OPTIONS,
+            "document_types": document_types,
+            "all_employees": all_employees,
+            "genders": [
+                {"value": "M", "label": "Male"},
+                {"value": "F", "label": "Female"},
+                {"value": "O", "label": "Other"},
+            ],
+            "salary_types": [
+                {"value": 1, "label": "Fixed Salary"},
+                {"value": 2, "label": "Per Day"},
+                {"value": 3, "label": "Per Hour"},
+            ],
+            "employee_types": [
+                {"value": 0, "label": "Permanent"},
+                {"value": 1, "label": "Franchisee"},
+            ],
+        }
+
+    async def create_employee(
+        self,
+        main_db: AsyncSession,
+        central_db: AsyncSession,
+        payload: dict[str, Any],
+        created_by: int,
+    ) -> dict[str, Any]:
+        mobile = self._as_text(payload.get("mobile"))
+        if not mobile:
+            raise HTTPException(status_code=422, detail="mobile is required")
+        # Strip to digits for global uniqueness check
+        if not await self.repo.check_mobile_unique(main_db, mobile):
+            raise HTTPException(status_code=409, detail="Mobile number already registered")
+
+        fname = self._as_text(payload.get("fname"))
+        if not fname:
+            raise HTTPException(status_code=422, detail="fname (first name) is required")
+
+        department_id = self._as_int(payload.get("department_id"))
+        position_id = self._as_int(payload.get("position_id"))
+        doj = self._as_text(payload.get("doj"))
+        if not doj:
+            raise HTTPException(status_code=422, detail="doj (date of joining) is required")
+
+        contact_data: dict[str, Any] = {
+            "fname": fname,
+            "mname": self._as_text(payload.get("mname")),
+            "lname": self._as_text(payload.get("lname")),
+            "mobile": mobile,
+            "country_code": self._as_text(payload.get("country_code")) or "+91",
+            "mobile2": self._as_text(payload.get("mobile2")),
+            "country_code_2": self._as_text(payload.get("country_code_2")) or "+91",
+            "phone_no": self._as_text(payload.get("phone_no")),
+            "email": self._as_text(payload.get("email")),
+            "personal_email": self._as_text(payload.get("personal_email")),
+            "gender": self._as_text(payload.get("gender")),
+            "dob": self._as_text(payload.get("dob")),
+            "address": self._as_text(payload.get("address")),
+            "city": self._as_text(payload.get("city")),
+            "state": self._as_text(payload.get("state")),
+            "country": self._as_text(payload.get("country")),
+            "pincode": self._as_text(payload.get("pincode")),
+            "document_type_id": self._as_int(payload.get("document_type_id")),
+            "document_number": self._as_text(payload.get("document_number")),
+            "document_type_id_2": self._as_int(payload.get("document_type_id_2")),
+            "document_number_2": self._as_text(payload.get("document_number_2")),
+            "document_type_id_3": self._as_int(payload.get("document_type_id_3")),
+            "bid": self._as_int(payload.get("bid")) or 0,
+        }
+        contact_data = {k: v for k, v in contact_data.items() if v is not None}
+
+        # Handle emergency contact — stored as a separate contact row linked via parent_id
+        ename = self._as_text(payload.get("ename"))
+        emobile = self._as_text(payload.get("emobile"))
+        ecountry_code = self._as_text(payload.get("ecountry_code")) or "+91"
+        relation = self._as_text(payload.get("relation"))
+        if ename and emobile and relation:
+            name_parts = ename.strip().split(" ", 1)
+            emergency_data: dict[str, Any] = {
+                "fname": name_parts[0],
+                "lname": name_parts[1] if len(name_parts) > 1 else "",
+                "mobile": emobile,
+                "country_code": ecountry_code,
+                "bid": self._as_int(payload.get("bid")) or 0,
+            }
+            parent_contact_id = await self.repo.create_contact(main_db, emergency_data)
+            contact_data["parent_id"] = parent_contact_id
+            contact_data["relation"] = relation
+
+        employee_data: dict[str, Any] = {
+            "ecode": self._as_text(payload.get("ecode")),
+            "department_id": department_id,
+            "position_id": position_id,
+            "doj": doj,
+            "doe": self._as_text(payload.get("doe")),
+            "exit_date": self._as_text(payload.get("exit_date")),
+            "workshift_id": self._as_int(payload.get("workshift_id")),
+            "workshift_in_time": self._as_text(payload.get("workshift_in_time")),
+            "workshift_out_time": self._as_text(payload.get("workshift_out_time")),
+            "salary_type": self._as_int(payload.get("salary_type")) or 1,
+            "salary": payload.get("salary"),
+            "allowance": payload.get("allowance"),
+            "type": self._as_int(payload.get("employee_type")) or 0,
+            "status": self._as_int(payload.get("status")) if payload.get("status") is not None else 1,
+            "grade": self._as_int(payload.get("grade")),
+            "bid": self._as_int(payload.get("bid")) or 0,
+            "park": 0,
+            # Toggles
+            "user_account": self._as_int(payload.get("user_account")) or 0,
+            "is_admin": self._as_int(payload.get("is_admin")) or 0,
+            "calculate_salary": self._as_int(payload.get("calculate_salary")) or 0,
+            "is_parent": self._as_int(payload.get("is_parent")) or 0,
+            "demo_owner": self._as_int(payload.get("demo_owner")) or 0,
+            "cash_collector": self._as_int(payload.get("cash_collector")) or 0,
+            "auto_assign_inq": self._as_int(payload.get("auto_assign_inq")) or 0,
+            "qualifier": self._as_int(payload.get("qualifier")) or 0,
+            # Financial
+            "tds_type": self._as_int(payload.get("tds_type")) or 0,
+            "tds_percent": payload.get("tds_percent"),
+            "rate_multiplier": payload.get("rate_multiplier"),
+            "incentive_new": payload.get("incentive_new"),
+            "incentive_renew": payload.get("incentive_renew"),
+            "p_incentive_c": payload.get("p_incentive_c"),
+            "p_incentive_sc": payload.get("p_incentive_sc"),
+            "trainer_incentive": payload.get("trainer_incentive"),
+            "mt_incentive": payload.get("mt_incentive"),
+        }
+        employee_data = {k: v for k, v in employee_data.items() if v is not None}
+
+        contact_id = await self.repo.create_contact(main_db, contact_data)
+        employee_data["contact_id"] = contact_id
+        employee_id = await self.repo.create_employee_record(main_db, employee_data)
+
+        # Save parent positions if provided
+        parent_ids_raw = payload.get("parent_position_ids")
+        if parent_ids_raw and isinstance(parent_ids_raw, list):
+            parent_ids = [int(x) for x in parent_ids_raw if x is not None]
+            await self.repo.set_employee_parents(main_db, employee_id, parent_ids)
+
+        await main_db.commit()
+
+        row = await self.repo.get_employee(main_db, employee_id)
+        if row is None:
+            raise HTTPException(status_code=500, detail="Employee created but could not be loaded")
+
+        departments = await self.repo.list_departments(central_db)
+        positions = await self.repo.list_positions(central_db)
+        return {
+            "employee": self._serialize_employee_row(
+                row,
+                department_map=self._map_lookup_by_id(departments),
+                position_map=self._map_lookup_by_id(positions),
+            )
+        }
+
+    async def update_employee(
+        self,
+        main_db: AsyncSession,
+        central_db: AsyncSession,
+        employee_id: int,
+        payload: dict[str, Any],
+        modified_by: int,
+    ) -> dict[str, Any]:
+        existing = await self.repo.get_employee(main_db, employee_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Employee not found")
+
+        contact_id = self._as_int(existing.get("contact_id"))
+
+        # Mobile uniqueness check only if mobile is being changed
+        new_mobile = self._as_text(payload.get("mobile"))
+        if new_mobile and new_mobile != self._as_text(existing.get("mobile")):
+            if not await self.repo.check_mobile_unique(main_db, new_mobile, exclude_contact_id=contact_id):
+                raise HTTPException(status_code=409, detail="Mobile number already registered")
+
+        contact_data: dict[str, Any] = {}
+        for field in ("fname", "mname", "lname", "mobile", "country_code",
+                      "mobile2", "country_code_2", "phone_no",
+                      "email", "personal_email", "gender", "dob",
+                      "address", "city", "state", "country", "pincode",
+                      "document_type_id", "document_number",
+                      "document_type_id_2", "document_number_2",
+                      "document_type_id_3"):
+            if field in payload:
+                contact_data[field] = self._as_text(payload[field]) if isinstance(payload[field], str) else payload[field]
+
+        # Handle emergency contact — create a new emergency contact row and link via parent_id
+        ename = self._as_text(payload.get("ename"))
+        emobile = self._as_text(payload.get("emobile"))
+        ecountry_code = self._as_text(payload.get("ecountry_code")) or "+91"
+        relation = self._as_text(payload.get("relation"))
+        if ename and emobile and relation:
+            name_parts = ename.strip().split(" ", 1)
+            emergency_data: dict[str, Any] = {
+                "fname": name_parts[0],
+                "lname": name_parts[1] if len(name_parts) > 1 else "",
+                "mobile": emobile,
+                "country_code": ecountry_code,
+                "bid": self._as_int(existing.get("bid")) or 0,
+            }
+            parent_contact_id = await self.repo.create_contact(main_db, emergency_data)
+            contact_data["parent_id"] = parent_contact_id
+            contact_data["relation"] = relation
+        elif "relation" in payload and not ename:
+            # Allow updating just the relation without changing emergency contact
+            if relation is not None:
+                contact_data["relation"] = relation
+
+        employee_data: dict[str, Any] = {}
+        for field in ("ecode", "department_id", "position_id", "doj", "doe", "exit_date",
+                      "workshift_id", "workshift_in_time", "workshift_out_time",
+                      "salary_type", "salary", "allowance", "grade",
+                      "user_account", "is_admin", "calculate_salary", "is_parent",
+                      "demo_owner", "cash_collector", "auto_assign_inq", "qualifier",
+                      "associate", "on_notice",
+                      "tds_type", "tds_percent", "rate_multiplier",
+                      "incentive_new", "incentive_renew", "p_incentive_c", "p_incentive_sc",
+                      "trainer_incentive", "mt_incentive"):
+            if field in payload:
+                employee_data[field] = payload[field]
+        if "employee_type" in payload:
+            employee_data["type"] = payload["employee_type"]
+        if "status" in payload:
+            employee_data["status"] = self._as_int(payload["status"])
+
+        if contact_id is not None and contact_data:
+            await self.repo.update_contact(main_db, contact_id, contact_data)
+        if employee_data:
+            await self.repo.update_employee_record(main_db, employee_id, employee_data)
+
+        # Save parent positions if provided
+        parent_ids_raw = payload.get("parent_position_ids")
+        if parent_ids_raw is not None and isinstance(parent_ids_raw, list):
+            parent_ids = [int(x) for x in parent_ids_raw if x is not None]
+            await self.repo.set_employee_parents(main_db, employee_id, parent_ids)
+
+        await main_db.commit()
+
+        row = await self.repo.get_employee(main_db, employee_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Employee not found after update")
+
+        departments = await self.repo.list_departments(central_db)
+        positions = await self.repo.list_positions(central_db)
+        return {
+            "employee": self._serialize_employee_row(
+                row,
+                department_map=self._map_lookup_by_id(departments),
+                position_map=self._map_lookup_by_id(positions),
+            )
+        }
+
     @staticmethod
     def _normalize_full_name(full_name: Any, first_name: Any, middle_name: Any, last_name: Any) -> str | None:
         explicit_full_name = str(full_name or "").strip()
@@ -1316,8 +1618,19 @@ class WorkforceService:
 
     @staticmethod
     def _as_time_text(value: Any) -> str | None:
+        """Convert a DB TIME value (timedelta or str) to 'HH:MM:SS' string."""
         if value is None:
             return None
+        # MySQL TIME columns come back as datetime.timedelta via SQLAlchemy
+        if hasattr(value, "total_seconds"):
+            total = int(value.total_seconds())
+            h = total // 3600
+            m = (total % 3600) // 60
+            s = total % 60
+            return f"{h:02d}:{m:02d}:{s:02d}"
+        # datetime.time object
+        if hasattr(value, "strftime"):
+            return value.strftime("%H:%M:%S")
         text_value = str(value).strip()
         return text_value or None
 

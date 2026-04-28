@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import mimetypes
+import os
+import re
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_central_db_session, get_main_db_session
+from app.core.prism_pdp import PDPRequest, evaluate
 from app.core.response import success_response
 
 from .dependencies import CallerContext, require_any_caller
@@ -21,6 +26,244 @@ service = WorkforceService()
 
 def _today() -> str:
     return date.today().isoformat()
+
+
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_TIME_RE = re.compile(r"^\d{2}:\d{2}(:\d{2})?$")
+_MOBILE_RE = re.compile(r"^\+?\d[\d\s\-]{5,14}\d$")
+
+
+def _validate_date(value: str | None, field: str) -> str | None:
+    if value is None:
+        return None
+    if not _DATE_RE.match(value.strip()):
+        raise HTTPException(status_code=422, detail=f"{field} must be YYYY-MM-DD")
+    return value.strip()
+
+
+class EmployeeCreateRequest(BaseModel):
+    """Payload for creating a new employee (contact + employee row)."""
+    # Contact
+    fname: str = Field(..., min_length=1, max_length=100)
+    mname: str | None = Field(default=None, max_length=100)
+    lname: str | None = Field(default=None, max_length=100)
+    mobile: str = Field(..., min_length=6, max_length=20)
+    country_code: str | None = Field(default="+91", max_length=10)
+    email: str | None = Field(default=None, max_length=255)
+    personal_email: str | None = Field(default=None, max_length=255)
+    gender: str | None = Field(default=None)
+    dob: str | None = Field(default=None)
+    address: str | None = Field(default=None, max_length=255)
+    city: str | None = Field(default=None, max_length=100)
+    state: str | None = Field(default=None, max_length=100)
+    country: str | None = Field(default=None, max_length=100)
+    pincode: str | None = Field(default=None, max_length=20)
+    bid: int | None = Field(default=None)
+    # Employee
+    ecode: str | None = Field(default=None, max_length=50)
+    department_id: int = Field(...)
+    position_id: int = Field(...)
+    doj: str = Field(...)
+    doe: str | None = Field(default=None)
+    workshift_id: int | None = Field(default=None)
+    workshift_in_time: str | None = Field(default=None, max_length=10)
+    workshift_out_time: str | None = Field(default=None, max_length=10)
+    salary_type: int | None = Field(default=1)
+    salary: float | None = Field(default=None, ge=0)
+    allowance: float | None = Field(default=None, ge=0)
+    employee_type: int | None = Field(default=0)
+    status: int | None = Field(default=1)
+    grade: int | None = Field(default=None)
+    # Contact additions
+    mobile2: str | None = Field(default=None, max_length=20)
+    country_code_2: str | None = Field(default="+91", max_length=10)
+    phone_no: str | None = Field(default=None, max_length=15)
+    # Emergency contact
+    ename: str | None = Field(default=None, max_length=100)
+    emobile: str | None = Field(default=None, max_length=20)
+    ecountry_code: str | None = Field(default="+91", max_length=10)
+    relation: str | None = Field(default=None, max_length=50)
+    # Official additions
+    exit_date: str | None = Field(default=None)
+    # Toggles (0 or 1)
+    user_account: int | None = Field(default=0)
+    is_admin: int | None = Field(default=0)
+    calculate_salary: int | None = Field(default=0)
+    is_parent: int | None = Field(default=0)
+    demo_owner: int | None = Field(default=0)
+    cash_collector: int | None = Field(default=0)
+    auto_assign_inq: int | None = Field(default=0)
+    qualifier: int | None = Field(default=0)
+    # Parent positions
+    parent_position_ids: list[int] | None = Field(default=None)
+    # Financial
+    tds_type: int | None = Field(default=0)
+    tds_percent: float | None = Field(default=None, ge=0, le=100)
+    rate_multiplier: float | None = Field(default=0.0, ge=0)
+    incentive_new: float | None = Field(default=None, ge=0)
+    incentive_renew: float | None = Field(default=None, ge=0)
+    p_incentive_c: float | None = Field(default=None, ge=0)
+    p_incentive_sc: float | None = Field(default=None, ge=0)
+    trainer_incentive: float | None = Field(default=None, ge=0)
+    mt_incentive: float | None = Field(default=None, ge=0)
+
+    @field_validator("mobile")
+    @classmethod
+    def validate_mobile(cls, v: str) -> str:
+        cleaned = v.strip()
+        if not _MOBILE_RE.match(cleaned):
+            raise ValueError("mobile must be a valid phone number")
+        return cleaned
+
+    @field_validator("doj")
+    @classmethod
+    def validate_doj(cls, v: str) -> str:
+        if not _DATE_RE.match(v.strip()):
+            raise ValueError("doj must be YYYY-MM-DD")
+        return v.strip()
+
+    @field_validator("doe", "dob", "exit_date")
+    @classmethod
+    def validate_optional_dates(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if not _DATE_RE.match(v.strip()):
+            raise ValueError("date must be YYYY-MM-DD")
+        return v.strip()
+
+    @field_validator("gender")
+    @classmethod
+    def validate_gender(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if v not in {"M", "F", "O", "Male", "Female", "Other"}:
+            raise ValueError("gender must be M, F, or O")
+        # Normalise to single-char representation stored in DB
+        _map = {"Male": "M", "Female": "F", "Other": "O"}
+        return _map.get(v, v)
+
+    @field_validator("employee_type")
+    @classmethod
+    def validate_employee_type(cls, v: int | None) -> int | None:
+        if v is not None and v not in {0, 1}:
+            raise ValueError("employee_type must be 0 (Regular) or 1 (Franchisee)")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: int | None) -> int | None:
+        if v is not None and v not in {0, 1}:
+            raise ValueError("status must be 0 (Inactive) or 1 (Active)")
+        return v
+
+
+class EmployeeUpdateRequest(BaseModel):
+    """Payload for updating an existing employee (partial update)."""
+    # Contact
+    fname: str | None = Field(default=None, min_length=1, max_length=100)
+    mname: str | None = Field(default=None, max_length=100)
+    lname: str | None = Field(default=None, max_length=100)
+    mobile: str | None = Field(default=None, min_length=6, max_length=20)
+    country_code: str | None = Field(default=None, max_length=10)
+    email: str | None = Field(default=None, max_length=255)
+    personal_email: str | None = Field(default=None, max_length=255)
+    gender: str | None = Field(default=None)
+    dob: str | None = Field(default=None)
+    address: str | None = Field(default=None, max_length=255)
+    city: str | None = Field(default=None, max_length=100)
+    state: str | None = Field(default=None, max_length=100)
+    country: str | None = Field(default=None, max_length=100)
+    pincode: str | None = Field(default=None, max_length=20)
+    # Employee
+    ecode: str | None = Field(default=None, max_length=50)
+    department_id: int | None = Field(default=None)
+    position_id: int | None = Field(default=None)
+    doj: str | None = Field(default=None)
+    doe: str | None = Field(default=None)
+    workshift_id: int | None = Field(default=None)
+    workshift_in_time: str | None = Field(default=None, max_length=10)
+    workshift_out_time: str | None = Field(default=None, max_length=10)
+    salary_type: int | None = Field(default=None)
+    salary: float | None = Field(default=None, ge=0)
+    allowance: float | None = Field(default=None, ge=0)
+    employee_type: int | None = Field(default=None)
+    status: int | None = Field(default=None)
+    grade: int | None = Field(default=None)
+    # Contact additions
+    mobile2: str | None = Field(default=None, max_length=20)
+    country_code_2: str | None = Field(default=None, max_length=10)
+    phone_no: str | None = Field(default=None, max_length=15)
+    # Emergency contact
+    ename: str | None = Field(default=None, max_length=100)
+    emobile: str | None = Field(default=None, max_length=20)
+    ecountry_code: str | None = Field(default=None, max_length=10)
+    relation: str | None = Field(default=None, max_length=50)
+    # Official additions
+    exit_date: str | None = Field(default=None)
+    # Toggles (0 or 1)
+    user_account: int | None = Field(default=None)
+    is_admin: int | None = Field(default=None)
+    calculate_salary: int | None = Field(default=None)
+    is_parent: int | None = Field(default=None)
+    demo_owner: int | None = Field(default=None)
+    cash_collector: int | None = Field(default=None)
+    auto_assign_inq: int | None = Field(default=None)
+    qualifier: int | None = Field(default=None)
+    # Parent positions
+    parent_position_ids: list[int] | None = Field(default=None)
+    # Financial
+    tds_type: int | None = Field(default=None)
+    tds_percent: float | None = Field(default=None, ge=0, le=100)
+    rate_multiplier: float | None = Field(default=None, ge=0)
+    incentive_new: float | None = Field(default=None, ge=0)
+    incentive_renew: float | None = Field(default=None, ge=0)
+    p_incentive_c: float | None = Field(default=None, ge=0)
+    p_incentive_sc: float | None = Field(default=None, ge=0)
+    trainer_incentive: float | None = Field(default=None, ge=0)
+    mt_incentive: float | None = Field(default=None, ge=0)
+
+    @field_validator("mobile")
+    @classmethod
+    def validate_mobile(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip()
+        if not _MOBILE_RE.match(cleaned):
+            raise ValueError("mobile must be a valid phone number")
+        return cleaned
+
+    @field_validator("doj", "doe", "dob", "exit_date")
+    @classmethod
+    def validate_dates(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if not _DATE_RE.match(v.strip()):
+            raise ValueError("date must be YYYY-MM-DD")
+        return v.strip()
+
+    @field_validator("gender")
+    @classmethod
+    def validate_gender(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if v not in {"M", "F", "O", "Male", "Female", "Other"}:
+            raise ValueError("gender must be M, F, or O")
+        _map = {"Male": "M", "Female": "F", "Other": "O"}
+        return _map.get(v, v)
+
+    @field_validator("employee_type")
+    @classmethod
+    def validate_employee_type(cls, v: int | None) -> int | None:
+        if v is not None and v not in {0, 1}:
+            raise ValueError("employee_type must be 0 or 1")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: int | None) -> int | None:
+        if v is not None and v not in {0, 1}:
+            raise ValueError("status must be 0 or 1")
+        return v
 
 
 class AttendanceRecordUpdateRequest(BaseModel):
@@ -196,10 +439,17 @@ async def list_workforce_employees(
     position_id: int | None = Query(default=None),
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
-    _: CallerContext = Depends(require_any_caller),
+    caller: CallerContext = Depends(require_any_caller),
     main_db: AsyncSession = Depends(get_main_db_session),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
+    pdp_result = await evaluate(
+        PDPRequest(user_id=caller.user_id, action="employee:read", resource_type="employee"),
+        central_db,
+    )
+    if pdp_result.decision != "Allow":
+        raise HTTPException(status_code=403, detail="PRISM: Not authorized to list employees")
+
     data = await service.list_employees(
         main_db,
         central_db,
@@ -213,15 +463,123 @@ async def list_workforce_employees(
     return success_response(data=data, message="Employees fetched").model_dump(mode="json")
 
 
-@router.get("/employees/{employee_id}")
-async def get_workforce_employee(
-    employee_id: int,
+@router.get("/employees/form-meta")
+async def get_employee_form_meta(
     _: CallerContext = Depends(require_any_caller),
     main_db: AsyncSession = Depends(get_main_db_session),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
+    """Return dropdown options needed to render the employee create/edit form."""
+    data = await service.get_employee_form_meta(main_db, central_db)
+    return success_response(data=data, message="Employee form meta fetched").model_dump(mode="json")
+
+
+# Filename validation — allow only safe chars (alphanumeric, hyphens, underscores, dots)
+_SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
+
+
+@router.get("/documents/contact/{filename}")
+async def serve_contact_document(
+    filename: str,
+    _: CallerContext = Depends(require_any_caller),
+):
+    """Serve an uploaded contact/employee document image by filename.
+
+    Files are read from ``CONTACT_DOCUMENT_PATH`` (configured via env var).
+    Only filenames matching ``[A-Za-z0-9_.\\-]+`` are accepted to prevent
+    any path-traversal attacks.
+    """
+    if not _SAFE_FILENAME_RE.match(filename):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    from app.core.settings import get_settings  # local import to avoid circular deps
+
+    settings = get_settings()
+    base_dir = os.path.realpath(settings.CONTACT_DOCUMENT_PATH)
+    target = os.path.realpath(os.path.join(base_dir, filename))
+
+    # Guard against path traversal
+    if not target.startswith(base_dir + os.sep) and target != base_dir:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    if not os.path.isfile(target):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    media_type, _ = mimetypes.guess_type(filename)
+    return FileResponse(target, media_type=media_type or "application/octet-stream")
+
+
+@router.get("/employees/{employee_id}")
+async def get_workforce_employee(
+    employee_id: int,
+    caller: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+    central_db: AsyncSession = Depends(get_central_db_session),
+):
+    pdp_result = await evaluate(
+        PDPRequest(
+            user_id=caller.user_id,
+            action="employee:read",
+            resource_type="employee",
+            resource_id=str(employee_id),
+        ),
+        central_db,
+    )
+    if pdp_result.decision != "Allow":
+        raise HTTPException(status_code=403, detail="PRISM: Not authorized to view this employee")
+
     data = await service.get_employee(main_db, central_db, employee_id)
     return success_response(data=data, message="Employee fetched").model_dump(mode="json")
+
+
+@router.post("/employees")
+async def create_workforce_employee(
+    body: EmployeeCreateRequest,
+    caller: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+    central_db: AsyncSession = Depends(get_central_db_session),
+):
+    """Create a new employee (contact + employee row). Requires employee:create permission."""
+    pdp_result = await evaluate(
+        PDPRequest(user_id=caller.user_id, action="employee:create", resource_type="employee"),
+        central_db,
+    )
+    if pdp_result.decision != "Allow":
+        raise HTTPException(status_code=403, detail="PRISM: Not authorized to create employees")
+
+    data = await service.create_employee(
+        main_db, central_db, body.model_dump(exclude_unset=False), caller.user_id
+    )
+    return success_response(data=data, message="Employee created").model_dump(mode="json")
+
+
+@router.put("/employees/{employee_id}")
+async def update_workforce_employee(
+    employee_id: int,
+    body: EmployeeUpdateRequest,
+    caller: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+    central_db: AsyncSession = Depends(get_central_db_session),
+):
+    """Update an existing employee. Requires employee:update permission."""
+    pdp_result = await evaluate(
+        PDPRequest(
+            user_id=caller.user_id,
+            action="employee:update",
+            resource_type="employee",
+            resource_id=str(employee_id),
+        ),
+        central_db,
+    )
+    if pdp_result.decision != "Allow":
+        raise HTTPException(status_code=403, detail="PRISM: Not authorized to update employees")
+
+    data = await service.update_employee(
+        main_db, central_db, employee_id,
+        body.model_dump(exclude_unset=True),
+        caller.user_id,
+    )
+    return success_response(data=data, message="Employee updated").model_dump(mode="json")
 
 
 @router.get("/employees/{employee_id}/attendance-summary")
