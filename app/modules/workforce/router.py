@@ -443,12 +443,15 @@ async def list_workforce_employees(
     main_db: AsyncSession = Depends(get_main_db_session),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
-    pdp_result = await evaluate(
-        PDPRequest(user_id=caller.user_id, action="employee:read", resource_type="employee"),
-        central_db,
-    )
-    if pdp_result.decision != "Allow":
-        raise HTTPException(status_code=403, detail="PRISM: Not authorized to list employees")
+    # Super-administrators always have full read access.
+    # For everyone else, verify an explicit employee:read grant in PRISM.
+    if not caller.is_super:
+        pdp_result = await evaluate(
+            PDPRequest(user_id=caller.user_id, action="employee:read", resource_type="employee"),
+            central_db,
+        )
+        if pdp_result.decision != "Allow":
+            raise HTTPException(status_code=403, detail="PRISM: Not authorized to list employees")
 
     data = await service.list_employees(
         main_db,
@@ -516,17 +519,19 @@ async def get_workforce_employee(
     main_db: AsyncSession = Depends(get_main_db_session),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
-    pdp_result = await evaluate(
-        PDPRequest(
-            user_id=caller.user_id,
-            action="employee:read",
-            resource_type="employee",
-            resource_id=str(employee_id),
-        ),
-        central_db,
-    )
-    if pdp_result.decision != "Allow":
-        raise HTTPException(status_code=403, detail="PRISM: Not authorized to view this employee")
+    # Super-administrators always have full read access.
+    if not caller.is_super:
+        pdp_result = await evaluate(
+            PDPRequest(
+                user_id=caller.user_id,
+                action="employee:read",
+                resource_type="employee",
+                resource_id=str(employee_id),
+            ),
+            central_db,
+        )
+        if pdp_result.decision != "Allow":
+            raise HTTPException(status_code=403, detail="PRISM: Not authorized to view this employee")
 
     data = await service.get_employee(main_db, central_db, employee_id)
     return success_response(data=data, message="Employee fetched").model_dump(mode="json")
@@ -540,12 +545,13 @@ async def create_workforce_employee(
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
     """Create a new employee (contact + employee row). Requires employee:create permission."""
-    pdp_result = await evaluate(
-        PDPRequest(user_id=caller.user_id, action="employee:create", resource_type="employee"),
-        central_db,
-    )
-    if pdp_result.decision != "Allow":
-        raise HTTPException(status_code=403, detail="PRISM: Not authorized to create employees")
+    if not caller.is_super:
+        pdp_result = await evaluate(
+            PDPRequest(user_id=caller.user_id, action="employee:create", resource_type="employee"),
+            central_db,
+        )
+        if pdp_result.decision != "Allow":
+            raise HTTPException(status_code=403, detail="PRISM: Not authorized to create employees")
 
     data = await service.create_employee(
         main_db, central_db, body.model_dump(exclude_unset=False), caller.user_id
@@ -562,17 +568,18 @@ async def update_workforce_employee(
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
     """Update an existing employee. Requires employee:update permission."""
-    pdp_result = await evaluate(
-        PDPRequest(
-            user_id=caller.user_id,
-            action="employee:update",
-            resource_type="employee",
-            resource_id=str(employee_id),
-        ),
-        central_db,
-    )
-    if pdp_result.decision != "Allow":
-        raise HTTPException(status_code=403, detail="PRISM: Not authorized to update employees")
+    if not caller.is_super:
+        pdp_result = await evaluate(
+            PDPRequest(
+                user_id=caller.user_id,
+                action="employee:update",
+                resource_type="employee",
+                resource_id=str(employee_id),
+            ),
+            central_db,
+        )
+        if pdp_result.decision != "Allow":
+            raise HTTPException(status_code=403, detail="PRISM: Not authorized to update employees")
 
     data = await service.update_employee(
         main_db, central_db, employee_id,
