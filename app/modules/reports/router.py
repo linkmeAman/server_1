@@ -46,6 +46,20 @@ async def list_reports(
     ).model_dump(mode="json")
 
 
+@router.get("/admin/drafts")
+async def list_report_drafts(
+    caller: CallerContext = Depends(require_any_caller),
+    central_db: AsyncSession = Depends(get_central_db_session),
+):
+    await permission_service.require_manage(caller, central_db)
+    all_definitions = await definition_service.list_definitions(central_db, include_drafts=True)
+    drafts = [item for item in all_definitions if item.status == "draft"]
+    return success_response(
+        data={"drafts": [item.model_dump(mode="json") for item in drafts]},
+        message="Draft reports fetched",
+    ).model_dump(mode="json")
+
+
 @router.post("/admin/reports")
 async def create_report_draft(
     payload: ReportAdminSaveRequest,
