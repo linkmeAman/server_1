@@ -439,10 +439,17 @@ async def list_workforce_employees(
     position_id: int | None = Query(default=None),
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
-    _: CallerContext = Depends(require_any_caller),
+    caller: CallerContext = Depends(require_any_caller),
     main_db: AsyncSession = Depends(get_main_db_session),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
+    pdp_result = await evaluate(
+        PDPRequest(user_id=caller.user_id, action="employee:read", resource_type="employee"),
+        central_db,
+    )
+    if pdp_result.decision != "Allow":
+        raise HTTPException(status_code=403, detail="PRISM: Not authorized to list employees")
+
     data = await service.list_employees(
         main_db,
         central_db,
@@ -505,10 +512,22 @@ async def serve_contact_document(
 @router.get("/employees/{employee_id}")
 async def get_workforce_employee(
     employee_id: int,
-    _: CallerContext = Depends(require_any_caller),
+    caller: CallerContext = Depends(require_any_caller),
     main_db: AsyncSession = Depends(get_main_db_session),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
+    pdp_result = await evaluate(
+        PDPRequest(
+            user_id=caller.user_id,
+            action="employee:read",
+            resource_type="employee",
+            resource_id=str(employee_id),
+        ),
+        central_db,
+    )
+    if pdp_result.decision != "Allow":
+        raise HTTPException(status_code=403, detail="PRISM: Not authorized to view this employee")
+
     data = await service.get_employee(main_db, central_db, employee_id)
     return success_response(data=data, message="Employee fetched").model_dump(mode="json")
 
