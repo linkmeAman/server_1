@@ -12,6 +12,7 @@ from app.core.prism_guard import CallerContext, require_any_caller
 from app.core.response import success_response
 from app.modules.reports.schemas.models import ReportAdminSaveRequest, ReportQueryRequest
 from app.modules.reports.services import (
+    LegacyReportImportService,
     ReportCatalogService,
     ReportDefinitionService,
     ReportPermissionService,
@@ -24,6 +25,7 @@ definition_service = ReportDefinitionService()
 permission_service = ReportPermissionService()
 catalog_service = ReportCatalogService(definition_service, permission_service)
 query_service = ReportQueryService(permission_service)
+legacy_import_service = LegacyReportImportService()
 
 
 def _request_id(request: Request) -> str:
@@ -59,6 +61,40 @@ async def create_report_draft(
     return success_response(
         data={"report": definition.model_dump(mode="json")},
         message="Report draft saved",
+    ).model_dump(mode="json")
+
+
+@router.post("/admin/legacy/{report_id}/import")
+async def import_legacy_report_draft(
+    report_id: int,
+    caller: CallerContext = Depends(require_any_caller),
+    central_db: AsyncSession = Depends(get_central_db_session),
+    main_db: AsyncSession = Depends(get_main_db_session),
+):
+    await permission_service.require_manage(caller, central_db)
+    imported = await legacy_import_service.build_draft_from_legacy(
+        main_db,
+        report_id=report_id,
+    )
+    definition_payload = imported["definition"]
+    saved = await definition_service.save_draft(
+        central_db,
+        ReportAdminSaveRequest(
+            slug=str(definition_payload.get("slug") or f"legacy-{report_id}"),
+            name=str(definition_payload.get("name") or f"Legacy Report {report_id}"),
+            description=definition_payload.get("description"),
+            category=str(definition_payload.get("category") or "Legacy Imports"),
+            definition=definition_payload,
+        ),
+        user_id=int(caller.user_id),
+    )
+    return success_response(
+        data={
+            "report": saved.model_dump(mode="json"),
+            "warnings": imported.get("warnings") or [],
+            "imported_legacy_report_id": int(report_id),
+        },
+        message="Legacy report imported as draft",
     ).model_dump(mode="json")
 
 

@@ -16,6 +16,7 @@ python-dotenv==1.0.0
 sqlalchemy==2.0.23
 pymysql==1.1.0
 aiomysql==0.2.0
+alembic==1.13.3
 cryptography==41.0.7
 
 # Logging (already in Python standard library)
