@@ -443,12 +443,15 @@ async def list_workforce_employees(
     main_db: AsyncSession = Depends(get_main_db_session),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
-    pdp_result = await evaluate(
-        PDPRequest(user_id=caller.user_id, action="employee:read", resource_type="employee"),
-        central_db,
-    )
-    if pdp_result.decision != "Allow":
-        raise HTTPException(status_code=403, detail="PRISM: Not authorized to list employees")
+    # Super-administrators always have full read access.
+    # For everyone else, verify an explicit employee:read grant in PRISM.
+    if not caller.is_super:
+        pdp_result = await evaluate(
+            PDPRequest(user_id=caller.user_id, action="employee:read", resource_type="employee"),
+            central_db,
+        )
+        if pdp_result.decision != "Allow":
+            raise HTTPException(status_code=403, detail="PRISM: Not authorized to list employees")
 
     data = await service.list_employees(
         main_db,
@@ -516,17 +519,19 @@ async def get_workforce_employee(
     main_db: AsyncSession = Depends(get_main_db_session),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
-    pdp_result = await evaluate(
-        PDPRequest(
-            user_id=caller.user_id,
-            action="employee:read",
-            resource_type="employee",
-            resource_id=str(employee_id),
-        ),
-        central_db,
-    )
-    if pdp_result.decision != "Allow":
-        raise HTTPException(status_code=403, detail="PRISM: Not authorized to view this employee")
+    # Super-administrators always have full read access.
+    if not caller.is_super:
+        pdp_result = await evaluate(
+            PDPRequest(
+                user_id=caller.user_id,
+                action="employee:read",
+                resource_type="employee",
+                resource_id=str(employee_id),
+            ),
+            central_db,
+        )
+        if pdp_result.decision != "Allow":
+            raise HTTPException(status_code=403, detail="PRISM: Not authorized to view this employee")
 
     data = await service.get_employee(main_db, central_db, employee_id)
     return success_response(data=data, message="Employee fetched").model_dump(mode="json")
