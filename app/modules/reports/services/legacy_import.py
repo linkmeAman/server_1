@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.reports.schemas.models import ReportDefinition
+from app.modules.reports.schemas.models import ReportCatalogItem, ReportDefinition
 
 
 class LegacyReportImportService:
@@ -18,6 +18,63 @@ class LegacyReportImportService:
     unsafe legacy behavior such as raw SQL filters or PHP-evaluated button
     predicates without a human review step.
     """
+
+    async def list_legacy_catalog_items(
+        self,
+        main_db: AsyncSession,
+        *,
+        exclude_report_ids: set[int] | None = None,
+    ) -> list[ReportCatalogItem]:
+        """Return active legacy report metadata for supreme-user discovery.
+
+        These entries are intentionally marked unavailable. They make the old
+        report inventory visible in the new catalog without executing legacy
+        report SQL before each report is migrated and reviewed.
+        """
+
+        excluded = exclude_report_ids or set()
+        try:
+            result = await main_db.execute(
+                text(
+                    """
+                    SELECT id, name, subtitle
+                    FROM report
+                    WHERE report = 1
+                      AND park = 0
+                    ORDER BY name ASC, id ASC
+                    """
+                )
+            )
+        except Exception:
+            return []
+
+        items: list[ReportCatalogItem] = []
+        for row in result.fetchall():
+            item = dict(row._mapping)
+            report_id = int(item["id"])
+            if report_id in excluded:
+                continue
+            slug = f"legacy-{report_id}"
+            items.append(
+                ReportCatalogItem(
+                    slug=slug,
+                    name=str(item.get("name") or f"Legacy Report {report_id}"),
+                    description=str(item.get("subtitle") or "") or "Legacy report pending migration.",
+                    category="Legacy Reports",
+                    kind="table",
+                    status="draft",
+                    route_path=f"/reports/{slug}",
+                    prism_resource_code=f"reports.legacy_{report_id}",
+                    legacy_report_id=report_id,
+                    source_label="legacy-pending",
+                    available=False,
+                    unavailable_reason=(
+                        "This legacy report is visible to supreme users, "
+                        "but it must be migrated before it can open in the new report renderer."
+                    ),
+                )
+            )
+        return items
 
     async def build_draft_from_legacy(
         self,
@@ -143,4 +200,3 @@ class LegacyReportImportService:
         except Exception:
             return []
         return [dict(row._mapping) for row in result.fetchall()]
-

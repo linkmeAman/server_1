@@ -345,5 +345,79 @@ class ReportDefinitionService:
                     "source_label": "certified-route",
                 }
             ),
+            ReportDefinition.model_validate(
+                {
+                    "slug": "center-performance",
+                    "name": "Center Performance",
+                    "description": "Compare city or center performance across the funnel.",
+                    "category": "Performance Marketing",
+                    "status": "published",
+                    "kind": "route",
+                    "prism_resource_code": "reports.center_performance",
+                    "legacy_view_action": "report:read",
+                    "source": {"type": "route", "route_path": "/reports/center-performance"},
+                    "route_path": "/reports/center-performance",
+                    "source_label": "certified-route",
+                }
+            ),
+            ReportDefinition.model_validate(
+                {
+                    "slug": "funnel-tracking",
+                    "name": "Funnel Stage Tracking",
+                    "description": "Track lead movement across funnel stages and identify drop-offs.",
+                    "category": "Performance Marketing",
+                    "status": "published",
+                    "kind": "route",
+                    "prism_resource_code": "reports.funnel_stage_tracking",
+                    "legacy_view_action": "report:read",
+                    "source": {"type": "route", "route_path": "/reports/funnel-tracking"},
+                    "route_path": "/reports/funnel-tracking",
+                    "source_label": "certified-route",
+                }
+            ),
+            ReportDefinition.model_validate(
+                {
+                    "slug": "campaign-performance",
+                    "name": "Campaign Performance",
+                    "description": "Campaign-level performance across Meta and Google.",
+                    "category": "Performance Marketing",
+                    "status": "published",
+                    "kind": "route",
+                    "prism_resource_code": "reports.campaign_performance",
+                    "legacy_view_action": "report:read",
+                    "source": {"type": "route", "route_path": "/reports/campaign-performance"},
+                    "route_path": "/reports/campaign-performance",
+                    "source_label": "certified-route",
+                }
+            ),
+            ReportDefinition.model_validate(
+                {
+                    "slug": "heard-from-performance",
+                    "name": "Heard-from Performance",
+                    "description": "Performance by primary heard-from channel and creative.",
+                    "category": "Performance Marketing",
+                    "status": "published",
+                    "kind": "route",
+                    "prism_resource_code": "reports.heard_from_performance",
+                    "legacy_view_action": "report:read",
+                    "source": {"type": "route", "route_path": "/reports/heard-from-performance"},
+                    "route_path": "/reports/heard-from-performance",
+                    "source_label": "certified-route",
+                }
+            ),
+            ReportDefinition.model_validate(
+                {
+                    "slug": "event-calendar",
+                    "name": "Event Calendar",
+                    "description": "Review and approve scheduled business events for your teams.",
+                    "category": "Operations",
+                    "status": "published",
+                    "kind": "route",
+                    "prism_resource_code": "reports.event_calendar",
+                    "legacy_view_action": "event-calendar:read",
+                    "source": {"type": "route", "route_path": "/reports/event-calendar"},
+                    "route_path": "/reports/event-calendar",
+                    "source_label": "certified-route",
+                }
+            ),
         ]
-

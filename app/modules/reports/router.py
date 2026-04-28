@@ -34,8 +34,9 @@ def _request_id(request: Request) -> str:
 async def list_reports(
     caller: CallerContext = Depends(require_any_caller),
     central_db: AsyncSession = Depends(get_central_db_session),
+    main_db: AsyncSession = Depends(get_main_db_session),
 ):
-    reports = await catalog_service.list_visible_reports(central_db, caller)
+    reports = await catalog_service.list_visible_reports(central_db, main_db, caller)
     await central_db.commit()
     return success_response(
         data={"reports": [item.model_dump(mode="json") for item in reports]},
@@ -142,4 +143,3 @@ async def get_report(
         data={"report": definition.model_dump(mode="json")},
         message="Report fetched",
     ).model_dump(mode="json")
-

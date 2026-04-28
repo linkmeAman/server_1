@@ -114,6 +114,8 @@ class ReportCatalogItem(BaseModel):
     prism_resource_code: str
     legacy_report_id: int | None = None
     source_label: str
+    available: bool = True
+    unavailable_reason: str | None = None
 
 
 class ReportQueryFilter(BaseModel):
@@ -158,4 +160,3 @@ class ReportAdminSaveRequest(BaseModel):
     description: str | None = None
     category: str = Field(default="Reports", max_length=128)
     definition: dict[str, Any]
-

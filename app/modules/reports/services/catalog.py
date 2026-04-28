@@ -8,6 +8,7 @@ from app.core.prism_guard import CallerContext
 from app.modules.reports.schemas.models import ReportCatalogItem
 
 from .definition import ReportDefinitionService
+from .legacy_import import LegacyReportImportService
 from .permission import ReportPermissionService
 
 
@@ -16,13 +17,16 @@ class ReportCatalogService:
         self,
         definitions: ReportDefinitionService | None = None,
         permissions: ReportPermissionService | None = None,
+        legacy_imports: LegacyReportImportService | None = None,
     ) -> None:
         self.definitions = definitions or ReportDefinitionService()
         self.permissions = permissions or ReportPermissionService()
+        self.legacy_imports = legacy_imports or LegacyReportImportService()
 
     async def list_visible_reports(
         self,
         central_db: AsyncSession,
+        main_db: AsyncSession,
         caller: CallerContext,
     ) -> list[ReportCatalogItem]:
         items: list[ReportCatalogItem] = []
@@ -43,5 +47,16 @@ class ReportCatalogService:
                     source_label=definition.source_label,
                 )
             )
+        if caller.is_super:
+            migrated_report_ids = {
+                int(item.legacy_report_id)
+                for item in items
+                if item.legacy_report_id is not None
+            }
+            items.extend(
+                await self.legacy_imports.list_legacy_catalog_items(
+                    main_db,
+                    exclude_report_ids=migrated_report_ids,
+                )
+            )
         return items
-
