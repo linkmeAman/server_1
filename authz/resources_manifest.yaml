@@ -23,6 +23,10 @@ resources:
     name: Source Breakdown
     parent: reports
     sort_order: 20
+  - code: reports.inquiry_411
+    name: Inquiry Report 411
+    parent: reports
+    sort_order: 25
   - code: reports.center_performance
     name: Center Performance
     parent: reports
