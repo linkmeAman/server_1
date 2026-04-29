@@ -107,6 +107,36 @@ class LegacyReportImportService:
             if str(item.get("column_name") or "").strip()
         ]
 
+        # Legacy reports often store filter/scope columns outside report_column.
+        # Keep them hidden but declared so structured query validation can use them.
+        declared_keys = {str(item.get("key") or "").strip() for item in visible_columns}
+        date_column = str(report.get("date_filter_col") or "").strip()
+        if date_column and date_column not in declared_keys:
+            visible_columns.append(
+                {
+                    "key": date_column,
+                    "label": date_column.replace("_", " ").title(),
+                    "visible": False,
+                    "sortable": False,
+                    "searchable": False,
+                    "exportable": False,
+                }
+            )
+            declared_keys.add(date_column)
+
+        if int(report.get("check_bid") or 0) == 1 and "bid" not in declared_keys:
+            visible_columns.append(
+                {
+                    "key": "bid",
+                    "label": "Bid",
+                    "visible": False,
+                    "sortable": False,
+                    "searchable": False,
+                    "exportable": False,
+                }
+            )
+            declared_keys.add("bid")
+
         slug = f"legacy-{int(report_id)}"
         definition = ReportDefinition.model_validate(
             {
