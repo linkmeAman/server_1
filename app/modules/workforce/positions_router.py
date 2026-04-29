@@ -246,7 +246,8 @@ async def list_positions(
                     epv.department_name AS department,
                     epv.grade_count,
                     epv.description,
-                    COALESCE(epv.employee_count, 0) AS employee_count
+                    COALESCE(epv.employee_count, 0) AS employee_count,
+                    COALESCE(epv.apply, 0)           AS apply
                 FROM employee_position_view epv
                 {where}
                 ORDER BY epv.position
@@ -511,6 +512,99 @@ async def delete_position(
     await central_db.commit()
 
     return success_response(data={"id": position_id}, message="Position deleted").model_dump(mode="json")
+
+
+# ---------------------------------------------------------------------------
+# Endpoints — employees at a position
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{position_id}/employees")
+async def get_position_employees(
+    position_id: int,
+    caller: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+    central_db: AsyncSession = Depends(get_central_db_session),
+):
+    """Return all active employees assigned to this position."""
+    if not caller.is_super:
+        pdp = await evaluate(
+            PDPRequest(
+                user_id=caller.user_id,
+                action="employee:read",
+                resource_type="employee",
+            ),
+            central_db,
+        )
+        if pdp.decision != "Allow":
+            raise HTTPException(status_code=403, detail="PRISM: Not authorized to view employees")
+
+    rows = _rows(
+        await main_db.execute(
+            text(
+                """
+                SELECT
+                    e.id                                                   AS emp_id,
+                    e.contact_id,
+                    e.grade,
+                    CASE WHEN e.is_admin = 1 THEN 'Yes' ELSE 'No' END     AS has_admin_role,
+                    TRIM(CONCAT(c.fname, ' ', COALESCE(c.lname, '')))      AS full_name,
+                    c.mobile,
+                    c.email
+                FROM employee e
+                JOIN contact c ON c.id = e.contact_id
+                WHERE e.position_id = :position_id
+                  AND (e.park = 0 OR e.park IS NULL)
+                ORDER BY e.grade, c.fname
+                """
+            ),
+            {"position_id": position_id},
+        )
+    )
+
+    return success_response(
+        data={"employees": rows, "total": len(rows)},
+        message="Position employees fetched",
+    ).model_dump(mode="json")
+
+
+# ---------------------------------------------------------------------------
+# Endpoint — toggle apply (Trigger)
+# ---------------------------------------------------------------------------
+
+
+@router.patch("/{position_id}/toggle-apply")
+async def toggle_position_apply(
+    position_id: int,
+    caller: CallerContext = Depends(require_any_caller),
+    central_db: AsyncSession = Depends(get_central_db_session),
+):
+    """Toggle the `apply` flag (0↔1) — activates or deactivates the position template."""
+    await _check_prism(caller, "employee_position:update", central_db, str(position_id))
+
+    pos = _row(
+        await central_db.execute(
+            text(
+                "SELECT id, apply FROM employee_position "
+                "WHERE id = :id AND (park = 0 OR park IS NULL) LIMIT 1"
+            ),
+            {"id": position_id},
+        )
+    )
+    if not pos:
+        raise HTTPException(status_code=404, detail="Position not found")
+
+    new_apply = 0 if pos.get("apply") else 1
+    await central_db.execute(
+        text("UPDATE employee_position SET apply = :apply WHERE id = :id"),
+        {"apply": new_apply, "id": position_id},
+    )
+    await central_db.commit()
+
+    return success_response(
+        data={"id": position_id, "apply": new_apply},
+        message="Position activated" if new_apply else "Position deactivated",
+    ).model_dump(mode="json")
 
 
 # ---------------------------------------------------------------------------
