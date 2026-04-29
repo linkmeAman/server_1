@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ValidationError
 
-from db.connection import db_cursor
+from db.connection import db_cursor, serialize_db_rows
 from db.query_validator import MAX_ROWS, QueryValidationError, apply_row_limit, validate_query
 from routes.db_explorer_permissions import require_db_explorer_access
 from routes.db_explorer_security import normalize_database_name
@@ -45,7 +45,7 @@ async def run_select_query(request: Request, db: str | None = Query(default=None
         rows = cursor.fetchall()
 
     return build_response({
-        "rows": rows,
+        "rows": serialize_db_rows(rows),
         "row_count": len(rows),
         "max_rows": MAX_ROWS,
     }, request)
