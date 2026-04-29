@@ -94,7 +94,7 @@ EXTRA_RESOURCES: list[dict] = [
 ACTION_MAP: dict[str, list[str]] = {
     "global":    ["read"],
     "boards":    ["list", "read"],
-    "reports":   ["list", "read", "export"],
+    "reports":   ["list", "read", "export", "manage"],
     "employees": ["list", "read", "create", "write", "delete"],
     "contacts":  ["list", "read", "create", "write"],
     "users":     ["list", "read", "create", "write", "delete"],
@@ -108,6 +108,7 @@ VERB_LABELS: dict[str, str] = {
     "write":  "Update / Write",
     "delete": "Delete",
     "export": "Export",
+    "manage": "Manage",
 }
 
 # Policies: one per system role
