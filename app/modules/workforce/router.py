@@ -17,9 +17,11 @@ from app.core.prism_pdp import PDPRequest, evaluate
 from app.core.response import success_response
 
 from .dependencies import CallerContext, require_any_caller
+from .positions_router import router as positions_router
 from .services.workforce_service import WorkforceService
 
 router = APIRouter(prefix="/api/workforce", tags=["workforce"])
+router.include_router(positions_router)
 
 service = WorkforceService()
 
