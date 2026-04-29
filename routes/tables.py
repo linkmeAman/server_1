@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from db.connection import db_cursor
+from db.connection import db_cursor, serialize_db_rows
 from db.query_validator import MAX_ROWS
 from routes.db_explorer_permissions import require_db_explorer_access
 from routes.db_explorer_security import (
@@ -215,7 +215,7 @@ def table_rows(
 
     return {
         "table": safe_table,
-        "rows": rows,
+        "rows": serialize_db_rows(rows),
         "pagination": {
             "limit": limit,
             "offset": offset,
