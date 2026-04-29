@@ -49,15 +49,20 @@ def _rows(result) -> list[dict]:  # type: ignore[return]
     return [dict(r._mapping) for r in result.fetchall()]
 
 
-def _require_client(caller: CallerContext) -> int:
-    """Extract client_id from token claims or raise 403."""
-    client_id = caller.token_claims.get("client_id")
-    if not client_id:
-        raise HTTPException(status_code=403, detail="No client context in token")
-    try:
-        return int(client_id)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=403, detail="Invalid client context in token")
+async def _get_client_id(caller: CallerContext, central_db: AsyncSession) -> int:
+    """Look up client_id from the user table in central DB."""
+    row = _row(
+        await central_db.execute(
+            text(
+                "SELECT client_id FROM user "
+                "WHERE id = :uid AND (park = 0 OR park IS NULL) LIMIT 1"
+            ),
+            {"uid": caller.user_id},
+        )
+    )
+    if not row or not row.get("client_id"):
+        raise HTTPException(status_code=403, detail="No client context found for user")
+    return int(row["client_id"])
 
 
 async def _check_prism(
@@ -625,7 +630,7 @@ async def get_position_permissions(
     if not caller.is_super:
         await _check_prism(caller, "employee_position:manage_permissions", central_db, str(position_id))
 
-    client_id = _require_client(caller)
+    client_id = await _get_client_id(caller, central_db)
 
     # Confirm position exists
     pos = _row(
