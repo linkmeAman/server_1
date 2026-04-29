@@ -243,7 +243,7 @@ async def list_positions(
                     epv.id,
                     epv.position,
                     epv.department_id,
-                    epv.department,
+                    epv.department_name AS department,
                     epv.grade_count,
                     epv.description,
                     COALESCE(epv.employee_count, 0) AS employee_count
