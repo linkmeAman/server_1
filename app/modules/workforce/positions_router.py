@@ -659,7 +659,7 @@ async def get_position_permissions(
         client_filter_sql = "WHERE cm.client_id = :client_id AND cm.active = 1"
         query_params: dict = {"position_id": position_id, "grade": grade, "client_id": client_id}
     else:
-        # Super admin — show all active modules across all clients
+        # Super admin — show all active modules, deduplicated across clients
         client_filter_sql = "WHERE cm.active = 1"
         query_params = {"position_id": position_id, "grade": grade}
 
@@ -668,16 +668,17 @@ async def get_position_permissions(
             text(
                 f"""
                 SELECT
-                    cm.id          AS client_module_id,
+                    MIN(cm.id)     AS client_module_id,
                     cm.module_id,
                     cm.module      AS module_name,
-                    COALESCE(pt.permission, 0) AS permission
+                    COALESCE(MAX(pt.permission), 0) AS permission
                 FROM client_module cm
                 LEFT JOIN position_template pt
                     ON pt.module_id = cm.module_id
                     AND pt.epos_id  = :position_id
                     AND pt.grade    = :grade
                 {client_filter_sql}
+                GROUP BY cm.module_id, cm.module
                 ORDER BY cm.module
                 """
             ),
