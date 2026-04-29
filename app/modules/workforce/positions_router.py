@@ -49,8 +49,12 @@ def _rows(result) -> list[dict]:  # type: ignore[return]
     return [dict(r._mapping) for r in result.fetchall()]
 
 
-async def _get_client_id(caller: CallerContext, central_db: AsyncSession) -> int:
-    """Look up client_id from the user table in central DB."""
+async def _get_client_id(caller: CallerContext, central_db: AsyncSession) -> int | None:
+    """Look up client_id from the user table in central DB.
+    Returns None for super admins (auth_supreme_user IDs differ from user.id).
+    """
+    if caller.is_super:
+        return None
     row = _row(
         await central_db.execute(
             text(
@@ -651,10 +655,18 @@ async def get_position_permissions(
             detail=f"Grade {grade} exceeds position's grade_count ({pos['grade_count']})",
         )
 
+    if client_id is not None:
+        client_filter_sql = "WHERE cm.client_id = :client_id AND cm.active = 1"
+        query_params: dict = {"position_id": position_id, "grade": grade, "client_id": client_id}
+    else:
+        # Super admin — show all active modules across all clients
+        client_filter_sql = "WHERE cm.active = 1"
+        query_params = {"position_id": position_id, "grade": grade}
+
     rows = _rows(
         await central_db.execute(
             text(
-                """
+                f"""
                 SELECT
                     cm.id          AS client_module_id,
                     cm.module_id,
@@ -665,16 +677,11 @@ async def get_position_permissions(
                     ON pt.module_id = cm.module_id
                     AND pt.epos_id  = :position_id
                     AND pt.grade    = :grade
-                WHERE cm.client_id = :client_id
-                  AND cm.active    = 1
+                {client_filter_sql}
                 ORDER BY cm.module
                 """
             ),
-            {
-                "position_id": position_id,
-                "grade": grade,
-                "client_id": client_id,
-            },
+            query_params,
         )
     )
 
