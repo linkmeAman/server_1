@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_central_db_session, get_main_db_session
@@ -22,6 +22,8 @@ from app.modules.reports.services import (
     ReportPermissionService,
     ReportQueryService,
 )
+from db.connection import db_cursor
+from routes.db_explorer_security import filter_database_list, normalize_database_name, validate_identifier
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -112,6 +114,115 @@ async def list_admin_reports(
     return success_response(
         data={"reports": [item.model_dump(mode="json") for item in reports]},
         message="Admin reports fetched",
+    ).model_dump(mode="json")
+
+
+def _infer_column_type(data_type: str) -> str:
+    normalized = (data_type or "").lower()
+    if "bool" in normalized or normalized.startswith("bit"):
+        return "boolean"
+    if "timestamp" in normalized or "datetime" in normalized:
+        return "datetime"
+    if "date" in normalized:
+        return "date"
+    if any(token in normalized for token in ("decimal", "numeric", "money")):
+        return "currency"
+    if "bigint" in normalized or "int" in normalized:
+        return "integer"
+    if any(token in normalized for token in ("float", "double", "real")):
+        return "number"
+    return "text"
+
+
+@router.get("/admin/discovery/databases")
+async def list_report_discovery_databases(
+    caller: CallerContext = Depends(require_any_caller),
+    central_db: AsyncSession = Depends(get_central_db_session),
+):
+    await permission_service.require_manage(caller, central_db)
+    with db_cursor() as cursor:
+        cursor.execute("SHOW DATABASES")
+        rows = cursor.fetchall()
+
+    databases: list[str] = []
+    for row in rows:
+        if not row:
+            continue
+        value = str(next(iter(row.values()), "") or "").strip()
+        if value:
+            databases.append(value)
+
+    return success_response(
+        data={"databases": sorted(filter_database_list(databases))},
+        message="Report source databases fetched",
+    ).model_dump(mode="json")
+
+
+@router.get("/admin/discovery/tables")
+async def list_report_discovery_tables(
+    db: str = Query(..., min_length=1),
+    caller: CallerContext = Depends(require_any_caller),
+    central_db: AsyncSession = Depends(get_central_db_session),
+):
+    await permission_service.require_manage(caller, central_db)
+    selected_db = normalize_database_name(db)
+
+    with db_cursor(database=selected_db) as cursor:
+        cursor.execute("SHOW TABLES")
+        rows = cursor.fetchall()
+
+    tables: list[str] = []
+    for row in rows:
+        if not row:
+            continue
+        name = str(next(iter(row.values()), "") or "").strip()
+        if name:
+            tables.append(validate_identifier(name, "table name"))
+
+    return success_response(
+        data={"tables": sorted(set(tables))},
+        message="Report source tables fetched",
+    ).model_dump(mode="json")
+
+
+@router.get("/admin/discovery/columns")
+async def list_report_discovery_columns(
+    db: str = Query(..., min_length=1),
+    table: str = Query(..., min_length=1),
+    caller: CallerContext = Depends(require_any_caller),
+    central_db: AsyncSession = Depends(get_central_db_session),
+):
+    await permission_service.require_manage(caller, central_db)
+    selected_db = normalize_database_name(db)
+    safe_table = validate_identifier(table, "table name")
+
+    with db_cursor(database=selected_db) as cursor:
+        cursor.execute(f"DESCRIBE `{safe_table}`")
+        schema_rows = cursor.fetchall()
+
+    columns: list[dict[str, object]] = []
+    for row in schema_rows:
+        raw_name = str(row.get("Field", "") or "").strip()
+        if not raw_name:
+            continue
+        name = validate_identifier(raw_name, "column name")
+        data_type = str(row.get("Type", "text") or "text")
+        key_flag = str(row.get("Key", "") or "")
+        null_flag = str(row.get("Null", "YES") or "YES")
+        columns.append(
+            {
+                "name": name,
+                "data_type": data_type,
+                "report_type": _infer_column_type(data_type),
+                "is_primary_key": key_flag.upper() == "PRI",
+                "is_nullable": null_flag.upper() == "YES",
+            }
+        )
+
+    columns.sort(key=lambda item: str(item["name"]))
+    return success_response(
+        data={"columns": columns},
+        message="Report source columns fetched",
     ).model_dump(mode="json")
 
 
