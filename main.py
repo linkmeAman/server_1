@@ -141,9 +141,16 @@ async def auth_v2_exception_handler(request: Request, exc: AuthError):
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """Handle HTTP exceptions"""
+    message = str(exc.detail)
+    data = getattr(exc, "response_data", None)
+    if isinstance(exc.detail, dict):
+        message = str(exc.detail.get("message") or exc.detail.get("detail") or "Request failed")
+        if data is None:
+            data = exc.detail.get("data")
     payload = error_response(
-        error="HTTPException",
-        message=str(exc.detail)
+        error=getattr(exc, "error_code", exc.__class__.__name__ or "HTTPException"),
+        message=message,
+        data=data,
     ).model_dump(mode='json')
     logger.error(
         "ERROR_RESPONSE %s %s status=%s payload=%s",

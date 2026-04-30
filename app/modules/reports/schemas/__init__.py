@@ -1,24 +1,47 @@
 """Report platform schemas."""
 
 from .models import (
+    ReportAction,
+    ReportAdminListResponse,
     ReportAdminSaveRequest,
+    ReportAdminStatus,
+    ReportBranchScope,
     ReportCatalogItem,
     ReportColumn,
+    ReportDateRange,
     ReportDefinition,
+    ReportDraftListResponse,
+    ReportDraftResponse,
+    ReportDraftUpsertRequest,
+    ReportFieldError,
     ReportFilter,
+    ReportImportDraftResponse,
     ReportQueryRequest,
     ReportQueryResponse,
+    ReportSource,
     ReportSort,
+    ReportValidationErrorResponse,
 )
 
 __all__ = [
+    "ReportAction",
+    "ReportAdminListResponse",
     "ReportAdminSaveRequest",
+    "ReportAdminStatus",
+    "ReportBranchScope",
     "ReportCatalogItem",
     "ReportColumn",
+    "ReportDateRange",
     "ReportDefinition",
+    "ReportDraftListResponse",
+    "ReportDraftResponse",
+    "ReportDraftUpsertRequest",
+    "ReportFieldError",
     "ReportFilter",
+    "ReportImportDraftResponse",
     "ReportQueryRequest",
     "ReportQueryResponse",
+    "ReportSource",
     "ReportSort",
+    "ReportValidationErrorResponse",
 ]
-

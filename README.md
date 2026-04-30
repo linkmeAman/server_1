@@ -39,6 +39,7 @@ backend/python/server_1/
 
 - `docs/ARCHITECTURE.md`
 - `docs/AUTH_AND_SECURITY.md`
+- `docs/REPORT_PLATFORM_BACKEND_CHANGES.md`
 - `docs/ROUTING.md`
 - `docs/TESTING_ON_SERVER.md`
 - `docs/FOLDER_MIGRATION_PLAN.md`
