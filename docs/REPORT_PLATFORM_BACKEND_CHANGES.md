@@ -73,6 +73,9 @@ Admin routes:
 | `POST` | `/api/reports/admin/reports/{slug}/publish` | Publish the active draft version |
 | `POST` | `/api/reports/admin/reports/{slug}/archive` | Archive a report |
 | `POST` | `/api/reports/admin/legacy/{report_id}/import` | Import legacy metadata into a draft and return the editable report |
+| `GET` | `/api/reports/admin/discovery/databases` | List accessible source databases for report builder |
+| `GET` | `/api/reports/admin/discovery/tables?db=...` | List accessible tables for the selected database |
+| `GET` | `/api/reports/admin/discovery/columns?db=...&table=...` | Describe source table columns with inferred report field types |
 
 Compatibility alias:
 
@@ -217,6 +220,12 @@ Permission behavior:
 - super users still bypass PRISM checks
 - legacy compatibility actions such as `report:read` and `top-summary:read` remain accepted where configured
 - admin routes require `reports:manage` or `reports:write`
+
+Builder discovery behavior:
+
+- discovery endpoints are protected by report manage/write authorization
+- database and table names are validated through the DB explorer security helpers
+- source columns include inferred `report_type` metadata (`text`, `integer`, `number`, `currency`, `date`, `datetime`, `boolean`) for frontend defaults
 
 ## Query Safety
 
