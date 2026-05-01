@@ -606,6 +606,117 @@ class WorkforceService:
             "status": int(status),
         }
 
+    async def list_attendance_leaves(
+        self,
+        main_db: AsyncSession,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        category: int | None,
+        expired: int | None,
+        park: int | None,
+        limit: int,
+        offset: int,
+    ) -> dict[str, Any]:
+        rows = await self.repo.list_attendance_leaves(
+            main_db,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            category=category,
+            expired=expired,
+            park=park,
+            limit=limit,
+            offset=offset,
+        )
+        total = await self.repo.count_attendance_leaves(
+            main_db,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            category=category,
+            expired=expired,
+            park=park,
+        )
+        return {
+            "rows": [self._serialize_attendance_leave_row(row) for row in rows],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
+    async def update_attendance_leave(
+        self,
+        main_db: AsyncSession,
+        *,
+        leave_id: int,
+        payload: dict[str, Any],
+        modified_by: int,
+    ) -> dict[str, Any]:
+        del modified_by
+        existing = await self.repo.get_attendance_leave(main_db, leave_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Attendance leave not found")
+
+        normalized = self._normalize_attendance_leave_payload(payload)
+        if normalized:
+            await self.repo.update_attendance_leave(
+                main_db,
+                leave_id=leave_id,
+                payload=normalized,
+            )
+            await main_db.commit()
+
+        refreshed = await self.repo.get_attendance_leave(main_db, leave_id)
+        if refreshed is None:
+            raise HTTPException(status_code=404, detail="Attendance leave not found after update")
+        return {"row": self._serialize_attendance_leave_row(refreshed)}
+
+    async def create_attendance_leave(
+        self,
+        main_db: AsyncSession,
+        *,
+        payload: dict[str, Any],
+        created_by: int,
+    ) -> dict[str, Any]:
+        del created_by
+        normalized = self._normalize_attendance_leave_payload(payload)
+        today = date.today().isoformat()
+        defaults: dict[str, Any] = {
+            "emp_code": 0,
+            "doi": today,
+            "doc": today,
+            "doe": today,
+            "earned": 1.0,
+            "category": 1,
+            "day_code": 7,
+            "consumed": 0,
+            "expired": 0,
+            "park": 0,
+        }
+        merged = {**defaults, **normalized}
+        contact_id = self._as_int(merged.get("contact_id"))
+        emp_id = self._as_int(merged.get("emp_id"))
+        if contact_id is None or contact_id <= 0:
+            raise HTTPException(status_code=400, detail="contact_id is required to create attendance leave")
+        if emp_id is None or emp_id <= 0:
+            raise HTTPException(status_code=400, detail="emp_id is required to create attendance leave")
+        merged["contact_id"] = int(contact_id)
+        merged["emp_id"] = int(emp_id)
+
+        leave_id = await self.repo.create_attendance_leave(
+            main_db,
+            payload=merged,
+        )
+        await main_db.commit()
+        if leave_id <= 0:
+            raise HTTPException(status_code=500, detail="Failed to create attendance leave")
+        created = await self.repo.get_attendance_leave(main_db, leave_id)
+        if created is None:
+            raise HTTPException(status_code=500, detail="Created attendance leave could not be loaded")
+        return {"row": self._serialize_attendance_leave_row(created)}
+
     async def get_payroll_overview(
         self,
         main_db: AsyncSession,
@@ -1060,6 +1171,33 @@ class WorkforceService:
             "modified_at": self._as_datetime_text(row.get("modified_at")),
         }
 
+    def _serialize_attendance_leave_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": self._as_int(row.get("id")),
+            "employee_id": self._as_int(row.get("emp_id")),
+            "contact_id": self._as_int(row.get("contact_id")),
+            "emp_code": row.get("emp_code"),
+            "full_name": self._normalize_full_name(
+                row.get("full_name"),
+                row.get("fname"),
+                row.get("mname"),
+                row.get("lname"),
+            ),
+            "email": self._as_text(row.get("email")),
+            "mobile": self._as_text(row.get("mobile")),
+            "doi": self._as_date_text(row.get("doi")),
+            "doc": self._as_date_text(row.get("doc")),
+            "doe": self._as_date_text(row.get("doe")),
+            "earned": row.get("earned"),
+            "category": self._as_int(row.get("category")),
+            "day_code": self._as_int(row.get("day_code")),
+            "consumed": self._as_int(row.get("consumed")),
+            "expired": self._as_int(row.get("expired")),
+            "park": self._as_int(row.get("park")),
+            "created_at": self._as_datetime_text(row.get("created_at")),
+            "modified_at": self._as_datetime_text(row.get("modified_at")),
+        }
+
     def _serialize_payroll_record_row(self, row: dict[str, Any]) -> dict[str, Any]:
         def _json_field(value: Any) -> Any:
             if value is None:
@@ -1285,6 +1423,29 @@ class WorkforceService:
                 normalized[field] = self._coerce_string(value)
             elif field in json_fields:
                 normalized[field] = self._coerce_json(value)
+        return normalized
+
+    def _normalize_attendance_leave_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        normalized: dict[str, Any] = {}
+        int_fields = {
+            "contact_id",
+            "emp_id",
+            "emp_code",
+            "category",
+            "day_code",
+            "consumed",
+            "expired",
+            "park",
+        }
+        float_fields = {"earned"}
+        str_fields = {"doi", "doc", "doe"}
+        for field, value in payload.items():
+            if field in int_fields:
+                normalized[field] = self._coerce_int(value)
+            elif field in float_fields:
+                normalized[field] = self._coerce_float(value)
+            elif field in str_fields:
+                normalized[field] = self._coerce_string(value)
         return normalized
 
     # -------------------------------------------------------------------------
