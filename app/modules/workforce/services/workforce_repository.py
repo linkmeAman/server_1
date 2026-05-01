@@ -870,6 +870,220 @@ class WorkforceRepository:
         result = await db.execute(text(sql), params)
         return int(getattr(result, "rowcount", 0) or 0)
 
+    async def count_attendance_leaves(
+        self,
+        db: AsyncSession,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        category: int | None,
+        expired: int | None,
+        park: int | None,
+    ) -> int:
+        sql, params = self._attendance_leaves_query(
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            category=category,
+            expired=expired,
+            park=park,
+            select_sql="SELECT COUNT(*) AS total",
+        )
+        result = await db.execute(text(sql), params)
+        row = result.fetchone()
+        return int(row._mapping["total"]) if row else 0
+
+    async def list_attendance_leaves(
+        self,
+        db: AsyncSession,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        category: int | None,
+        expired: int | None,
+        park: int | None,
+        limit: int,
+        offset: int,
+    ) -> list[dict[str, Any]]:
+        sql, params = self._attendance_leaves_query(
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            category=category,
+            expired=expired,
+            park=park,
+            select_sql="""
+                SELECT
+                    lb.id,
+                    lb.contact_id,
+                    lb.emp_id,
+                    lb.emp_code,
+                    lb.doi,
+                    lb.doc,
+                    lb.doe,
+                    lb.earned,
+                    lb.category,
+                    lb.day_code,
+                    lb.consumed,
+                    lb.expired,
+                    lb.park,
+                    lb.created_at,
+                    lb.modified_at,
+                    c.fname,
+                    c.mname,
+                    c.lname,
+                    c.email,
+                    c.mobile,
+                    CONCAT_WS(' ', NULLIF(TRIM(c.fname), ''), NULLIF(TRIM(c.mname), ''), NULLIF(TRIM(c.lname), '')) AS full_name
+            """,
+        )
+        sql += """
+            ORDER BY lb.doc DESC, lb.id DESC
+            LIMIT :limit OFFSET :offset
+        """
+        params["limit"] = int(limit)
+        params["offset"] = int(offset)
+        result = await db.execute(text(sql), params)
+        return [dict(row._mapping) for row in result.fetchall()]
+
+    async def get_attendance_leave(self, db: AsyncSession, leave_id: int) -> dict[str, Any] | None:
+        result = await db.execute(
+            text(
+                """
+                SELECT
+                    lb.id,
+                    lb.contact_id,
+                    lb.emp_id,
+                    lb.emp_code,
+                    lb.doi,
+                    lb.doc,
+                    lb.doe,
+                    lb.earned,
+                    lb.category,
+                    lb.day_code,
+                    lb.consumed,
+                    lb.expired,
+                    lb.park,
+                    lb.created_at,
+                    lb.modified_at,
+                    c.fname,
+                    c.mname,
+                    c.lname,
+                    c.email,
+                    c.mobile,
+                    CONCAT_WS(' ', NULLIF(TRIM(c.fname), ''), NULLIF(TRIM(c.mname), ''), NULLIF(TRIM(c.lname), '')) AS full_name
+                FROM leave_bucket lb
+                LEFT JOIN employee e ON e.id = lb.emp_id AND (e.park IS NULL OR e.park = 0)
+                LEFT JOIN contact c ON c.id = COALESCE(lb.contact_id, e.contact_id)
+                WHERE lb.id = :leave_id
+                LIMIT 1
+                """
+            ),
+            {"leave_id": int(leave_id)},
+        )
+        row = result.fetchone()
+        return dict(row._mapping) if row else None
+
+    async def update_attendance_leave(
+        self,
+        db: AsyncSession,
+        *,
+        leave_id: int,
+        payload: dict[str, Any],
+    ) -> None:
+        allowed_fields = {
+            "contact_id",
+            "emp_id",
+            "emp_code",
+            "doi",
+            "doc",
+            "doe",
+            "earned",
+            "category",
+            "day_code",
+            "consumed",
+            "expired",
+            "park",
+        }
+        assignments: list[str] = []
+        params: dict[str, Any] = {"leave_id": int(leave_id)}
+        for field, value in payload.items():
+            if field not in allowed_fields:
+                continue
+            assignments.append(f"{field} = :{field}")
+            params[field] = value
+        if not assignments:
+            return
+        await db.execute(
+            text(
+                f"""
+                UPDATE leave_bucket
+                SET {", ".join(assignments)}
+                WHERE id = :leave_id
+                """
+            ),
+            params,
+        )
+
+    async def create_attendance_leave(
+        self,
+        db: AsyncSession,
+        *,
+        payload: dict[str, Any],
+    ) -> int:
+        params = {
+            "contact_id": int(payload.get("contact_id", 0)),
+            "emp_id": int(payload.get("emp_id", 0)),
+            "emp_code": int(payload.get("emp_code", 0)),
+            "doi": payload.get("doi", "1970-01-01"),
+            "doc": payload.get("doc", "1970-01-01"),
+            "doe": payload.get("doe", "1970-01-01"),
+            "earned": float(payload.get("earned", 0)),
+            "category": int(payload.get("category", 1)),
+            "day_code": int(payload.get("day_code", 7)),
+            "consumed": int(payload.get("consumed", 0)),
+            "expired": int(payload.get("expired", 0)),
+            "park": int(payload.get("park", 0)),
+        }
+        result = await db.execute(
+            text(
+                """
+                INSERT INTO leave_bucket (
+                    contact_id,
+                    emp_id,
+                    emp_code,
+                    doi,
+                    doc,
+                    doe,
+                    earned,
+                    category,
+                    day_code,
+                    consumed,
+                    expired,
+                    park
+                ) VALUES (
+                    :contact_id,
+                    :emp_id,
+                    :emp_code,
+                    :doi,
+                    :doc,
+                    :doe,
+                    :earned,
+                    :category,
+                    :day_code,
+                    :consumed,
+                    :expired,
+                    :park
+                )
+                """
+            ),
+            params,
+        )
+        inserted_id = getattr(result, "lastrowid", None)
+        return int(inserted_id or 0)
+
     async def _attendance_records_query(
         self,
         db: AsyncSession,
@@ -959,6 +1173,49 @@ class WorkforceRepository:
         if department_id is not None:
             sql += " AND e.department_id = :department_id"
             params["department_id"] = int(department_id)
+        return sql, params
+
+    def _attendance_leaves_query(
+        self,
+        *,
+        employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        category: int | None,
+        expired: int | None,
+        park: int | None,
+        select_sql: str,
+    ) -> tuple[str, dict[str, Any]]:
+        sql = f"""
+            {select_sql}
+            FROM leave_bucket lb
+            LEFT JOIN employee e ON e.id = lb.emp_id AND (e.park IS NULL OR e.park = 0)
+            LEFT JOIN contact c ON c.id = COALESCE(lb.contact_id, e.contact_id)
+            WHERE 1 = 1
+        """
+        params: dict[str, Any] = {}
+        if employee_id is not None:
+            sql += " AND lb.emp_id = :employee_id"
+            params["employee_id"] = int(employee_id)
+        if from_date and to_date:
+            sql += " AND lb.doc <= :to_date AND lb.doe >= :from_date"
+            params["from_date"] = from_date
+            params["to_date"] = to_date
+        elif from_date:
+            sql += " AND lb.doe >= :from_date"
+            params["from_date"] = from_date
+        elif to_date:
+            sql += " AND lb.doc <= :to_date"
+            params["to_date"] = to_date
+        if category is not None:
+            sql += " AND lb.category = :category"
+            params["category"] = int(category)
+        if expired is not None:
+            sql += " AND lb.expired = :expired"
+            params["expired"] = int(expired)
+        if park is not None:
+            sql += " AND lb.park = :park"
+            params["park"] = int(park)
         return sql, params
 
     async def count_attendance_ready_employees(
