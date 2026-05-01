@@ -118,7 +118,7 @@ class WorkforceRepository:
                     c.email,
                     c.mobile,
                     c.country_code,
-                    e.parent_id,
+                    ep.parent_emp_id AS parent_id,
                     c.bid,
                     CONCAT_WS(' ', NULLIF(TRIM(c.fname), ''), NULLIF(TRIM(c.mname), ''), NULLIF(TRIM(c.lname), '')) AS full_name
             """,
@@ -194,7 +194,7 @@ class WorkforceRepository:
                     c.country_code_2,
                     c.phone_no,
                     c.bid,
-                    e.parent_id,
+                    ep.parent_emp_id AS parent_id,
                     c.gender,
                     c.dob,
                     c.address,
@@ -217,6 +217,12 @@ class WorkforceRepository:
                     CONCAT_WS(' ', NULLIF(TRIM(c.fname), ''), NULLIF(TRIM(c.mname), ''), NULLIF(TRIM(c.lname), '')) AS full_name
                 FROM employee e
                 LEFT JOIN contact c ON c.id = e.contact_id
+                LEFT JOIN (
+                    SELECT emp_id, MIN(parent_emp_id) AS parent_emp_id
+                    FROM employee_parent
+                    WHERE (park IS NULL OR park = 0)
+                    GROUP BY emp_id
+                ) ep ON ep.emp_id = e.id
                 LEFT JOIN contact ec ON ec.id = c.parent_id
                 WHERE e.id = :employee_id
                   AND (e.park IS NULL OR e.park = 0)
@@ -998,6 +1004,12 @@ class WorkforceRepository:
             {select_sql}
             FROM employee e
             LEFT JOIN contact c ON c.id = e.contact_id
+            LEFT JOIN (
+                SELECT emp_id, MIN(parent_emp_id) AS parent_emp_id
+                FROM employee_parent
+                WHERE (park IS NULL OR park = 0)
+                GROUP BY emp_id
+            ) ep ON ep.emp_id = e.id
             WHERE (e.park IS NULL OR e.park = 0)
         """
         params: dict[str, Any] = {}
