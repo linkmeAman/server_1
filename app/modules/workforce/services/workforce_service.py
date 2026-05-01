@@ -936,6 +936,7 @@ class WorkforceService:
             "email": self._as_text(row.get("email")),
             "mobile": self._as_text(row.get("mobile")),
             "country_code": self._as_text(row.get("country_code")),
+            "parent_id": self._as_int(row.get("parent_id")),
             "bid": self._as_int(row.get("bid")),
             "full_name": self._normalize_full_name(
                 row.get("full_name"),

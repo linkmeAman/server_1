@@ -118,6 +118,7 @@ class WorkforceRepository:
                     c.email,
                     c.mobile,
                     c.country_code,
+                    e.parent_id,
                     c.bid,
                     CONCAT_WS(' ', NULLIF(TRIM(c.fname), ''), NULLIF(TRIM(c.mname), ''), NULLIF(TRIM(c.lname), '')) AS full_name
             """,
@@ -193,6 +194,7 @@ class WorkforceRepository:
                     c.country_code_2,
                     c.phone_no,
                     c.bid,
+                    e.parent_id,
                     c.gender,
                     c.dob,
                     c.address,
