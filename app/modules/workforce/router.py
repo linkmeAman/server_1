@@ -977,6 +977,8 @@ async def get_workforce_salary_track(
 async def get_workforce_salary_excel(
     from_date: str | None = Query(default=None),
     to_date: str | None = Query(default=None),
+    months: str | None = Query(default=None),
+    employee_names: str | None = Query(default=None),
     search: str | None = Query(default=None),
     dept: str | None = Query(default=None),
     paid_status: str | None = Query(default=None, pattern="^(paid|unpaid|all)?$"),
@@ -987,10 +989,16 @@ async def get_workforce_salary_excel(
 ):
     from_date = _validate_date(from_date, "from_date")
     to_date = _validate_date(to_date, "to_date")
+    month_values = [item.strip() for item in months.split(",") if item.strip()] if months else None
+    if month_values and any(not re.fullmatch(r"\d{4}-\d{2}", month) for month in month_values):
+        raise HTTPException(status_code=400, detail="months must be comma-separated YYYY-MM values")
+    employee_name_values = [item.strip() for item in employee_names.split(",") if item.strip()] if employee_names else None
     data = await service.salary_excel(
         main_db,
         from_date=from_date,
         to_date=to_date,
+        months=month_values,
+        employee_names=employee_name_values,
         search=search,
         dept=dept if dept else None,
         paid_status=paid_status if paid_status and paid_status != "all" else None,
