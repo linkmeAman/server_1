@@ -2230,3 +2230,155 @@ class WorkforceRepository:
             text(f"UPDATE employee SET {set_clause} WHERE id = :employee_id"),
             params,
         )
+
+    # -------------------------------------------------------------------------
+    # Salary Excel view helpers
+    # -------------------------------------------------------------------------
+
+    def _salary_excel_where(
+        self,
+        *,
+        from_date: str | None,
+        to_date: str | None,
+        search: str | None,
+        dept: str | None,
+        paid_status: str | None,
+    ) -> tuple[str, dict[str, Any]]:
+        """Build WHERE clause and params for salary_excel_view queries."""
+        conditions: list[str] = ["1 = 1"]
+        params: dict[str, Any] = {}
+        if from_date:
+            conditions.append("`from_date` >= :from_date")
+            params["from_date"] = from_date
+        if to_date:
+            conditions.append("`from_date` <= :to_date")
+            params["to_date"] = to_date
+        if search and search.strip():
+            conditions.append("`Name` LIKE :search")
+            params["search"] = f"%{search.strip()}%"
+        if dept and dept.strip():
+            conditions.append("`Dept` = :dept")
+            params["dept"] = dept.strip()
+        if paid_status == "paid":
+            conditions.append("`Final Transfer Amt` > 0")
+        elif paid_status == "unpaid":
+            conditions.append("`Final Transfer Amt` = 0")
+        return " AND ".join(conditions), params
+
+    async def count_salary_excel(
+        self,
+        db: AsyncSession,
+        *,
+        from_date: str | None,
+        to_date: str | None,
+        search: str | None,
+        dept: str | None,
+        paid_status: str | None,
+    ) -> dict[str, int]:
+        where, params = self._salary_excel_where(
+            from_date=from_date,
+            to_date=to_date,
+            search=search,
+            dept=dept,
+            paid_status=paid_status,
+        )
+        sql = f"""
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN `Final Transfer Amt` > 0 THEN 1 ELSE 0 END) AS paid_count,
+                SUM(CASE WHEN `Final Transfer Amt` = 0 THEN 1 ELSE 0 END) AS unpaid_count
+            FROM salary_excel_view
+            WHERE {where}
+        """
+        result = await db.execute(text(sql), params)
+        row = result.fetchone()
+        if not row:
+            return {"total": 0, "paid_count": 0, "unpaid_count": 0}
+        m = dict(row._mapping)
+        return {
+            "total": int(m.get("total") or 0),
+            "paid_count": int(m.get("paid_count") or 0),
+            "unpaid_count": int(m.get("unpaid_count") or 0),
+        }
+
+    async def list_salary_excel(
+        self,
+        db: AsyncSession,
+        *,
+        from_date: str | None,
+        to_date: str | None,
+        search: str | None,
+        dept: str | None,
+        paid_status: str | None,
+        limit: int,
+        offset: int,
+    ) -> list[dict[str, Any]]:
+        where, params = self._salary_excel_where(
+            from_date=from_date,
+            to_date=to_date,
+            search=search,
+            dept=dept,
+            paid_status=paid_status,
+        )
+        sql = f"""
+            SELECT
+                `Month`,
+                `from_date`,
+                `Name`,
+                `Dept`,
+                `Employee Category`,
+                `PAN`,
+                `Gender`,
+                `Base Salary`,
+                `Total Working Days`,
+                `Salary Per day`,
+                `Actual Working Days`,
+                `Base salary as per Attendance`,
+                `Incentive`,
+                `Fine/Advance/Deductions`,
+                `Expense/Reimbursment/Sp. Bonus`,
+                `Total Salary`,
+                `TDS/PT`,
+                `Deductions After TDS`,
+                `Final Transfer Amt`
+            FROM salary_excel_view
+            WHERE {where}
+            ORDER BY `from_date` DESC, `Name` ASC
+            LIMIT :limit OFFSET :offset
+        """
+        params["limit"] = int(limit)
+        params["offset"] = int(offset)
+        result = await db.execute(text(sql), params)
+        rows = result.fetchall()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            m = dict(row._mapping)
+            out.append({
+                "month": str(m["Month"]) if m.get("Month") is not None else None,
+                "from_date": str(m["from_date"]) if m.get("from_date") is not None else None,
+                "name": m.get("Name"),
+                "dept": m.get("Dept"),
+                "employee_category": m.get("Employee Category"),
+                "pan": m.get("PAN"),
+                "gender": m.get("Gender"),
+                "base_salary": int(m["Base Salary"]) if m.get("Base Salary") is not None else None,
+                "total_working_days": int(m["Total Working Days"]) if m.get("Total Working Days") is not None else None,
+                "salary_per_day": float(m["Salary Per day"]) if m.get("Salary Per day") is not None else None,
+                "actual_working_days": int(m["Actual Working Days"]) if m.get("Actual Working Days") is not None else None,
+                "base_salary_attendance": float(m["Base salary as per Attendance"]) if m.get("Base salary as per Attendance") is not None else None,
+                "incentive": float(m["Incentive"]) if m.get("Incentive") is not None else None,
+                "fine_advance_deductions": float(m["Fine/Advance/Deductions"]) if m.get("Fine/Advance/Deductions") is not None else None,
+                "expense_reimbursement": float(m["Expense/Reimbursment/Sp. Bonus"]) if m.get("Expense/Reimbursment/Sp. Bonus") is not None else None,
+                "total_salary": float(m["Total Salary"]) if m.get("Total Salary") is not None else None,
+                "tds_pt": float(m["TDS/PT"]) if m.get("TDS/PT") is not None else None,
+                "deductions_after_tds": m.get("Deductions After TDS"),
+                "final_transfer_amt": float(m["Final Transfer Amt"]) if m.get("Final Transfer Amt") is not None else None,
+            })
+        return out
+
+    async def list_salary_excel_depts(self, db: AsyncSession) -> list[str]:
+        """Return distinct department names present in salary_excel_view."""
+        result = await db.execute(
+            text("SELECT DISTINCT `Dept` FROM salary_excel_view WHERE `Dept` IS NOT NULL ORDER BY `Dept` ASC")
+        )
+        return [str(row._mapping["Dept"]) for row in result.fetchall()]
