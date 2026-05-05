@@ -1005,6 +1005,44 @@ class WorkforceService:
         limit: int,
         offset: int,
     ) -> dict[str, Any]:
+        previous_range = self._previous_month_range_for_single_month(from_date, to_date)
+        if previous_range:
+            current_rows = await self.repo.list_salary_excel(
+                main_db,
+                from_date=from_date,
+                to_date=to_date,
+                search=search,
+                dept=dept,
+                paid_status=paid_status,
+                limit=10000,
+                offset=0,
+            )
+            previous_rows = await self.repo.list_salary_excel(
+                main_db,
+                from_date=previous_range[0],
+                to_date=previous_range[1],
+                search=search,
+                dept=dept,
+                paid_status=paid_status,
+                limit=10000,
+                offset=0,
+            )
+            rows = self._salary_excel_compare_rows(current_rows, previous_rows)
+            depts = await self.repo.list_salary_excel_depts(main_db)
+            return {
+                "rows": rows[offset:offset + limit],
+                "total": len(rows),
+                "paid_count": sum(1 for row in rows if (row.get("final_transfer_amt") or 0) > 0),
+                "unpaid_count": sum(1 for row in rows if (row.get("final_transfer_amt") or 0) == 0),
+                "new_count": sum(1 for row in rows if row.get("comparison_status") == "new"),
+                "missing_count": sum(1 for row in rows if row.get("comparison_status") == "missing"),
+                "comparison_from_date": previous_range[0],
+                "comparison_to_date": previous_range[1],
+                "limit": limit,
+                "offset": offset,
+                "depts": depts,
+            }
+
         stats = await self.repo.count_salary_excel(
             main_db,
             from_date=from_date,
@@ -1029,10 +1067,66 @@ class WorkforceService:
             "total": stats["total"],
             "paid_count": stats["paid_count"],
             "unpaid_count": stats["unpaid_count"],
+            "new_count": 0,
+            "missing_count": 0,
+            "comparison_from_date": None,
+            "comparison_to_date": None,
             "limit": limit,
             "offset": offset,
             "depts": depts,
         }
+
+    def _previous_month_range_for_single_month(
+        self,
+        from_date: str | None,
+        to_date: str | None,
+    ) -> tuple[str, str] | None:
+        if not from_date or not to_date:
+            return None
+        try:
+            start = date.fromisoformat(from_date)
+            end = date.fromisoformat(to_date)
+        except ValueError:
+            return None
+        if start.year != end.year or start.month != end.month:
+            return None
+        current_month_start = date(start.year, start.month, 1)
+        previous_month_end = date.fromordinal(current_month_start.toordinal() - 1)
+        previous_month_start = date(previous_month_end.year, previous_month_end.month, 1)
+        return previous_month_start.isoformat(), previous_month_end.isoformat()
+
+    def _salary_excel_employee_key(self, row: dict[str, Any]) -> str:
+        pan = str(row.get("pan") or "").strip().lower()
+        if pan:
+            return f"pan:{pan}"
+        name = str(row.get("name") or "").strip().lower()
+        dept = str(row.get("dept") or "").strip().lower()
+        return f"name:{name}|dept:{dept}"
+
+    def _salary_excel_compare_rows(
+        self,
+        current_rows: list[dict[str, Any]],
+        previous_rows: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        current_keys = {self._salary_excel_employee_key(row) for row in current_rows}
+        previous_keys = {self._salary_excel_employee_key(row) for row in previous_rows}
+
+        new_rows = [
+            {**row, "comparison_status": "new"}
+            for row in current_rows
+            if self._salary_excel_employee_key(row) not in previous_keys
+        ]
+        missing_rows = [
+            {**row, "comparison_status": "missing"}
+            for row in previous_rows
+            if self._salary_excel_employee_key(row) not in current_keys
+        ]
+        unchanged_rows = [
+            {**row, "comparison_status": None}
+            for row in current_rows
+            if self._salary_excel_employee_key(row) in previous_keys
+        ]
+        return new_rows + missing_rows + unchanged_rows
 
     def _serialize_employee_row(
         self,
