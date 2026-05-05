@@ -2240,6 +2240,8 @@ class WorkforceRepository:
         *,
         from_date: str | None,
         to_date: str | None,
+        months: list[str] | None,
+        employee_names: list[str] | None,
         search: str | None,
         dept: str | None,
         paid_status: str | None,
@@ -2247,12 +2249,26 @@ class WorkforceRepository:
         """Build WHERE clause and params for salary_excel_view queries."""
         conditions: list[str] = ["1 = 1"]
         params: dict[str, Any] = {}
-        if from_date:
+        if months:
+            month_placeholders: list[str] = []
+            for idx, month in enumerate(months):
+                key = f"month_{idx}"
+                month_placeholders.append(f":{key}")
+                params[key] = month
+            conditions.append(f"DATE_FORMAT(`from_date`, '%Y-%m') IN ({', '.join(month_placeholders)})")
+        elif from_date:
             conditions.append("`from_date` >= :from_date")
             params["from_date"] = from_date
-        if to_date:
+        if not months and to_date:
             conditions.append("`from_date` <= :to_date")
             params["to_date"] = to_date
+        if employee_names:
+            employee_placeholders: list[str] = []
+            for idx, employee_name in enumerate(employee_names):
+                key = f"employee_name_{idx}"
+                employee_placeholders.append(f":{key}")
+                params[key] = employee_name
+            conditions.append(f"`Name` IN ({', '.join(employee_placeholders)})")
         if search and search.strip():
             conditions.append("`Name` LIKE :search")
             params["search"] = f"%{search.strip()}%"
@@ -2271,6 +2287,8 @@ class WorkforceRepository:
         *,
         from_date: str | None,
         to_date: str | None,
+        months: list[str] | None,
+        employee_names: list[str] | None,
         search: str | None,
         dept: str | None,
         paid_status: str | None,
@@ -2278,6 +2296,8 @@ class WorkforceRepository:
         where, params = self._salary_excel_where(
             from_date=from_date,
             to_date=to_date,
+            months=months,
+            employee_names=employee_names,
             search=search,
             dept=dept,
             paid_status=paid_status,
@@ -2307,6 +2327,8 @@ class WorkforceRepository:
         *,
         from_date: str | None,
         to_date: str | None,
+        months: list[str] | None,
+        employee_names: list[str] | None,
         search: str | None,
         dept: str | None,
         paid_status: str | None,
@@ -2316,6 +2338,8 @@ class WorkforceRepository:
         where, params = self._salary_excel_where(
             from_date=from_date,
             to_date=to_date,
+            months=months,
+            employee_names=employee_names,
             search=search,
             dept=dept,
             paid_status=paid_status,

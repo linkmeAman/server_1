@@ -999,35 +999,48 @@ class WorkforceService:
         *,
         from_date: str | None,
         to_date: str | None,
+        months: list[str] | None,
+        employee_names: list[str] | None,
         search: str | None,
         dept: str | None,
         paid_status: str | None,
         limit: int,
         offset: int,
     ) -> dict[str, Any]:
-        previous_range = self._previous_month_range_for_single_month(from_date, to_date)
-        if previous_range:
-            current_rows = await self.repo.list_salary_excel(
-                main_db,
-                from_date=from_date,
-                to_date=to_date,
-                search=search,
-                dept=dept,
-                paid_status=paid_status,
-                limit=10000,
-                offset=0,
-            )
-            previous_rows = await self.repo.list_salary_excel(
-                main_db,
-                from_date=previous_range[0],
-                to_date=previous_range[1],
-                search=search,
-                dept=dept,
-                paid_status=paid_status,
-                limit=10000,
-                offset=0,
-            )
-            rows = self._salary_excel_compare_rows(current_rows, previous_rows)
+        comparison_ranges = self._salary_excel_comparison_ranges(from_date, to_date, months)
+        if comparison_ranges:
+            rows: list[dict[str, Any]] = []
+            comparison_from_dates: list[str] = []
+            comparison_to_dates: list[str] = []
+            for current_start, current_end, previous_start, previous_end in comparison_ranges:
+                current_rows = await self.repo.list_salary_excel(
+                    main_db,
+                    from_date=current_start,
+                    to_date=current_end,
+                    months=None,
+                    employee_names=employee_names,
+                    search=search,
+                    dept=dept,
+                    paid_status=paid_status,
+                    limit=10000,
+                    offset=0,
+                )
+                previous_rows = await self.repo.list_salary_excel(
+                    main_db,
+                    from_date=previous_start,
+                    to_date=previous_end,
+                    months=None,
+                    employee_names=employee_names,
+                    search=search,
+                    dept=dept,
+                    paid_status=paid_status,
+                    limit=10000,
+                    offset=0,
+                )
+                rows.extend(self._salary_excel_compare_rows(current_rows, previous_rows))
+                comparison_from_dates.append(previous_start)
+                comparison_to_dates.append(previous_end)
+            rows.sort(key=lambda row: {"new": 0, "missing": 1}.get(str(row.get("comparison_status")), 2))
             depts = await self.repo.list_salary_excel_depts(main_db)
             return {
                 "rows": rows[offset:offset + limit],
@@ -1036,8 +1049,8 @@ class WorkforceService:
                 "unpaid_count": sum(1 for row in rows if (row.get("final_transfer_amt") or 0) == 0),
                 "new_count": sum(1 for row in rows if row.get("comparison_status") == "new"),
                 "missing_count": sum(1 for row in rows if row.get("comparison_status") == "missing"),
-                "comparison_from_date": previous_range[0],
-                "comparison_to_date": previous_range[1],
+                "comparison_from_date": min(comparison_from_dates) if comparison_from_dates else None,
+                "comparison_to_date": max(comparison_to_dates) if comparison_to_dates else None,
                 "limit": limit,
                 "offset": offset,
                 "depts": depts,
@@ -1047,6 +1060,8 @@ class WorkforceService:
             main_db,
             from_date=from_date,
             to_date=to_date,
+            months=months,
+            employee_names=employee_names,
             search=search,
             dept=dept,
             paid_status=paid_status,
@@ -1055,6 +1070,8 @@ class WorkforceService:
             main_db,
             from_date=from_date,
             to_date=to_date,
+            months=months,
+            employee_names=employee_names,
             search=search,
             dept=dept,
             paid_status=paid_status,
@@ -1075,6 +1092,43 @@ class WorkforceService:
             "offset": offset,
             "depts": depts,
         }
+
+    def _salary_excel_comparison_ranges(
+        self,
+        from_date: str | None,
+        to_date: str | None,
+        months: list[str] | None,
+    ) -> list[tuple[str, str, str, str]]:
+        if months:
+            ranges: list[tuple[str, str, str, str]] = []
+            for month in months:
+                try:
+                    year_text, month_text = month.split("-", 1)
+                    month_start = date(int(year_text), int(month_text), 1)
+                except (TypeError, ValueError):
+                    continue
+                month_end = self._month_end(month_start)
+                previous_month_end = date.fromordinal(month_start.toordinal() - 1)
+                previous_month_start = date(previous_month_end.year, previous_month_end.month, 1)
+                ranges.append((
+                    month_start.isoformat(),
+                    month_end.isoformat(),
+                    previous_month_start.isoformat(),
+                    previous_month_end.isoformat(),
+                ))
+            return ranges
+
+        previous_range = self._previous_month_range_for_single_month(from_date, to_date)
+        if not previous_range or not from_date or not to_date:
+            return []
+        return [(from_date, to_date, previous_range[0], previous_range[1])]
+
+    def _month_end(self, month_start: date) -> date:
+        if month_start.month == 12:
+            next_month = date(month_start.year + 1, 1, 1)
+        else:
+            next_month = date(month_start.year, month_start.month + 1, 1)
+        return date.fromordinal(next_month.toordinal() - 1)
 
     def _previous_month_range_for_single_month(
         self,
