@@ -993,6 +993,47 @@ class WorkforceService:
             "offset": offset,
         }
 
+    async def salary_excel(
+        self,
+        main_db: AsyncSession,
+        *,
+        from_date: str | None,
+        to_date: str | None,
+        search: str | None,
+        dept: str | None,
+        paid_status: str | None,
+        limit: int,
+        offset: int,
+    ) -> dict[str, Any]:
+        stats = await self.repo.count_salary_excel(
+            main_db,
+            from_date=from_date,
+            to_date=to_date,
+            search=search,
+            dept=dept,
+            paid_status=paid_status,
+        )
+        rows = await self.repo.list_salary_excel(
+            main_db,
+            from_date=from_date,
+            to_date=to_date,
+            search=search,
+            dept=dept,
+            paid_status=paid_status,
+            limit=limit,
+            offset=offset,
+        )
+        depts = await self.repo.list_salary_excel_depts(main_db)
+        return {
+            "rows": rows,
+            "total": stats["total"],
+            "paid_count": stats["paid_count"],
+            "unpaid_count": stats["unpaid_count"],
+            "limit": limit,
+            "offset": offset,
+            "depts": depts,
+        }
+
     def _serialize_employee_row(
         self,
         row: dict[str, Any],

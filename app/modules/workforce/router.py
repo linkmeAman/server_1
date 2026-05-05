@@ -971,3 +971,30 @@ async def get_workforce_salary_track(
         offset=offset,
     )
     return success_response(data=data, message="Salary track fetched").model_dump(mode="json")
+
+
+@router.get("/payroll/salary-excel")
+async def get_workforce_salary_excel(
+    from_date: str | None = Query(default=None),
+    to_date: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+    dept: str | None = Query(default=None),
+    paid_status: str | None = Query(default=None, pattern="^(paid|unpaid|all)?$"),
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    _: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+):
+    from_date = _validate_date(from_date, "from_date")
+    to_date = _validate_date(to_date, "to_date")
+    data = await service.salary_excel(
+        main_db,
+        from_date=from_date,
+        to_date=to_date,
+        search=search,
+        dept=dept if dept else None,
+        paid_status=paid_status if paid_status and paid_status != "all" else None,
+        limit=limit,
+        offset=offset,
+    )
+    return success_response(data=data, message="Salary excel fetched").model_dump(mode="json")
