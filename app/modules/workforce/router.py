@@ -353,6 +353,25 @@ class AttendanceRequestBulkStatusRequest(BaseModel):
     status: int
 
 
+class AttendanceLeaveBucketUpdateRequest(BaseModel):
+    contact_id: int | None = None
+    emp_id: int | None = None
+    emp_code: int | None = None
+    doi: str | None = None
+    doc: str | None = None
+    doe: str | None = None
+    earned: float | None = None
+    category: int | None = None
+    day_code: int | None = None
+    consumed: int | None = None
+    expired: int | None = None
+    park: int | None = None
+
+
+class AttendanceLeaveBucketCreateRequest(AttendanceLeaveBucketUpdateRequest):
+    pass
+
+
 class PayrollRecordUpdateRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -775,6 +794,63 @@ async def create_workforce_attendance_request(
         created_by=caller.user_id,
     )
     return success_response(data=data, message="Attendance request created").model_dump(mode="json")
+
+
+@router.get("/attendance/leaves")
+async def list_workforce_attendance_leaves(
+    employee_id: int | None = Query(default=None),
+    from_date: str | None = Query(default=None),
+    to_date: str | None = Query(default=None),
+    category: int | None = Query(default=None),
+    expired: int | None = Query(default=None),
+    park: int | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    _: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+):
+    data = await service.list_attendance_leaves(
+        main_db,
+        employee_id=employee_id,
+        from_date=from_date,
+        to_date=to_date,
+        category=category,
+        expired=expired,
+        park=park,
+        limit=limit,
+        offset=offset,
+    )
+    return success_response(data=data, message="Attendance leaves fetched").model_dump(mode="json")
+
+
+@router.patch("/attendance/leaves/{leave_id}")
+async def update_workforce_attendance_leave(
+    leave_id: int,
+    body: AttendanceLeaveBucketUpdateRequest,
+    caller: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+):
+    data = await service.update_attendance_leave(
+        main_db,
+        leave_id=leave_id,
+        payload=body.model_dump(exclude_unset=True),
+        modified_by=caller.user_id,
+    )
+    return success_response(data=data, message="Attendance leave updated").model_dump(mode="json")
+
+
+@router.post("/attendance/leaves")
+async def create_workforce_attendance_leave(
+    body: AttendanceLeaveBucketCreateRequest,
+    caller: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+):
+    data = await service.create_attendance_leave(
+        main_db,
+        payload=body.model_dump(exclude_unset=True),
+        created_by=caller.user_id,
+    )
+    return success_response(data=data, message="Attendance leave created").model_dump(mode="json")
 
 
 @router.get("/payroll/overview")

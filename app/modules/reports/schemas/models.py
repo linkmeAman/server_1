@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 ReportKind = Literal["table", "route"]
 ReportStatus = Literal["draft", "published", "archived"]
+ReportAdminStatus = Literal["draft", "published", "archived", "all"]
 FilterOperator = Literal[
     "eq",
     "ne",
@@ -80,12 +81,11 @@ class ReportBranchScope(BaseModel):
     column: str | None = Field(default=None, max_length=128)
 
 
-class ReportDefinition(BaseModel):
+class ReportDefinitionBase(BaseModel):
     slug: str = Field(..., min_length=1, max_length=128)
     name: str = Field(..., min_length=1, max_length=191)
     description: str | None = None
     category: str = Field(default="Reports", max_length=128)
-    status: ReportStatus = "published"
     kind: ReportKind = "table"
     legacy_report_id: int | None = None
     prism_resource_code: str = Field(..., min_length=1, max_length=191)
@@ -99,8 +99,16 @@ class ReportDefinition(BaseModel):
     branch_scope: ReportBranchScope = Field(default_factory=ReportBranchScope)
     actions: list[ReportAction] = Field(default_factory=list)
     route_path: str | None = Field(default=None, max_length=512)
+
+
+class ReportDefinition(ReportDefinitionBase):
+    status: ReportStatus = "published"
     version: int = Field(default=1, ge=1)
     source_label: str = Field(default="certified", max_length=64)
+
+
+class ReportDraftUpsertRequest(ReportDefinitionBase):
+    source_label: str = Field(default="custom-admin", max_length=64)
 
 
 class ReportCatalogItem(BaseModel):
@@ -154,9 +162,32 @@ class ReportQueryResponse(BaseModel):
     actions: list[ReportAction] = Field(default_factory=list)
 
 
-class ReportAdminSaveRequest(BaseModel):
-    slug: str = Field(..., min_length=1, max_length=128)
-    name: str = Field(..., min_length=1, max_length=191)
-    description: str | None = None
-    category: str = Field(default="Reports", max_length=128)
-    definition: dict[str, Any]
+class ReportFieldError(BaseModel):
+    path: str = Field(..., min_length=1, max_length=256)
+    code: str = Field(..., min_length=1, max_length=64)
+    message: str = Field(..., min_length=1, max_length=512)
+
+
+class ReportValidationErrorResponse(BaseModel):
+    field_errors: list[ReportFieldError] = Field(default_factory=list)
+
+
+class ReportDraftResponse(BaseModel):
+    report: ReportDefinition
+
+
+class ReportAdminListResponse(BaseModel):
+    reports: list[ReportDefinition] = Field(default_factory=list)
+
+
+class ReportImportDraftResponse(BaseModel):
+    report: ReportDefinition
+    warnings: list[str] = Field(default_factory=list)
+    imported_legacy_report_id: int
+
+
+class ReportDraftListResponse(BaseModel):
+    drafts: list[ReportDefinition] = Field(default_factory=list)
+
+
+ReportAdminSaveRequest = ReportDraftUpsertRequest
