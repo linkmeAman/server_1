@@ -49,15 +49,24 @@ def _rows(result) -> list[dict]:  # type: ignore[return]
     return [dict(r._mapping) for r in result.fetchall()]
 
 
-def _require_client(caller: CallerContext) -> int:
-    """Extract client_id from token claims or raise 403."""
-    client_id = caller.token_claims.get("client_id")
-    if not client_id:
-        raise HTTPException(status_code=403, detail="No client context in token")
-    try:
-        return int(client_id)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=403, detail="Invalid client context in token")
+async def _get_client_id(caller: CallerContext, central_db: AsyncSession) -> int | None:
+    """Look up client_id from the user table in central DB.
+    Returns None for super admins (auth_supreme_user IDs differ from user.id).
+    """
+    if caller.is_super:
+        return None
+    row = _row(
+        await central_db.execute(
+            text(
+                "SELECT client_id FROM user "
+                "WHERE id = :uid AND (park = 0 OR park IS NULL) LIMIT 1"
+            ),
+            {"uid": caller.user_id},
+        )
+    )
+    if not row or not row.get("client_id"):
+        raise HTTPException(status_code=403, detail="No client context found for user")
+    return int(row["client_id"])
 
 
 async def _check_prism(
@@ -246,7 +255,8 @@ async def list_positions(
                     epv.department_name AS department,
                     epv.grade_count,
                     epv.description,
-                    COALESCE(epv.employee_count, 0) AS employee_count
+                    COALESCE(epv.employee_count, 0) AS employee_count,
+                    COALESCE(epv.apply, 0)           AS apply
                 FROM employee_position_view epv
                 {where}
                 ORDER BY epv.position
@@ -514,6 +524,99 @@ async def delete_position(
 
 
 # ---------------------------------------------------------------------------
+# Endpoints — employees at a position
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{position_id}/employees")
+async def get_position_employees(
+    position_id: int,
+    caller: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+    central_db: AsyncSession = Depends(get_central_db_session),
+):
+    """Return all active employees assigned to this position."""
+    if not caller.is_super:
+        pdp = await evaluate(
+            PDPRequest(
+                user_id=caller.user_id,
+                action="employee:read",
+                resource_type="employee",
+            ),
+            central_db,
+        )
+        if pdp.decision != "Allow":
+            raise HTTPException(status_code=403, detail="PRISM: Not authorized to view employees")
+
+    rows = _rows(
+        await main_db.execute(
+            text(
+                """
+                SELECT
+                    e.id                                                   AS emp_id,
+                    e.contact_id,
+                    e.grade,
+                    CASE WHEN e.is_admin = 1 THEN 'Yes' ELSE 'No' END     AS has_admin_role,
+                    TRIM(CONCAT(c.fname, ' ', COALESCE(c.lname, '')))      AS full_name,
+                    c.mobile,
+                    c.email
+                FROM employee e
+                JOIN contact c ON c.id = e.contact_id
+                WHERE e.position_id = :position_id
+                  AND (e.park = 0 OR e.park IS NULL)
+                ORDER BY e.grade, c.fname
+                """
+            ),
+            {"position_id": position_id},
+        )
+    )
+
+    return success_response(
+        data={"employees": rows, "total": len(rows)},
+        message="Position employees fetched",
+    ).model_dump(mode="json")
+
+
+# ---------------------------------------------------------------------------
+# Endpoint — toggle apply (Trigger)
+# ---------------------------------------------------------------------------
+
+
+@router.patch("/{position_id}/toggle-apply")
+async def toggle_position_apply(
+    position_id: int,
+    caller: CallerContext = Depends(require_any_caller),
+    central_db: AsyncSession = Depends(get_central_db_session),
+):
+    """Toggle the `apply` flag (0↔1) — activates or deactivates the position template."""
+    await _check_prism(caller, "employee_position:update", central_db, str(position_id))
+
+    pos = _row(
+        await central_db.execute(
+            text(
+                "SELECT id, apply FROM employee_position "
+                "WHERE id = :id AND (park = 0 OR park IS NULL) LIMIT 1"
+            ),
+            {"id": position_id},
+        )
+    )
+    if not pos:
+        raise HTTPException(status_code=404, detail="Position not found")
+
+    new_apply = 0 if pos.get("apply") else 1
+    await central_db.execute(
+        text("UPDATE employee_position SET apply = :apply WHERE id = :id"),
+        {"apply": new_apply, "id": position_id},
+    )
+    await central_db.commit()
+
+    return success_response(
+        data={"id": position_id, "apply": new_apply},
+        message="Position activated" if new_apply else "Position deactivated",
+    ).model_dump(mode="json")
+
+
+# ---------------------------------------------------------------------------
 # Endpoints — permissions
 # ---------------------------------------------------------------------------
 
@@ -531,7 +634,7 @@ async def get_position_permissions(
     if not caller.is_super:
         await _check_prism(caller, "employee_position:manage_permissions", central_db, str(position_id))
 
-    client_id = _require_client(caller)
+    client_id = await _get_client_id(caller, central_db)
 
     # Confirm position exists
     pos = _row(
@@ -552,30 +655,34 @@ async def get_position_permissions(
             detail=f"Grade {grade} exceeds position's grade_count ({pos['grade_count']})",
         )
 
+    if client_id is not None:
+        client_filter_sql = "WHERE cm.client_id = :client_id AND cm.active = 1"
+        query_params: dict = {"position_id": position_id, "grade": grade, "client_id": client_id}
+    else:
+        # Super admin — show all active modules, deduplicated across clients
+        client_filter_sql = "WHERE cm.active = 1"
+        query_params = {"position_id": position_id, "grade": grade}
+
     rows = _rows(
         await central_db.execute(
             text(
-                """
+                f"""
                 SELECT
-                    cm.id          AS client_module_id,
+                    MIN(cm.id)     AS client_module_id,
                     cm.module_id,
                     cm.module      AS module_name,
-                    COALESCE(pt.permission, 0) AS permission
+                    COALESCE(MAX(pt.permission), 0) AS permission
                 FROM client_module cm
                 LEFT JOIN position_template pt
                     ON pt.module_id = cm.module_id
                     AND pt.epos_id  = :position_id
                     AND pt.grade    = :grade
-                WHERE cm.client_id = :client_id
-                  AND cm.active    = 1
+                {client_filter_sql}
+                GROUP BY cm.module_id, cm.module
                 ORDER BY cm.module
                 """
             ),
-            {
-                "position_id": position_id,
-                "grade": grade,
-                "client_id": client_id,
-            },
+            query_params,
         )
     )
 
