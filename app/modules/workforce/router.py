@@ -980,7 +980,7 @@ async def get_workforce_salary_excel(
     search: str | None = Query(default=None),
     dept: str | None = Query(default=None),
     paid_status: str | None = Query(default=None, pattern="^(paid|unpaid|all)?$"),
-    limit: int = Query(default=50, ge=1, le=500),
+    limit: int = Query(default=50, ge=1, le=10000),
     offset: int = Query(default=0, ge=0),
     _: CallerContext = Depends(require_any_caller),
     main_db: AsyncSession = Depends(get_main_db_session),
