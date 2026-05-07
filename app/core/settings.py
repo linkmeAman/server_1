@@ -126,7 +126,6 @@ class Settings(BaseSettings):
     # JSON string of service account key (when GMB_AUTH_MODE=service_account)
     GMB_SERVICE_ACCOUNT_JSON: str = os.getenv("GMB_SERVICE_ACCOUNT_JSON", "")
     GMB_TIMEOUT_SECONDS: int = int(os.getenv("GMB_TIMEOUT_SECONDS", 30))
-    )
 
     # Employee Events V1
     EMP_EVENT_APPROVED_STATUS: int = int(os.getenv("EMP_EVENT_APPROVED_STATUS", 1))
