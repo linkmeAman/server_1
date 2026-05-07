@@ -2182,7 +2182,7 @@ class WorkforceRepository:
             "doj", "doe", "exit_date",
             "workshift_id", "workshift_in_time", "workshift_out_time", "workshift_hours",
             "salary_type", "salary", "allowance",
-            "type", "status", "grade", "bid", "park",
+            "type", "status", "grade",
             "user_account", "is_admin", "calculate_salary", "is_parent",
             "demo_owner", "cash_collector", "auto_assign_inq", "qualifier",
             "tds_type", "tds_percent", "rate_multiplier",
