@@ -37,3 +37,15 @@ redis>=4.2.0
 # Read-only DB explorer
 sqlparse==0.5.3
 pandas==2.2.3
+
+# Google Reviews — GMB API + Semantic Analysis
+google-api-python-client==2.120.0
+google-auth==2.29.0
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0
+vaderSentiment==3.3.2
+transformers==4.40.0
+# Install CPU-only torch separately to keep image size down:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+langdetect==1.0.9
+scikit-learn==1.4.2
