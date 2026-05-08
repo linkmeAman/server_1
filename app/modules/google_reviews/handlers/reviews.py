@@ -71,7 +71,7 @@ async def list_reviews(
         fetch_stmt = (
             select(GoogleReview)
             .options(selectinload(GoogleReview.analysis))
-            .order_by(GoogleReview.review_time.desc().nullslast())
+            .order_by(GoogleReview.review_time.desc())
             .offset(offset)
             .limit(per_page)
         )
