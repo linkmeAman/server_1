@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from app.core.security import validate_token
+from app.modules.auth.services.token_service import verify_access_token
+from app.modules.auth.services.common import AuthError
 
 
 class GoogleReviewsError(Exception):
@@ -42,7 +43,13 @@ def require_auth(authorization_header: Optional[str]) -> Dict[str, Any]:
         )
 
     try:
-        return validate_token(token, expected_type="access")
+        return verify_access_token(token)
+    except AuthError as exc:
+        raise GoogleReviewsError(
+            code="REVIEWS_UNAUTHORIZED",
+            message=exc.message if hasattr(exc, "message") else "Invalid or expired access token",
+            status_code=401,
+        ) from exc
     except Exception as exc:
         raise GoogleReviewsError(
             code="REVIEWS_UNAUTHORIZED",
