@@ -150,7 +150,7 @@ def describe_table(table_name: str, db: str | None = Query(default=None)):
     selected_db = _optional_db_name(db)
 
     with db_cursor(database=selected_db) as cursor:
-        cursor.execute(f"DESCRIBE {_quoted(safe_table)}")
+        cursor.execute(f"SHOW FULL COLUMNS FROM {_quoted(safe_table)}")
         schema_rows = cursor.fetchall()
 
         view_query = None
