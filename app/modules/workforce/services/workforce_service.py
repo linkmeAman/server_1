@@ -1651,6 +1651,7 @@ class WorkforceService:
         workshifts = await self.repo.list_workshifts(main_db)
         document_types = await self.repo.list_document_types(central_db)
         all_employees = await self.repo.list_all_employees_simple(main_db)
+        branches = await self.repo.list_branches(main_db)
         return {
             "departments": departments,
             "positions": positions,
@@ -1658,6 +1659,7 @@ class WorkforceService:
             "statuses": self.STATUS_OPTIONS,
             "document_types": document_types,
             "all_employees": all_employees,
+            "branches": branches,
             "genders": [
                 {"value": "M", "label": "Male"},
                 {"value": "F", "label": "Female"},
@@ -1698,7 +1700,14 @@ class WorkforceService:
         if not doj:
             raise HTTPException(status_code=422, detail="doj (date of joining) is required")
 
+        # Resolve bid — default to 27 (Headquarter) if not provided or 0
+        bid = self._as_int(payload.get("bid")) or 27
+
+        # Auto-generate ecode: MAX(ecode) + 1
+        ecode = await self.repo.get_next_ecode(main_db)
+
         contact_data: dict[str, Any] = {
+            "contact_group_id": 2,  # 2 = Employee group (fixed)
             "fname": fname,
             "mname": self._as_text(payload.get("mname")),
             "lname": self._as_text(payload.get("lname")),
@@ -1721,11 +1730,12 @@ class WorkforceService:
             "document_type_id_2": self._as_int(payload.get("document_type_id_2")),
             "document_number_2": self._as_text(payload.get("document_number_2")),
             "document_type_id_3": self._as_int(payload.get("document_type_id_3")),
-            "bid": self._as_int(payload.get("bid")) or 0,
+            "bid": bid,
+            "created_by": created_by,
         }
         contact_data = {k: v for k, v in contact_data.items() if v is not None}
 
-        # Handle emergency contact — stored as a separate contact row linked via parent_id
+        # Handle emergency contact — stored as a separate contact row
         ename = self._as_text(payload.get("ename"))
         emobile = self._as_text(payload.get("emobile"))
         ecountry_code = self._as_text(payload.get("ecountry_code")) or "+91"
@@ -1737,14 +1747,15 @@ class WorkforceService:
                 "lname": name_parts[1] if len(name_parts) > 1 else "",
                 "mobile": emobile,
                 "country_code": ecountry_code,
-                "bid": self._as_int(payload.get("bid")) or 0,
+                "bid": bid,
+                "created_by": created_by,
             }
-            parent_contact_id = await self.repo.create_contact(main_db, emergency_data)
-            contact_data["parent_id"] = parent_contact_id
+            await self.repo.create_contact(main_db, emergency_data)
+            # Store relation on the employee's own contact row
             contact_data["relation"] = relation
 
         employee_data: dict[str, Any] = {
-            "ecode": self._as_text(payload.get("ecode")),
+            "ecode": ecode,
             "department_id": department_id,
             "position_id": position_id,
             "doj": doj,
@@ -1759,8 +1770,6 @@ class WorkforceService:
             "type": self._as_int(payload.get("employee_type")) or 0,
             "status": self._as_int(payload.get("status")) if payload.get("status") is not None else 1,
             "grade": self._as_int(payload.get("grade")),
-            "bid": self._as_int(payload.get("bid")) or 0,
-            "park": 0,
             # Toggles
             "user_account": self._as_int(payload.get("user_account")) or 0,
             "is_admin": self._as_int(payload.get("is_admin")) or 0,
@@ -1780,6 +1789,7 @@ class WorkforceService:
             "p_incentive_sc": payload.get("p_incentive_sc"),
             "trainer_incentive": payload.get("trainer_incentive"),
             "mt_incentive": payload.get("mt_incentive"),
+            "created_by": created_by,
         }
         employee_data = {k: v for k, v in employee_data.items() if v is not None}
 
@@ -1787,11 +1797,17 @@ class WorkforceService:
         employee_data["contact_id"] = contact_id
         employee_id = await self.repo.create_employee_record(main_db, employee_data)
 
-        # Save parent positions if provided
+        # Save parent positions and set contact.parent_id to the first parent's employee_id
         parent_ids_raw = payload.get("parent_position_ids")
         if parent_ids_raw and isinstance(parent_ids_raw, list):
             parent_ids = [int(x) for x in parent_ids_raw if x is not None]
-            await self.repo.set_employee_parents(main_db, employee_id, parent_ids)
+            if parent_ids:
+                await self.repo.set_employee_parents(main_db, employee_id, parent_ids)
+                # Set contact.parent_id to the employee_id of the first selected parent
+                await self.repo.update_contact(main_db, contact_id, {"parent_id": parent_ids[0]})
+
+        # Insert employee_bid row
+        await self.repo.insert_employee_bid(main_db, employee_id, bid)
 
         await main_db.commit()
 

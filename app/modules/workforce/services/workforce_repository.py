@@ -211,9 +211,9 @@ class WorkforceRepository:
                     c.document_image_2,
                     c.document_type_id_3,
                     c.document_image_3,
-                    CONCAT_WS(' ', NULLIF(TRIM(ec.fname), ''), NULLIF(TRIM(ec.lname), '')) AS ename,
-                    ec.mobile AS emobile,
-                    ec.country_code AS ecountry_code,
+                    NULL AS ename,
+                    NULL AS emobile,
+                    NULL AS ecountry_code,
                     CONCAT_WS(' ', NULLIF(TRIM(c.fname), ''), NULLIF(TRIM(c.mname), ''), NULLIF(TRIM(c.lname), '')) AS full_name
                 FROM employee e
                 LEFT JOIN contact c ON c.id = e.contact_id
@@ -223,7 +223,6 @@ class WorkforceRepository:
                     WHERE (park IS NULL OR park = 0)
                     GROUP BY emp_id
                 ) ep ON ep.emp_id = e.id
-                LEFT JOIN contact ec ON ec.id = c.parent_id
                 WHERE e.id = :employee_id
                   AND (e.park IS NULL OR e.park = 0)
                 LIMIT 1
@@ -2107,6 +2106,38 @@ class WorkforceRepository:
         row = result.fetchone()
         return row is None  # True = mobile is free
 
+    async def get_employee_contact_group_id(self, db: AsyncSession) -> int | None:
+        """Return the contact_group.id for the 'Employee' group."""
+        result = await db.execute(
+            text("SELECT id FROM contact_group WHERE LOWER(contact_group) = 'employee' LIMIT 1")
+        )
+        row = result.mappings().first()
+        return int(row["id"]) if row else None
+
+    async def list_branches(self, db: AsyncSession) -> list[dict[str, Any]]:
+        """Return all active branch options (id + name)."""
+        result = await db.execute(
+            text(
+                "SELECT id, branch AS name FROM branch "
+                "WHERE park = 0 AND id NOT IN (86) ORDER BY branch ASC"
+            )
+        )
+        return [dict(r) for r in result.mappings().all()]
+
+    async def get_next_ecode(self, db: AsyncSession) -> int:
+        """Return MAX(ecode) + 1 from the employee table."""
+        result = await db.execute(text("SELECT MAX(ecode) AS max_ecode FROM employee"))
+        row = result.mappings().first()
+        max_val = row["max_ecode"] if row and row["max_ecode"] is not None else 0
+        return int(max_val) + 1
+
+    async def insert_employee_bid(self, db: AsyncSession, employee_id: int, bid: int) -> None:
+        """Insert a row into employee_bid for the new employee."""
+        await db.execute(
+            text("INSERT INTO employee_bid (employee_id, bid) VALUES (:employee_id, :bid)"),
+            {"employee_id": employee_id, "bid": bid},
+        )
+
     async def create_contact(
         self,
         db: AsyncSession,
@@ -2114,6 +2145,7 @@ class WorkforceRepository:
     ) -> int:
         """Insert a new contact row and return the new contact_id."""
         fields = [
+            "contact_group_id",
             "fname", "mname", "lname",
             "mobile", "country_code",
             "mobile2", "country_code_2", "phone_no",
@@ -2124,7 +2156,7 @@ class WorkforceRepository:
             "document_type_id", "document_number", "document_image",
             "document_type_id_2", "document_number_2", "document_image_2",
             "document_type_id_3", "document_image_3",
-            "bid",
+            "bid", "created_by",
         ]
         cols = [f for f in fields if data.get(f) is not None]
         if not cols:
@@ -2188,6 +2220,7 @@ class WorkforceRepository:
             "tds_type", "tds_percent", "rate_multiplier",
             "incentive_new", "incentive_renew", "p_incentive_c", "p_incentive_sc",
             "trainer_incentive", "mt_incentive",
+            "created_by",
         ]
         cols = [f for f in fields if data.get(f) is not None]
         col_sql = ", ".join(cols)
