@@ -1735,7 +1735,8 @@ class WorkforceService:
         }
         contact_data = {k: v for k, v in contact_data.items() if v is not None}
 
-        # Handle emergency contact — stored as a separate contact row
+        # Emergency contact — PHP flow: create first, get its contact_id, then set as
+        # parent_id on the employee's own contact row (contact.parent_id = emergency contact id)
         ename = self._as_text(payload.get("ename"))
         emobile = self._as_text(payload.get("emobile"))
         ecountry_code = self._as_text(payload.get("ecountry_code")) or "+91"
@@ -1743,6 +1744,7 @@ class WorkforceService:
         if ename and emobile and relation:
             name_parts = ename.strip().split(" ", 1)
             emergency_data: dict[str, Any] = {
+                "contact_group_id": 3,  # 3 = emergency/general contact group (PHP parity)
                 "fname": name_parts[0],
                 "lname": name_parts[1] if len(name_parts) > 1 else "",
                 "mobile": emobile,
@@ -1750,8 +1752,9 @@ class WorkforceService:
                 "bid": bid,
                 "created_by": created_by,
             }
-            await self.repo.create_contact(main_db, emergency_data)
-            # Store relation on the employee's own contact row
+            emergency_contact_id = await self.repo.create_contact(main_db, emergency_data)
+            # PHP: contact.parent_id = emergency contact's contact_id (NOT parent-position id)
+            contact_data["parent_id"] = emergency_contact_id
             contact_data["relation"] = relation
 
         employee_data: dict[str, Any] = {
@@ -1797,19 +1800,73 @@ class WorkforceService:
         employee_data["contact_id"] = contact_id
         employee_id = await self.repo.create_employee_record(main_db, employee_data)
 
-        # Save parent positions and set contact.parent_id to the first parent's employee_id
+        # Parent positions — employee_parent table (NOT contact.parent_id)
         parent_ids_raw = payload.get("parent_position_ids")
         if parent_ids_raw and isinstance(parent_ids_raw, list):
             parent_ids = [int(x) for x in parent_ids_raw if x is not None]
             if parent_ids:
                 await self.repo.set_employee_parents(main_db, employee_id, parent_ids)
-                # Set contact.parent_id to the employee_id of the first selected parent
-                await self.repo.update_contact(main_db, contact_id, {"parent_id": parent_ids[0]})
 
-        # Insert employee_bid row
+        # employee_bid
         await self.repo.insert_employee_bid(main_db, employee_id, bid)
 
+        # Leave bucket entries (PHP parity: 1–3 rows based on DOJ month)
+        from datetime import datetime as _dt
+        doj_year = _dt.strptime(doj, "%Y-%m-%d").year
+        last_day = self._as_text(payload.get("last_day")) or f"{doj_year}-12-31"
+        await self.repo.insert_leave_bucket_entries(
+            main_db,
+            contact_id=contact_id,
+            employee_id=employee_id,
+            ecode=ecode,
+            doj=doj,
+            last_day=last_day,
+        )
+
+        # demo_owner_names upsert
+        if self._as_int(payload.get("demo_owner")):
+            lname_val = self._as_text(payload.get("lname")) or ""
+            full_name = f"{fname} {lname_val}".strip()
+            await self.repo.upsert_demo_owner_names(
+                main_db,
+                contact_id=contact_id,
+                name=full_name,
+                mobile=mobile,
+            )
+
+        # User account in pf_central (when user_account = 1)
+        user_id = 0
+        if self._as_int(payload.get("user_account")):
+            # type E = regular employee, F = franchisee (employee_type == 1)
+            user_type = "F" if self._as_int(payload.get("employee_type")) == 1 else "E"
+            existing_uid = await self.repo.find_user_by_mobile(central_db, mobile, user_type)
+            if existing_uid:
+                user_id = existing_uid
+            else:
+                from app.core.settings import get_settings as _get_settings
+                db_name = _get_settings().DB_NAME
+                client_id = await self.repo.get_client_db_id(central_db, db_name)
+                permissions: list[dict[str, Any]] = []
+                if client_id and position_id:
+                    permissions = await self.repo.get_position_permissions(
+                        central_db, position_id, client_id
+                    )
+                user_id = await self.repo.create_central_user(
+                    central_db,
+                    fname=fname,
+                    lname=self._as_text(payload.get("lname")) or "",
+                    country_code=self._as_text(payload.get("country_code")) or "+91",
+                    mobile=mobile,
+                    user_type=user_type,
+                    contact_id=contact_id,
+                    client_id=client_id or 0,
+                    email=self._as_text(payload.get("email")),
+                    bid=bid,
+                    permissions=permissions,
+                )
+
         await main_db.commit()
+        await central_db.commit()
 
         row = await self.repo.get_employee(main_db, employee_id)
         if row is None:
@@ -1906,7 +1963,74 @@ class WorkforceService:
             parent_ids = [int(x) for x in parent_ids_raw if x is not None]
             await self.repo.set_employee_parents(main_db, employee_id, parent_ids)
 
+        # ── user_account toggle handling ────────────────────────────────────
+        # Only act when user_account is explicitly sent in this update payload.
+        if "user_account" in payload:
+            prev_ua = self._as_int(existing.get("user_account")) or 0
+            new_ua  = self._as_int(payload.get("user_account")) or 0
+
+            # Resolve current mobile (may have just been updated)
+            cur_mobile  = self._as_text(payload.get("mobile")) or self._as_text(existing.get("mobile")) or ""
+            prev_mobile = self._as_text(existing.get("mobile")) or cur_mobile
+            emp_type    = self._as_int(payload.get("employee_type") if "employee_type" in payload else existing.get("employee_type")) or 0
+            user_type   = "F" if emp_type == 1 else "E"
+            cur_cc      = self._as_text(payload.get("country_code")) or self._as_text(existing.get("country_code")) or "+91"
+            cur_email   = self._as_text(payload.get("email") if "email" in payload else existing.get("email"))
+            position_id = self._as_int(payload.get("position_id") if "position_id" in payload else existing.get("position_id")) or 0
+
+            if prev_ua == 1 and new_ua == 1:
+                # Was on, still on → sync mobile/email changes to pf_central user row
+                await self.repo.update_central_user_details(
+                    central_db,
+                    contact_id=contact_id,
+                    old_mobile=prev_mobile,
+                    new_mobile=cur_mobile,
+                    country_code=cur_cc,
+                    email=cur_email,
+                    user_type=user_type,
+                )
+
+            elif prev_ua == 1 and new_ua == 0:
+                # Disabled → park the user account
+                existing_uid = await self.repo.find_user_by_mobile(central_db, prev_mobile, user_type)
+                if existing_uid:
+                    await self.repo.park_central_user(central_db, existing_uid)
+
+            elif prev_ua == 0 and new_ua == 1:
+                # Enabled → restore if parked, otherwise create fresh
+                # Check any user (parked or active) first
+                any_uid = await self.repo.find_user_by_mobile_any(central_db, cur_mobile, user_type)
+                if any_uid:
+                    await self.repo.restore_central_user(central_db, any_uid)
+                else:
+                    from app.core.settings import get_settings as _get_settings
+                    db_name = _get_settings().DB_NAME
+                    client_id = await self.repo.get_client_db_id(central_db, db_name)
+                    permissions: list[dict[str, Any]] = []
+                    if client_id and position_id:
+                        permissions = await self.repo.get_position_permissions(
+                            central_db, position_id, client_id
+                        )
+                    fname = self._as_text(payload.get("fname") if "fname" in payload else existing.get("fname")) or ""
+                    lname = self._as_text(payload.get("lname") if "lname" in payload else existing.get("lname")) or ""
+                    bid   = self._as_int(existing.get("bid")) or 27
+                    await self.repo.create_central_user(
+                        central_db,
+                        fname=fname,
+                        lname=lname,
+                        country_code=cur_cc,
+                        mobile=cur_mobile,
+                        user_type=user_type,
+                        contact_id=contact_id,
+                        client_id=client_id or 0,
+                        email=cur_email,
+                        bid=bid,
+                        permissions=permissions,
+                    )
+        # ── /user_account toggle ─────────────────────────────────────────────
+
         await main_db.commit()
+        await central_db.commit()
 
         row = await self.repo.get_employee(main_db, employee_id)
         if row is None:
