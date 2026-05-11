@@ -2138,6 +2138,300 @@ class WorkforceRepository:
             {"employee_id": employee_id, "bid": bid},
         )
 
+    async def get_client_db_id(self, central_db: AsyncSession, db_name: str) -> int | None:
+        """Look up the client_db.id for the given DB name (pf_central.client_db)."""
+        result = await central_db.execute(
+            text("SELECT id FROM client_db WHERE db_name = :db_name LIMIT 1"),
+            {"db_name": db_name},
+        )
+        row = result.mappings().first()
+        return int(row["id"]) if row else None
+
+    async def find_user_by_mobile(
+        self, central_db: AsyncSession, mobile: str, user_type: str
+    ) -> int | None:
+        """Return user.id if an active (park=0) user exists for this mobile+type in pf_central."""
+        result = await central_db.execute(
+            text(
+                "SELECT id FROM user "
+                "WHERE mobile = :mobile AND type = :type AND park = '0' LIMIT 1"
+            ),
+            {"mobile": mobile, "type": user_type},
+        )
+        row = result.mappings().first()
+        return int(row["id"]) if row else None
+
+    async def find_user_by_mobile_any(
+        self, central_db: AsyncSession, mobile: str, user_type: str
+    ) -> int | None:
+        """Return user.id for this mobile+type regardless of park status (parked or active)."""
+        result = await central_db.execute(
+            text(
+                "SELECT id FROM user "
+                "WHERE mobile = :mobile AND type = :type LIMIT 1"
+            ),
+            {"mobile": mobile, "type": user_type},
+        )
+        row = result.mappings().first()
+        return int(row["id"]) if row else None
+
+    async def park_central_user(self, central_db: AsyncSession, user_id: int) -> None:
+        """Park user + user_social + user_device in pf_central (disable = 1→0)."""
+        await central_db.execute(
+            text("UPDATE user SET park = '1' WHERE id = :uid"),
+            {"uid": user_id},
+        )
+        await central_db.execute(
+            text("UPDATE user_social SET park = '1' WHERE user_id = :uid"),
+            {"uid": user_id},
+        )
+        await central_db.execute(
+            text("UPDATE user_device SET park = '1' WHERE user_id = :uid"),
+            {"uid": user_id},
+        )
+
+    async def restore_central_user(self, central_db: AsyncSession, user_id: int) -> None:
+        """Un-park user + user_social + user_device in pf_central (re-enable = 0→1)."""
+        await central_db.execute(
+            text("UPDATE user SET park = '0', password = '1234', mpin = '1234' WHERE id = :uid"),
+            {"uid": user_id},
+        )
+        await central_db.execute(
+            text("UPDATE user_social SET park = '0' WHERE user_id = :uid"),
+            {"uid": user_id},
+        )
+        await central_db.execute(
+            text("UPDATE user_device SET park = '0' WHERE user_id = :uid"),
+            {"uid": user_id},
+        )
+
+    async def update_central_user_details(
+        self,
+        central_db: AsyncSession,
+        *,
+        contact_id: int,
+        old_mobile: str,
+        new_mobile: str,
+        country_code: str | None,
+        email: str | None,
+        user_type: str,
+    ) -> int:
+        """Update mobile/email on the pf_central user row. Returns user_id (0 if not found)."""
+        result = await central_db.execute(
+            text(
+                "SELECT id FROM user "
+                "WHERE type = :type AND contact_id = :contact_id AND mobile = :old_mobile "
+                "LIMIT 1"
+            ),
+            {"type": user_type, "contact_id": contact_id, "old_mobile": old_mobile},
+        )
+        row = result.mappings().first()
+        if not row:
+            return 0
+        user_id = int(row["id"])
+
+        set_parts = ["mobile = :new_mobile"]
+        params: dict[str, Any] = {"new_mobile": new_mobile, "uid": user_id}
+        if country_code:
+            set_parts.append("country_code = :country_code")
+            params["country_code"] = country_code
+        await central_db.execute(
+            text(f"UPDATE user SET {', '.join(set_parts)} WHERE id = :uid"),
+            params,
+        )
+
+        # Sync email in user_social
+        if email:
+            social = await central_db.execute(
+                text(
+                    "SELECT id FROM user_social "
+                    "WHERE user_id = :uid AND (social_type = '' OR social_type IS NULL) LIMIT 1"
+                ),
+                {"uid": user_id},
+            )
+            if social.fetchone():
+                await central_db.execute(
+                    text(
+                        "UPDATE user_social SET email = :email "
+                        "WHERE user_id = :uid AND (social_type = '' OR social_type IS NULL)"
+                    ),
+                    {"email": email, "uid": user_id},
+                )
+            else:
+                await central_db.execute(
+                    text("INSERT INTO user_social (email, user_id) VALUES (:email, :uid)"),
+                    {"email": email, "uid": user_id},
+                )
+        else:
+            await central_db.execute(
+                text(
+                    "DELETE FROM user_social "
+                    "WHERE user_id = :uid AND (social_type = '' OR social_type IS NULL)"
+                ),
+                {"uid": user_id},
+            )
+        return user_id
+
+    async def get_position_permissions(
+        self, central_db: AsyncSession, position_id: int, client_id: int
+    ) -> list[dict[str, Any]]:
+        """Return permission rows from position_template joined with client_module."""
+        result = await central_db.execute(
+            text(
+                """
+                SELECT cm.id AS cm_id, cm.module_id, pt.permission
+                FROM position_template AS pt
+                INNER JOIN client_module AS cm ON pt.module_id = cm.module_id
+                WHERE pt.epos_id = :position_id AND cm.client_id = :client_id
+                """
+            ),
+            {"position_id": position_id, "client_id": client_id},
+        )
+        return [dict(r) for r in result.mappings().all()]
+
+    async def create_central_user(
+        self,
+        central_db: AsyncSession,
+        *,
+        fname: str,
+        lname: str,
+        country_code: str,
+        mobile: str,
+        user_type: str,
+        contact_id: int,
+        client_id: int,
+        email: str | None,
+        bid: int,
+        permissions: list[dict[str, Any]],
+    ) -> int:
+        """Create a user row in pf_central and set up user_bid, user_social, permissions."""
+        from datetime import datetime as _dt
+        now = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
+        result = await central_db.execute(
+            text(
+                """
+                INSERT INTO user
+                    (fname, lname, password, mpin, country_code, mobile, type,
+                     contact_id, client_id, signup, created_at)
+                VALUES
+                    (:fname, :lname, '1234', '1234', :country_code, :mobile, :type,
+                     :contact_id, :client_id, '1', :now)
+                """
+            ),
+            {
+                "fname": fname,
+                "lname": lname or "",
+                "country_code": country_code or "+91",
+                "mobile": mobile,
+                "type": user_type,
+                "contact_id": contact_id,
+                "client_id": client_id,
+                "now": now,
+            },
+        )
+        await central_db.flush()
+        user_id = result.lastrowid
+        if not user_id:
+            raise RuntimeError("Failed to create user row in pf_central")
+        user_id = int(user_id)
+
+        await central_db.execute(
+            text("INSERT INTO user_bid (user_id, bid) VALUES (:user_id, :bid)"),
+            {"user_id": user_id, "bid": bid},
+        )
+        if email:
+            await central_db.execute(
+                text("INSERT INTO user_social (email, user_id) VALUES (:email, :user_id)"),
+                {"email": email, "user_id": user_id},
+            )
+        for perm in permissions:
+            await central_db.execute(
+                text(
+                    "INSERT INTO user_permission (user_id, cm_id, permission, bid) "
+                    "VALUES (:user_id, :cm_id, :permission, :bid)"
+                ),
+                {
+                    "user_id": user_id,
+                    "cm_id": perm["cm_id"],
+                    "permission": perm["permission"],
+                    "bid": bid,
+                },
+            )
+            if int(perm["permission"]) >= 2:
+                await central_db.execute(
+                    text(
+                        "INSERT INTO notify_user (module_id, user_id) "
+                        "VALUES (:module_id, :user_id)"
+                    ),
+                    {"module_id": perm["module_id"], "user_id": user_id},
+                )
+        return user_id
+
+    async def insert_leave_bucket_entries(
+        self,
+        db: AsyncSession,
+        *,
+        contact_id: int,
+        employee_id: int,
+        ecode: int,
+        doj: str,
+        last_day: str,
+    ) -> None:
+        """Insert leave_bucket rows based on DOJ month (PHP parity: 1–3 rows)."""
+        from datetime import datetime as _dt
+        month = _dt.strptime(doj, "%Y-%m-%d").month
+        count = 3 if month <= 4 else (2 if month <= 8 else 1)
+        for _ in range(count):
+            await db.execute(
+                text(
+                    """
+                    INSERT INTO leave_bucket
+                        (contact_id, emp_id, emp_code, doi, doe,
+                         earned, category, day_code, consumed, expired, park)
+                    VALUES
+                        (:contact_id, :emp_id, :emp_code, :doj, :last_day,
+                         '1.0', '2', '7', '0', '0', '0')
+                    """
+                ),
+                {
+                    "contact_id": contact_id,
+                    "emp_id": employee_id,
+                    "emp_code": ecode,
+                    "doj": doj,
+                    "last_day": last_day,
+                },
+            )
+
+    async def upsert_demo_owner_names(
+        self,
+        db: AsyncSession,
+        *,
+        contact_id: int,
+        name: str,
+        mobile: str,
+    ) -> None:
+        """Insert or update demo_owner_names for the given contact_id."""
+        exists_result = await db.execute(
+            text("SELECT id FROM demo_owner_names WHERE contact_id = :contact_id LIMIT 1"),
+            {"contact_id": contact_id},
+        )
+        if exists_result.fetchone():
+            await db.execute(
+                text(
+                    "UPDATE demo_owner_names SET name = :name, mobile_number = :mobile "
+                    "WHERE contact_id = :contact_id"
+                ),
+                {"contact_id": contact_id, "name": name, "mobile": mobile},
+            )
+        else:
+            await db.execute(
+                text(
+                    "INSERT INTO demo_owner_names (contact_id, name, mobile_number) "
+                    "VALUES (:contact_id, :name, :mobile)"
+                ),
+                {"contact_id": contact_id, "name": name, "mobile": mobile},
+            )
+
     async def create_contact(
         self,
         db: AsyncSession,

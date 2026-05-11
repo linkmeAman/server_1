@@ -98,6 +98,8 @@ class EmployeeCreateRequest(BaseModel):
     qualifier: int | None = Field(default=0)
     # Parent positions
     parent_position_ids: list[int] | None = Field(default=None)
+    # Leave year end date (default: Dec 31 of DOJ year if not sent by frontend)
+    last_day: str | None = Field(default=None)
     # Financial
     tds_type: int | None = Field(default=0)
     tds_percent: float | None = Field(default=None, ge=0, le=100)
@@ -124,7 +126,7 @@ class EmployeeCreateRequest(BaseModel):
             raise ValueError("doj must be YYYY-MM-DD")
         return v.strip()
 
-    @field_validator("doe", "dob", "exit_date")
+    @field_validator("doe", "dob", "exit_date", "last_day")
     @classmethod
     def validate_optional_dates(cls, v: str | None) -> str | None:
         if v is None:
