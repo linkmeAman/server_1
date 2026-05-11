@@ -120,6 +120,13 @@ class Settings(BaseSettings):
         os.getenv("GOOGLE_TOKEN_REFRESH_SKEW_SECONDS", 120)
     )
 
+    # Google My Business (Reviews v1)
+    # Auth mode: "service_account" (default) or "token_store" (reuses google_drive_token table)
+    GMB_AUTH_MODE: str = os.getenv("GMB_AUTH_MODE", "service_account")
+    # JSON string of service account key (when GMB_AUTH_MODE=service_account)
+    GMB_SERVICE_ACCOUNT_JSON: str = os.getenv("GMB_SERVICE_ACCOUNT_JSON", "")
+    GMB_TIMEOUT_SECONDS: int = int(os.getenv("GMB_TIMEOUT_SECONDS", 30))
+
     # Employee Events V1
     EMP_EVENT_APPROVED_STATUS: int = int(os.getenv("EMP_EVENT_APPROVED_STATUS", 1))
     EMP_EVENT_PARKED_VALUE: int = int(os.getenv("EMP_EVENT_PARKED_VALUE", 1))

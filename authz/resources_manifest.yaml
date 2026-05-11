@@ -55,3 +55,15 @@ resources:
     name: Employee
     parent: workforce
     sort_order: 10
+  - code: reviews
+    name: Google Reviews
+    parent: null
+    sort_order: 50
+  - code: reviews.analytics
+    name: Reviews Analytics
+    parent: reviews
+    sort_order: 10
+  - code: reviews.sync
+    name: Reviews Sync
+    parent: reviews
+    sort_order: 20

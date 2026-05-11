@@ -1,0 +1,1 @@
+"""Google Reviews ORM models."""
