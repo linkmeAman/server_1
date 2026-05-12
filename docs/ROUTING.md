@@ -28,3 +28,4 @@ This file mounts the current API modules under their own prefixes.
 - Use explicit FastAPI routers for all new work.
 - Do not add new imports to removed compatibility paths.
 - Do not rely on any `/py/*` controller/function routes. They were removed.
+
