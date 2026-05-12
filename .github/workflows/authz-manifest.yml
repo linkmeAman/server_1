@@ -4,13 +4,13 @@ on:
   pull_request:
     paths:
       - "authz/resources_manifest.yaml"
-      - "scripts/auth_v2/validate_authz_manifest.py"
+      - "scripts/auth/validate_authz_manifest.py"
       - ".github/workflows/authz-manifest.yml"
   push:
     branches: ["**"]
     paths:
       - "authz/resources_manifest.yaml"
-      - "scripts/auth_v2/validate_authz_manifest.py"
+      - "scripts/auth/validate_authz_manifest.py"
 
 jobs:
   validate-authz-manifest:
@@ -23,4 +23,4 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Validate manifest
-        run: python scripts/auth_v2/validate_authz_manifest.py --manifest authz/resources_manifest.yaml
+        run: python scripts/auth/validate_authz_manifest.py --manifest authz/resources_manifest.yaml
