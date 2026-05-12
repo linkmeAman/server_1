@@ -25,9 +25,9 @@ jobs:
           # 2. Pull latest code
           git pull --no-rebase
           
-          # 3. Clean up Python caches explicitly in the deployment folder
-          find /var/www/py-workspace/server_1/ -type d -name "__pycache__" -exec rm -rf {} + 
-          find /var/www/py-workspace/server_1/ -type f -name "*.pyc" -delete
+          # 3. Clean up Python caches explicitly in the deployment folder (using sudo to avoid permission denied)
+          sudo find /var/www/py-workspace/server_1/ -type d -name "__pycache__" -exec rm -rf {} + || true
+          sudo find /var/www/py-workspace/server_1/ -type f -name "*.pyc" -delete || true
           
           # 4. Restart the systemd service
           sudo systemctl restart py-server-1
