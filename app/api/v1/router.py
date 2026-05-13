@@ -11,6 +11,7 @@ from app.modules.google_calendar_v1.router import router as google_calendar_v1_r
 from app.modules.google_reviews.router import router as google_reviews_router
 from app.modules.workforce.router import router as workforce_router
 from app.modules.llm.router import router as llm_router
+from app.modules.nl2sql.router import router as nl2sql_router
 from app.modules.orders.router import router as orders_router
 from app.modules.prism.router import router as prism_router
 from app.modules.query_gateway.router import router as query_gateway_router
@@ -30,6 +31,7 @@ api_router.include_router(example_router)
 api_router.include_router(geosearch_router)
 api_router.include_router(workforce_router)
 api_router.include_router(llm_router)
+api_router.include_router(nl2sql_router)
 api_router.include_router(query_gateway_router)
 api_router.include_router(employee_events_v1_router)
 api_router.include_router(google_calendar_v1_router)

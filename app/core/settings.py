@@ -207,6 +207,11 @@ class Settings(BaseSettings):
     SQL_GATEWAY_POLICY_CACHE_TTL_SECONDS: int = 60
     SQL_GATEWAY_SCHEMA_CACHE_TTL_SECONDS: int = 600
     SQLGW_ADMIN_REQUIRE_RBAC: bool = True
+
+    # NL2SQL upstream wrapper
+    NL2SQL_SERVICE_BASE_URL: str = os.getenv("NL2SQL_SERVICE_BASE_URL", "")
+    NL2SQL_TIMEOUT_SECONDS: int = int(os.getenv("NL2SQL_TIMEOUT_SECONDS", 30))
+    NL2SQL_DEFAULT_TOP_K: int = int(os.getenv("NL2SQL_DEFAULT_TOP_K", 5))
     
     class Config:
         env_file = str(PROJECT_ROOT / ".env")

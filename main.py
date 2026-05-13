@@ -159,10 +159,17 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         exc.status_code,
         payload,
     )
-    return JSONResponse(
+    request_id = (
+        request.headers.get("X-Request-ID")
+        or (data.get("request_id") if isinstance(data, dict) else None)
+        or str(uuid4())
+    )
+    response = JSONResponse(
         status_code=exc.status_code,
         content=payload
     )
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 
 @app.exception_handler(RequestValidationError)
@@ -180,10 +187,12 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         422,
         payload,
     )
-    return JSONResponse(
+    response = JSONResponse(
         status_code=422,
         content=payload
     )
+    response.headers["X-Request-ID"] = request.headers.get("X-Request-ID") or str(uuid4())
+    return response
 
 
 @app.exception_handler(500)
@@ -202,10 +211,12 @@ async def internal_server_error_handler(request: Request, exc: Exception):
         str(exc),
         exc_info=True,
     )
-    return JSONResponse(
+    response = JSONResponse(
         status_code=500,
         content=payload
     )
+    response.headers["X-Request-ID"] = request.headers.get("X-Request-ID") or str(uuid4())
+    return response
 
 
 # Set up middleware
