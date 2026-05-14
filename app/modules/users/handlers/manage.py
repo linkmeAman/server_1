@@ -10,6 +10,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.auth.dependencies import require_super_auth
+from app.modules.auth.constants import (
+    LOCK_KEY_TYPE_LOGIN_EMPLOYEE,
+    LOCK_KEY_TYPE_VERIFY_IDENTITY,
+    REVOKE_REASON_PASSWORD_CHANGE,
+)
 from app.modules.auth.services.common import (
     error_json_response,
     request_id,
@@ -18,13 +23,17 @@ from app.modules.auth.services.common import (
 )
 from app.modules.users.constants import (
     USER_ALREADY_EXISTS,
+    USER_EMPLOYEE_ACCOUNT_NOT_FOUND,
     USER_INVALID_PASSWORD,
     USER_INVALID_USERNAME,
     USER_NOT_FOUND,
     USER_SERVICE_UNAVAILABLE,
     USER_SESSION_NOT_FOUND,
 )
-from app.modules.users.schemas.models import CreateUserRequest
+from app.modules.users.schemas.models import (
+    AdminEmployeePasswordRevisionRequest,
+    CreateUserRequest,
+)
 from app.core.database import get_central_db_session
 from app.core.security import hash_password
 
@@ -426,4 +435,129 @@ async def revoke_session(
         await central_db.rollback()
         return error_json_response(USER_SERVICE_UNAVAILABLE, "Unable to revoke session", 503, rid)
 
+
+@router.patch("/employee-accounts/{user_id}/password")
+async def revise_employee_password(
+    user_id: int,
+    payload: AdminEmployeePasswordRevisionRequest,
+    request: Request,
+    central_db: AsyncSession = Depends(get_central_db_session),
+    _=Depends(require_super_auth),
+):
+    """Revise a central user-table password and clear related failed-attempt locks."""
+    rid = request_id(request)
+    try:
+        async with central_db.begin():
+            user_result = await central_db.execute(
+                text(
+                    """
+                    SELECT id, contact_id, country_code, mobile
+                    FROM user
+                    WHERE id = :id
+                      AND (park IS NULL OR park = 0)
+                    LIMIT 1
+                    """
+                ),
+                {"id": user_id},
+            )
+            user_row = user_result.fetchone()
+            if user_row is None:
+                return error_json_response(
+                    USER_EMPLOYEE_ACCOUNT_NOT_FOUND,
+                    "Employee account not found in user table",
+                    404,
+                    rid,
+                )
+
+            user_map = user_row._mapping
+            now = utcnow().replace(tzinfo=None)
+            new_password = payload.password
+            new_password_hash = hash_password(new_password)
+
+            await central_db.execute(
+                text(
+                    """
+                    UPDATE user
+                    SET password = :password,
+                        password_hash = :password_hash,
+                        password_hash_algo = :password_hash_algo,
+                        password_hash_updated_at = :password_hash_updated_at
+                    WHERE id = :id
+                    """
+                ),
+                {
+                    "id": user_id,
+                    "password": new_password,
+                    "password_hash": new_password_hash,
+                    "password_hash_algo": "bcrypt",
+                    "password_hash_updated_at": now,
+                },
+            )
+
+            revoke_result = await central_db.execute(
+                text(
+                    """
+                    UPDATE auth_refresh_token
+                    SET revoked_at = :revoked_at,
+                        revoke_reason = :revoke_reason
+                    WHERE user_id = :user_id
+                      AND revoked_at IS NULL
+                    """
+                ),
+                {
+                    "revoked_at": now,
+                    "revoke_reason": REVOKE_REASON_PASSWORD_CHANGE,
+                    "user_id": user_id,
+                },
+            )
+
+            lock_reset_result = await central_db.execute(
+                text(
+                    """
+                    UPDATE auth_lock_state
+                    SET fail_count = 0,
+                        first_fail_at = NULL,
+                        last_fail_at = NULL,
+                        locked_until = NULL,
+                        modified_at = :modified_at
+                    WHERE country_code = :country_code
+                      AND mobile = :mobile
+                      AND (
+                        key_type = :login_key_type
+                        OR key_type = :verify_key_type
+                      )
+                    """
+                ),
+                {
+                    "modified_at": now,
+                    "country_code": str(user_map["country_code"] or ""),
+                    "mobile": str(user_map["mobile"] or ""),
+                    "login_key_type": LOCK_KEY_TYPE_LOGIN_EMPLOYEE,
+                    "verify_key_type": LOCK_KEY_TYPE_VERIFY_IDENTITY,
+                },
+            )
+
+        lock_rows_reset = int(lock_reset_result.rowcount or 0)
+        sessions_revoked = int(revoke_result.rowcount or 0)
+        return success_json_response(
+            {
+                "user_id": user_id,
+                "contact_id": user_map["contact_id"],
+                "mobile": user_map["mobile"],
+                "password_revised": True,
+                "failed_lock_reset": True,
+                "lock_rows_reset": lock_rows_reset,
+                "sessions_revoked": sessions_revoked,
+            },
+            request_id_value=rid,
+            message="Employee password revised and failed-attempt lock reset",
+        )
+    except Exception:
+        await central_db.rollback()
+        return error_json_response(
+            USER_SERVICE_UNAVAILABLE,
+            "Unable to revise employee password",
+            503,
+            rid,
+        )
 
