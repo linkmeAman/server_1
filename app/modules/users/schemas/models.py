@@ -62,3 +62,17 @@ class UserListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class AdminEmployeePasswordRevisionRequest(BaseModel):
+    password: str
+
+
+class AdminEmployeePasswordRevisionResponse(BaseModel):
+    user_id: int
+    contact_id: Optional[int]
+    mobile: Optional[str]
+    password_revised: bool
+    failed_lock_reset: bool
+    lock_rows_reset: int
+    sessions_revoked: int
