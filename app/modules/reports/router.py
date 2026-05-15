@@ -39,8 +39,9 @@ def _request_id(request: Request) -> str:
     return request.headers.get("X-Request-ID") or str(uuid4())
 
 
-@router.get("")
-async def list_reports(
+@router.get("", include_in_schema=False)
+@router.get("/catalog")
+async def list_report_catalog(
     caller: CallerContext = Depends(require_any_caller),
     central_db: AsyncSession = Depends(get_central_db_session),
     main_db: AsyncSession = Depends(get_main_db_session),
@@ -79,7 +80,13 @@ async def create_report_draft(
         user_id=int(caller.user_id),
     )
     return success_response(
-        data={"report": definition.model_dump(mode="json")},
+        data={
+            "report": definition.model_dump(mode="json"),
+            "validation_issues": [
+                item.model_dump(mode="json")
+                for item in admin_service.collect_draft_validation_issues(definition)
+            ],
+        },
         message="Report draft saved",
     ).model_dump(mode="json")
 
@@ -292,7 +299,13 @@ async def update_report_draft(
         user_id=int(caller.user_id),
     )
     return success_response(
-        data={"report": saved.model_dump(mode="json")},
+        data={
+            "report": saved.model_dump(mode="json"),
+            "validation_issues": [
+                item.model_dump(mode="json")
+                for item in admin_service.collect_draft_validation_issues(saved)
+            ],
+        },
         message="Report draft updated",
     ).model_dump(mode="json")
 

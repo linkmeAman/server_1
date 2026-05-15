@@ -16,6 +16,7 @@ from app.modules.reports.schemas.models import (
     LegacyReportCandidate,
     ReportDefinition,
     ReportDraftUpsertRequest,
+    ReportFieldError,
     ReportImportDraftResponse,
 )
 
@@ -45,6 +46,9 @@ class ReportAdminService:
         status: str = "all",
     ) -> list[ReportDefinition]:
         return await self._load_db_definitions(central_db, status=status)
+
+    def collect_draft_validation_issues(self, definition: ReportDefinition) -> list[ReportFieldError]:
+        return self.validator.collect_draft_issues(definition)
 
     async def get_report(
         self,
@@ -209,7 +213,12 @@ class ReportAdminService:
             )
         await central_db.commit()
 
-        archived = await self.get_report(central_db, normalized)
+        archived_rows = await self._load_db_definitions(
+            central_db,
+            slug=normalized,
+            status="archived",
+        )
+        archived = archived_rows[0] if archived_rows else None
         if archived is None:
             raise ReportApiException(
                 500,
@@ -362,6 +371,22 @@ class ReportAdminService:
                 {"report_id": int(report_id)},
             )
             next_version = int(latest.fetchone()._mapping["next_version"])
+            status_result = await central_db.execute(
+                text(
+                    """
+                    SELECT status
+                    FROM report_definitions
+                    WHERE id = :report_id
+                    LIMIT 1
+                    """
+                ),
+                {"report_id": int(report_id)},
+            )
+            status_row = status_result.fetchone()
+            current_status = str(status_row._mapping["status"]) if status_row else "draft"
+            next_definition_status = (
+                "published" if current_status == "published" else "draft"
+            )
             await central_db.execute(
                 text(
                     """
@@ -371,7 +396,7 @@ class ReportAdminService:
                         description = :description,
                         category = :category,
                         kind = :kind,
-                        status = 'draft',
+                        status = :definition_status,
                         prism_resource_code = :prism_resource_code,
                         source_legacy_report_id = :source_legacy_report_id,
                         route_path = :route_path,
@@ -386,6 +411,7 @@ class ReportAdminService:
                     "description": definition.description,
                     "category": definition.category,
                     "kind": definition.kind,
+                    "definition_status": next_definition_status,
                     "prism_resource_code": definition.prism_resource_code,
                     "source_legacy_report_id": definition.legacy_report_id,
                     "route_path": definition.route_path,
@@ -421,7 +447,7 @@ class ReportAdminService:
             {"version_id": version_id, "report_id": int(report_id)},
         )
         await central_db.commit()
-        return definition.model_copy(update={"version": next_version})
+        return definition.model_copy(update={"version": next_version, "status": "draft"})
 
     async def _load_db_definitions(
         self,
@@ -435,9 +461,19 @@ class ReportAdminService:
         if slug:
             clauses.append("d.slug = :slug")
             params["slug"] = slug
-        if status != "all":
+        if status == "draft":
+            clauses.append("v.status = 'draft'")
+            clauses.append("d.status <> 'archived'")
+        elif status == "published":
+            clauses.append("d.status = 'published'")
+            clauses.append("v.status = 'published'")
+        elif status == "archived":
+            clauses.append("d.status = 'archived'")
+        elif status != "all":
             clauses.append("d.status = :status")
             params["status"] = status
+        else:
+            clauses.append("d.status <> 'archived'")
         where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
 
         result = await central_db.execute(
@@ -446,9 +482,10 @@ class ReportAdminService:
                 SELECT
                     d.id,
                     d.slug,
-                    d.status,
+                    d.status AS definition_status,
                     d.active_version_id,
                     v.version,
+                    v.status AS version_status,
                     v.definition_json
                 FROM report_definitions d
                 JOIN report_versions v ON v.id = d.active_version_id
@@ -465,7 +502,7 @@ class ReportAdminService:
             try:
                 payload = json.loads(row_map["definition_json"])
                 payload["slug"] = str(row_map["slug"])
-                payload["status"] = str(row_map["status"])
+                payload["status"] = str(row_map["version_status"])
                 payload["version"] = int(row_map["version"])
                 definitions.append(ReportDefinition.model_validate(payload))
             except Exception:

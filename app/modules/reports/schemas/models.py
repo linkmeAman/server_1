@@ -175,6 +175,7 @@ class ReportValidationErrorResponse(BaseModel):
 
 class ReportDraftResponse(BaseModel):
     report: ReportDefinition
+    validation_issues: list[ReportFieldError] = Field(default_factory=list)
 
 
 class ReportAdminListResponse(BaseModel):
