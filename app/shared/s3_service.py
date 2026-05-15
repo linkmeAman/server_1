@@ -110,6 +110,37 @@ class ExtractedFile:
         self.content_type = content_type
 
 
+def _open_zip(zip_bytes: bytes) -> zipfile.ZipFile:
+    """Open a ZipFile from raw bytes, handling ZIPs with prepended data.
+
+    Some tools (macOS Archive Utility, Windows built-in compression, certain
+    self-extracting stubs) prepend extra bytes before the first local file
+    header, causing ``zipfile.ZipFile`` to raise
+    ``BadZipFile: Bad offset for central directory`` even though
+    ``is_zipfile`` returns True (it only checks for the EOCD signature).
+
+    The fix: if the initial open fails with that error, scan for the local
+    file header signature ``PK\\x03\\x04`` and retry with the corrected slice.
+    """
+    try:
+        return zipfile.ZipFile(io.BytesIO(zip_bytes))
+    except zipfile.BadZipFile as exc:
+        # Attempt offset correction: find the first local file header.
+        offset = zip_bytes.find(b"PK\x03\x04")
+        if offset > 0:
+            logger.debug(
+                "ZIP has %d prepended bytes; retrying after offset correction.", offset
+            )
+            try:
+                return zipfile.ZipFile(io.BytesIO(zip_bytes[offset:]))
+            except zipfile.BadZipFile:
+                pass  # fall through to the original error
+        raise ValueError(
+            "ZIP file is corrupted or uses an unsupported format. "
+            "Please re-create the archive using standard ZIP compression."
+        ) from exc
+
+
 def extract_pdfs_from_zip(zip_bytes: bytes) -> list[ExtractedFile]:
     """Extract every PDF from *zip_bytes*, ignoring directory structure.
 
@@ -131,7 +162,7 @@ def extract_pdfs_from_zip(zip_bytes: bytes) -> list[ExtractedFile]:
         raise ValueError("Provided bytes are not a valid ZIP archive.")
 
     results: list[ExtractedFile] = []
-    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+    with _open_zip(zip_bytes) as zf:
         for info in zf.infolist():
             # Skip directory entries
             if info.is_dir():
