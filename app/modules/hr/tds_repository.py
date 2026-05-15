@@ -155,6 +155,30 @@ class TDSRepository:
         )
         return result.lastrowid  # type: ignore[return-value]
 
+    async def find_existing_filenames(
+        self,
+        db: AsyncSession,
+        filenames: list[str],
+    ) -> set[str]:
+        """Return the subset of *filenames* that already have a row in tds_document.
+
+        Used for idempotent uploads: if the same PDF filename was already
+        processed in a previous batch we skip it so the document isn't
+        duplicated on S3 or in the mapping table.
+        """
+        if not filenames:
+            return set()
+        placeholders = ", ".join(f":fn_{i}" for i in range(len(filenames)))
+        params: dict[str, Any] = {f"fn_{i}": name for i, name in enumerate(filenames)}
+        result = await db.execute(
+            text(
+                f"SELECT DISTINCT original_filename FROM tds_document"
+                f" WHERE original_filename IN ({placeholders})"
+            ),
+            params,
+        )
+        return {row[0] for row in result.fetchall()}
+
     async def bulk_insert_documents(
         self,
         db: AsyncSession,

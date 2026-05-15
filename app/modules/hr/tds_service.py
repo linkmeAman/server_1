@@ -40,14 +40,19 @@ class TDSService:
         file: UploadFile,
         uploaded_by: int | None,
     ) -> dict[str, Any]:
-        """Handle single PDF or ZIP upload.
+        """Handle single PDF or ZIP upload — idempotent.
 
+        Files whose ``original_filename`` already exists in ``tds_document``
+        are skipped entirely (no S3 upload, no DB row).  This makes re-uploading
+        the same ZIP safe: only genuinely new PDFs are processed.
+
+        Steps:
         1. Read and validate the file.
-        2. Create a batch record.
-        3. For ZIP: extract PDFs (flatten sub-folders), upload each to S3.
-           For PDF: upload directly to S3.
-        4. Insert document rows with parsed metadata.
-        5. Return batch summary.
+        2. Extract the PDF file-list in-memory (no S3 yet).
+        3. Query ``tds_document`` for already-existing filenames → build skip list.
+        4. If **all** files are duplicates, return early without creating a batch.
+        5. Create a batch record, upload only the new PDFs to S3, insert DB rows.
+        6. Return summary including ``skipped_files``.
         """
         settings = get_settings()
         content_type = (file.content_type or "").lower()
@@ -73,25 +78,73 @@ class TDSService:
             )
 
         upload_type = "zip" if is_zip else "single"
+
+        # ----------------------------------------------------------------
+        # Step 1 — Extract file list in-memory (no S3 yet)
+        # ----------------------------------------------------------------
+        if is_zip:
+            try:
+                pdfs = extract_pdfs_from_zip(raw)
+            except Exception as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            if not pdfs:
+                raise HTTPException(
+                    status_code=422, detail="ZIP archive contains no PDF files."
+                )
+            candidate_names = [p.filename for p in pdfs]
+        else:
+            pdfs = None
+            candidate_names = [filename]
+
+        # ----------------------------------------------------------------
+        # Step 2 — Idempotency: skip PDFs already present in tds_document
+        # ----------------------------------------------------------------
+        existing_names = await self.repo.find_existing_filenames(db, candidate_names)
+        skipped = sorted(existing_names)
+
+        new_pdfs = (
+            [p for p in pdfs if p.filename not in existing_names] if is_zip else None
+        )
+        all_skipped = (is_zip and not new_pdfs) or (is_pdf and filename in existing_names)
+
+        if all_skipped:
+            return {
+                "batch_id": None,
+                "upload_type": upload_type,
+                "total_files": 0,
+                "skipped_files": len(skipped),
+                "skipped": skipped,
+                "message": "All files already exist in the system. Nothing was uploaded.",
+            }
+
+        # ----------------------------------------------------------------
+        # Step 3 — Create batch record (only for genuinely new files)
+        # ----------------------------------------------------------------
         batch_id = await self.repo.create_batch(
             db,
             upload_type=upload_type,
             original_filename=filename,
             uploaded_by=uploaded_by,
         )
-
         folder = f"{settings.S3_TDS_FOLDER}/batch_{batch_id}"
 
+        # ----------------------------------------------------------------
+        # Step 4 — Upload only new files to S3
+        # ----------------------------------------------------------------
         try:
             if is_zip:
-                uploaded_records = await self._handle_zip(raw, folder)
+                uploaded_records = upload_pdfs_to_s3(new_pdfs, folder)  # type: ignore[arg-type]
             else:
-                uploaded_records = await self._handle_single_pdf(raw, filename, folder)
+                s3_key = f"{folder}/{filename}"
+                upload_fileobj(io.BytesIO(raw), s3_key, "application/pdf")
+                uploaded_records = [{"original_filename": filename, "s3_key": s3_key}]
         except Exception as exc:
             logger.exception("S3 upload failed for batch %s", batch_id)
             raise HTTPException(status_code=500, detail=f"Upload failed: {exc}") from exc
 
-        # Persist document rows
+        # ----------------------------------------------------------------
+        # Step 5 — Persist document rows and update batch status
+        # ----------------------------------------------------------------
         await self.repo.bulk_insert_documents(db, batch_id, uploaded_records)
         await self.repo.update_batch_file_count(
             db, batch_id, len(uploaded_records), status="uploaded"
@@ -101,6 +154,8 @@ class TDSService:
             "batch_id": batch_id,
             "upload_type": upload_type,
             "total_files": len(uploaded_records),
+            "skipped_files": len(skipped),
+            "skipped": skipped,
             "files": [
                 {
                     "original_filename": r["original_filename"],
@@ -109,21 +164,6 @@ class TDSService:
                 for r in uploaded_records
             ],
         }
-
-    async def _handle_zip(self, raw: bytes, folder: str) -> list[dict[str, str]]:
-        pdfs = extract_pdfs_from_zip(raw)
-        if not pdfs:
-            raise HTTPException(
-                status_code=422, detail="ZIP archive contains no PDF files."
-            )
-        return upload_pdfs_to_s3(pdfs, folder)
-
-    async def _handle_single_pdf(
-        self, raw: bytes, filename: str, folder: str
-    ) -> list[dict[str, str]]:
-        s3_key = f"{folder}/{filename}"
-        upload_fileobj(io.BytesIO(raw), s3_key, "application/pdf")
-        return [{"original_filename": filename, "s3_key": s3_key}]
 
     # ------------------------------------------------------------------
     # Mapping suggestions
