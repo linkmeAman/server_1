@@ -63,6 +63,7 @@ class ReportAction(BaseModel):
 
 class ReportSource(BaseModel):
     type: ReportKind
+    database: str | None = Field(default=None, max_length=128)
     table: str | None = Field(default=None, max_length=191)
     route_path: str | None = Field(default=None, max_length=512)
     id_column: str | None = Field(default=None, max_length=128)

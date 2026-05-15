@@ -297,7 +297,25 @@ class ReportDefinitionValidator:
         publish: bool,
     ) -> None:
         if definition.kind == "table":
+            database_name = (definition.source.database or "").strip()
             table_name = (definition.source.table or "").strip()
+            if not database_name:
+                errors.append(
+                    self._error(
+                        "source.database",
+                        "required",
+                        "Table reports require a source database.",
+                    )
+                )
+            elif not self._is_identifier(database_name):
+                errors.append(
+                    self._error(
+                        "source.database",
+                        "invalid_value",
+                        "Source database must use letters, numbers, and underscores only.",
+                    )
+                )
+
             if not table_name:
                 errors.append(
                     self._error(
@@ -364,6 +382,15 @@ class ReportDefinitionValidator:
                         "source.table",
                         "invalid_state",
                         "Route-backed reports cannot define a source table.",
+                    )
+                )
+
+            if definition.source.database:
+                errors.append(
+                    self._error(
+                        "source.database",
+                        "invalid_state",
+                        "Route-backed reports cannot define a source database.",
                     )
                 )
 
