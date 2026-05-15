@@ -40,19 +40,22 @@ class TDSService:
         file: UploadFile,
         uploaded_by: int | None,
     ) -> dict[str, Any]:
-        """Handle single PDF or ZIP upload — idempotent.
+        """Handle single PDF or ZIP upload — idempotent, mapping-aware.
 
-        Files whose ``original_filename`` already exists in ``tds_document``
-        are skipped entirely (no S3 upload, no DB row).  This makes re-uploading
-        the same ZIP safe: only genuinely new PDFs are processed.
+        Per-file decision table
+        ───────────────────────
+        • Not in DB                      → upload to S3, insert new row
+        • In DB, employee_id IS NULL     → rebatch existing row (no S3 upload),
+                                           surfaces for mapping again
+        • In DB, employee_id IS NOT NULL → already mapped, skip entirely
 
         Steps:
         1. Read and validate the file.
         2. Extract the PDF file-list in-memory (no S3 yet).
-        3. Query ``tds_document`` for already-existing filenames → build skip list.
-        4. If **all** files are duplicates, return early without creating a batch.
-        5. Create a batch record, upload only the new PDFs to S3, insert DB rows.
-        6. Return summary including ``skipped_files``.
+        3. Query tds_document for existing filenames; categorise each file.
+        4. If everything is already mapped, return early (no batch created).
+        5. Create batch, upload only truly-new PDFs to S3, rebatch unmapped ones.
+        6. Return summary: new_files / remapped_files / skipped_files.
         """
         settings = get_settings()
         content_type = (file.content_type or "").lower()
@@ -97,28 +100,37 @@ class TDSService:
             candidate_names = [filename]
 
         # ----------------------------------------------------------------
-        # Step 2 — Idempotency: skip PDFs already present in tds_document
+        # Step 2 — Categorise each file by its DB state
         # ----------------------------------------------------------------
-        existing_names = await self.repo.find_existing_filenames(db, candidate_names)
-        skipped = sorted(existing_names)
+        existing_docs = await self.repo.find_existing_documents(db, candidate_names)
 
-        new_pdfs = (
-            [p for p in pdfs if p.filename not in existing_names] if is_zip else None
-        )
-        all_skipped = (is_zip and not new_pdfs) or (is_pdf and filename in existing_names)
+        truly_new: list[str] = []           # not in DB → upload to S3 + insert
+        unmapped_existing: list[dict] = []  # in DB, unmapped → rebatch only
+        skip_mapped: list[str] = []         # in DB, mapped   → skip entirely
 
-        if all_skipped:
+        for name in candidate_names:
+            if name not in existing_docs:
+                truly_new.append(name)
+            elif existing_docs[name]["employee_id"] is None:
+                unmapped_existing.append(existing_docs[name])
+            else:
+                skip_mapped.append(name)
+
+        # Nothing actionable — every file is already mapped
+        if not truly_new and not unmapped_existing:
             return {
                 "batch_id": None,
                 "upload_type": upload_type,
                 "total_files": 0,
-                "skipped_files": len(skipped),
-                "skipped": skipped,
-                "message": "All files already exist in the system. Nothing was uploaded.",
+                "new_files": 0,
+                "remapped_files": 0,
+                "skipped_files": len(skip_mapped),
+                "skipped": sorted(skip_mapped),
+                "message": "All files are already mapped. Nothing to do.",
             }
 
         # ----------------------------------------------------------------
-        # Step 3 — Create batch record (only for genuinely new files)
+        # Step 3 — Create batch record
         # ----------------------------------------------------------------
         batch_id = await self.repo.create_batch(
             db,
@@ -129,33 +141,47 @@ class TDSService:
         folder = f"{settings.S3_TDS_FOLDER}/batch_{batch_id}"
 
         # ----------------------------------------------------------------
-        # Step 4 — Upload only new files to S3
+        # Step 4 — Upload only truly-new files to S3
         # ----------------------------------------------------------------
-        try:
-            if is_zip:
-                uploaded_records = upload_pdfs_to_s3(new_pdfs, folder)  # type: ignore[arg-type]
-            else:
-                s3_key = f"{folder}/{filename}"
-                upload_fileobj(io.BytesIO(raw), s3_key, "application/pdf")
-                uploaded_records = [{"original_filename": filename, "s3_key": s3_key}]
-        except Exception as exc:
-            logger.exception("S3 upload failed for batch %s", batch_id)
-            raise HTTPException(status_code=500, detail=f"Upload failed: {exc}") from exc
+        uploaded_records: list[dict[str, str]] = []
+        if truly_new:
+            truly_new_set = set(truly_new)
+            try:
+                if is_zip:
+                    new_pdfs = [p for p in pdfs if p.filename in truly_new_set]  # type: ignore[union-attr]
+                    uploaded_records = upload_pdfs_to_s3(new_pdfs, folder)
+                else:
+                    s3_key = f"{folder}/{filename}"
+                    upload_fileobj(io.BytesIO(raw), s3_key, "application/pdf")
+                    uploaded_records = [{"original_filename": filename, "s3_key": s3_key}]
+            except Exception as exc:
+                logger.exception("S3 upload failed for batch %s", batch_id)
+                raise HTTPException(status_code=500, detail=f"Upload failed: {exc}") from exc
 
         # ----------------------------------------------------------------
-        # Step 5 — Persist document rows and update batch status
+        # Step 5 — Persist new rows; rebatch existing unmapped rows
         # ----------------------------------------------------------------
-        await self.repo.bulk_insert_documents(db, batch_id, uploaded_records)
+        if uploaded_records:
+            await self.repo.bulk_insert_documents(db, batch_id, uploaded_records)
+
+        if unmapped_existing:
+            await self.repo.rebatch_documents(
+                db, [d["id"] for d in unmapped_existing], batch_id
+            )
+
+        total_in_batch = len(uploaded_records) + len(unmapped_existing)
         await self.repo.update_batch_file_count(
-            db, batch_id, len(uploaded_records), status="uploaded"
+            db, batch_id, total_in_batch, status="uploaded"
         )
 
         return {
             "batch_id": batch_id,
             "upload_type": upload_type,
-            "total_files": len(uploaded_records),
-            "skipped_files": len(skipped),
-            "skipped": skipped,
+            "total_files": total_in_batch,
+            "new_files": len(uploaded_records),
+            "remapped_files": len(unmapped_existing),
+            "skipped_files": len(skip_mapped),
+            "skipped": sorted(skip_mapped),
             "files": [
                 {
                     "original_filename": r["original_filename"],

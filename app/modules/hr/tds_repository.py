@@ -155,29 +155,80 @@ class TDSRepository:
         )
         return result.lastrowid  # type: ignore[return-value]
 
-    async def find_existing_filenames(
+    async def find_existing_documents(
         self,
         db: AsyncSession,
         filenames: list[str],
-    ) -> set[str]:
-        """Return the subset of *filenames* that already have a row in tds_document.
+    ) -> dict[str, dict[str, Any]]:
+        """Return DB info for the most recent row matching each filename.
 
-        Used for idempotent uploads: if the same PDF filename was already
-        processed in a previous batch we skip it so the document isn't
-        duplicated on S3 or in the mapping table.
+        Returns a dict mapping ``original_filename`` →
+        ``{id, s3_key, employee_id, mapping_status}``.
+
+        Used to decide per-file upload behaviour:
+        - filename absent            → truly new, upload to S3
+        - present, employee_id NULL  → unmapped/failed, rebatch without re-uploading
+        - present, employee_id set   → already mapped, skip entirely
         """
         if not filenames:
-            return set()
+            return {}
         placeholders = ", ".join(f":fn_{i}" for i in range(len(filenames)))
         params: dict[str, Any] = {f"fn_{i}": name for i, name in enumerate(filenames)}
         result = await db.execute(
             text(
-                f"SELECT DISTINCT original_filename FROM tds_document"
-                f" WHERE original_filename IN ({placeholders})"
+                f"""
+                SELECT d.id, d.original_filename, d.s3_key,
+                       d.employee_id, d.mapping_status
+                FROM tds_document d
+                INNER JOIN (
+                    SELECT MAX(id) AS max_id
+                    FROM tds_document
+                    WHERE original_filename IN ({placeholders})
+                    GROUP BY original_filename
+                ) latest ON d.id = latest.max_id
+                """
             ),
             params,
         )
-        return {row[0] for row in result.fetchall()}
+        return {
+            row[1]: {
+                "id": row[0],
+                "s3_key": row[2],
+                "employee_id": row[3],
+                "mapping_status": row[4],
+            }
+            for row in result.fetchall()
+        }
+
+    async def rebatch_documents(
+        self,
+        db: AsyncSession,
+        doc_ids: list[int],
+        new_batch_id: int,
+    ) -> None:
+        """Re-assign existing unmapped document rows to *new_batch_id*.
+
+        Resets ``mapping_status`` back to ``unmapped`` so the auto-mapper
+        gets a fresh pass on them.  The S3 object is untouched — the
+        existing ``s3_key`` is simply reused in the new batch.
+        """
+        if not doc_ids:
+            return
+        placeholders = ", ".join(f":id_{i}" for i in range(len(doc_ids)))
+        params: dict[str, Any] = {f"id_{i}": did for i, did in enumerate(doc_ids)}
+        params["new_batch_id"] = new_batch_id
+        await db.execute(
+            text(
+                f"""
+                UPDATE tds_document
+                SET batch_id = :new_batch_id,
+                    mapping_status = 'unmapped'
+                WHERE id IN ({placeholders})
+                """
+            ),
+            params,
+        )
+        await db.commit()
 
     async def bulk_insert_documents(
         self,
