@@ -26,7 +26,7 @@ DEFAULT_LIMIT = 50
 async def list_employees(
     q: str | None = Query(default=None),
     status: int | None = Query(default=None),
-    limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=200),
+    limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=5000),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_main_db_session),
     caller: CallerContext = Depends(require_any_caller),
