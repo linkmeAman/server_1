@@ -81,7 +81,7 @@ def upgrade() -> None:
             sa.Column("original_filename", sa.String(512), nullable=False),
             # Fields parsed from filename (e.g. VIDHI JIGNESH PARMAR_Q2_FY202526_16A.pdf)
             sa.Column("parsed_name", sa.String(255), nullable=True),
-            sa.Column("quarter", sa.TinyInteger(), nullable=True),   # 1–4
+            sa.Column("quarter", sa.SmallInteger(), nullable=True),   # 1–4
             sa.Column("fiscal_year", sa.String(10), nullable=True),  # e.g. "2025-26"
             sa.Column(
                 "mapping_status",
