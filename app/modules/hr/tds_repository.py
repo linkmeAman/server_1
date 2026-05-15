@@ -262,7 +262,7 @@ class TDSRepository:
             text(
                 f"""
                 SELECT
-                    e.id        AS employee_id,
+                    e.id            AS employee_id,
                     c.fname,
                     c.mname,
                     c.lname,
@@ -270,16 +270,15 @@ class TDSRepository:
                         NULLIF(TRIM(c.fname),''),
                         NULLIF(TRIM(c.mname),''),
                         NULLIF(TRIM(c.lname),'')
-                    )           AS full_name,
+                    )               AS full_name,
                     e.ecode,
                     e.status,
-                    d.department,
-                    p.position
+                    e.department_id,
+                    e.position_id
                 FROM employee e
                 LEFT JOIN contact c ON c.id = e.contact_id
-                LEFT JOIN employee_department d ON d.id = e.department_id
-                LEFT JOIN employee_position  p ON p.id = e.position_id
                 WHERE {where}
+                  AND (e.park IS NULL OR e.park = 0)
                 ORDER BY full_name ASC
                 LIMIT :limit OFFSET :offset
                 """
@@ -313,6 +312,7 @@ class TDSRepository:
                 FROM employee e
                 LEFT JOIN contact c ON c.id = e.contact_id
                 WHERE {where}
+                  AND (e.park IS NULL OR e.park = 0)
                 """
             ),
             params,
