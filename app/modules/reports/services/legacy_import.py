@@ -8,7 +8,12 @@ from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.reports.schemas.models import ReportCatalogItem, ReportDefinition
+from app.modules.reports.schemas.models import (
+    LegacyImportIssue,
+    LegacyReportCandidate,
+    ReportCatalogItem,
+    ReportDefinition,
+)
 
 
 class LegacyReportImportService:
@@ -33,24 +38,8 @@ class LegacyReportImportService:
         """
 
         excluded = exclude_report_ids or set()
-        try:
-            result = await main_db.execute(
-                text(
-                    """
-                    SELECT id, name, subtitle
-                    FROM report
-                    WHERE report = 1
-                      AND park = 0
-                    ORDER BY name ASC, id ASC
-                    """
-                )
-            )
-        except Exception:
-            return []
-
         items: list[ReportCatalogItem] = []
-        for row in result.fetchall():
-            item = dict(row._mapping)
+        for item in await self._list_legacy_reports(main_db):
             report_id = int(item["id"])
             if report_id in excluded:
                 continue
@@ -76,6 +65,25 @@ class LegacyReportImportService:
             )
         return items
 
+    async def list_legacy_candidates(
+        self,
+        main_db: AsyncSession,
+    ) -> list[LegacyReportCandidate]:
+        candidates: list[LegacyReportCandidate] = []
+        for item in await self._list_legacy_reports(main_db):
+            report_id = int(item["id"])
+            candidates.append(
+                LegacyReportCandidate(
+                    legacy_report_id=report_id,
+                    name=str(item.get("name") or f"Legacy Report {report_id}"),
+                    description=str(item.get("subtitle") or "") or "Legacy report pending migration.",
+                    category="Legacy Reports",
+                    source_table=str(item.get("table_name") or "") or None,
+                    dynamic_report=int(item.get("dynamic_report") or 0) == 1,
+                )
+            )
+        return candidates
+
     async def build_draft_from_legacy(
         self,
         main_db: AsyncSession,
@@ -88,11 +96,23 @@ class LegacyReportImportService:
 
         columns = await self._fetch_columns(main_db, report_id)
         buttons = await self._fetch_buttons(main_db, report_id)
-        warnings: list[str] = []
+        issues: list[LegacyImportIssue] = []
         if any(str(item.get("query") or "").strip() for item in buttons):
-            warnings.append("Legacy row button predicates require manual conversion to the safe predicate DSL.")
+            issues.append(
+                self._issue(
+                    "button_predicate_review_required",
+                    "Imported as draft, but some legacy row button rules need manual review before publication.",
+                    technical_detail="Legacy row button predicates require manual conversion to the safe predicate DSL.",
+                )
+            )
         if int(report.get("dynamic_report") or 0) == 1:
-            warnings.append("Dynamic report SQL requires review before publication.")
+            issues.append(
+                self._issue(
+                    "dynamic_sql_review_required",
+                    "Imported as draft, but the source query uses dynamic SQL and should be reviewed before publication.",
+                    technical_detail="Dynamic report SQL requires review before publication.",
+                )
+            )
 
         visible_columns = [
             {
@@ -137,6 +157,27 @@ class LegacyReportImportService:
             )
             declared_keys.add("bid")
 
+        source_table = str(report.get("table_name") or "").strip()
+        if not source_table:
+            issues.append(
+                self._issue(
+                    "missing_source_table",
+                    "Imported as draft, but this table report still needs a source table. Open the draft, choose a source table, and save again before publishing.",
+                    field_path="source.table",
+                    technical_detail="Legacy report metadata did not include a usable table_name value.",
+                )
+            )
+
+        if len([item for item in visible_columns if item.get("visible")]) == 0:
+            issues.append(
+                self._issue(
+                    "no_visible_columns",
+                    "Imported as draft, but no visible columns were mapped. Review the imported columns before publishing.",
+                    field_path="columns",
+                    technical_detail="Legacy report_column rows did not produce any visible columns.",
+                )
+            )
+
         slug = f"legacy-{int(report_id)}"
         definition = ReportDefinition.model_validate(
             {
@@ -151,7 +192,7 @@ class LegacyReportImportService:
                 "legacy_view_action": "report:read",
                 "source": {
                     "type": "table",
-                    "table": str(report.get("table_name") or ""),
+                    "table": source_table or None,
                     "date_column": str(report.get("date_filter_col") or "") or None,
                     "branch_column": "bid" if int(report.get("check_bid") or 0) == 1 else None,
                 },
@@ -178,7 +219,8 @@ class LegacyReportImportService:
 
         return {
             "definition": definition.model_dump(mode="json"),
-            "warnings": warnings,
+            "issues": [item.model_dump(mode="json") for item in issues],
+            "report_name": str(report.get("name") or f"Legacy Report {report_id}"),
         }
 
     async def _fetch_report(self, db: AsyncSession, report_id: int) -> dict[str, Any] | None:
@@ -230,3 +272,35 @@ class LegacyReportImportService:
         except Exception:
             return []
         return [dict(row._mapping) for row in result.fetchall()]
+
+    async def _list_legacy_reports(self, db: AsyncSession) -> list[dict[str, Any]]:
+        try:
+            result = await db.execute(
+                text(
+                    """
+                    SELECT id, name, subtitle, table_name, dynamic_report
+                    FROM report
+                    WHERE report = 1
+                      AND park = 0
+                    ORDER BY name ASC, id ASC
+                    """
+                )
+            )
+        except Exception:
+            return []
+        return [dict(row._mapping) for row in result.fetchall()]
+
+    @staticmethod
+    def _issue(
+        code: str,
+        message: str,
+        *,
+        field_path: str | None = None,
+        technical_detail: str | None = None,
+    ) -> LegacyImportIssue:
+        return LegacyImportIssue(
+            code=code,
+            message=message,
+            field_path=field_path,
+            technical_detail=technical_detail,
+        )

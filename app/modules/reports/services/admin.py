@@ -5,10 +5,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.reports.schemas.models import (
+    LegacyImportBatchResponse,
+    LegacyImportIssue,
+    LegacyImportItemResult,
+    LegacyReportCandidate,
     ReportDefinition,
     ReportDraftUpsertRequest,
     ReportImportDraftResponse,
@@ -221,24 +226,85 @@ class ReportAdminService:
         report_id: int,
         user_id: int,
     ) -> ReportImportDraftResponse:
-        imported = await self.legacy_imports.build_draft_from_legacy(main_db, report_id=report_id)
-        payload = ReportDraftUpsertRequest.model_validate(imported["definition"])
-        slug = self._normalize_slug(payload.slug)
-        existing = await self._fetch_report_row(central_db, slug)
-        if existing is None:
-            report = await self._save_report(central_db, payload, slug=slug, user_id=user_id)
-        else:
-            report = await self._save_report(
-                central_db,
-                payload,
-                slug=slug,
-                user_id=user_id,
-                report_id=int(existing["id"]),
+        batch = await self.import_legacy_reports(
+            central_db,
+            main_db,
+            report_ids=[int(report_id)],
+            user_id=user_id,
+        )
+        result = batch.results[0]
+        if result.report is None:
+            first_issue = result.issues[0] if result.issues else None
+            raise ReportApiException(
+                404 if first_issue and first_issue.code == "legacy_report_not_found" else 503,
+                error_code="LegacyImportFailed",
+                message=first_issue.message if first_issue else "Legacy report import failed.",
+                data={"issues": [item.model_dump(mode="json") for item in result.issues]},
             )
         return ReportImportDraftResponse(
-            report=report,
-            warnings=[str(item) for item in imported.get("warnings") or []],
+            report=result.report,
+            warnings=[item.message for item in result.issues],
             imported_legacy_report_id=int(report_id),
+        )
+
+    async def list_legacy_reports(
+        self,
+        central_db: AsyncSession,
+        main_db: AsyncSession,
+    ) -> list[LegacyReportCandidate]:
+        candidates = await self.legacy_imports.list_legacy_candidates(main_db)
+        migration_map = await self._load_legacy_migration_map(central_db)
+        rows: list[LegacyReportCandidate] = []
+        for candidate in candidates:
+            existing = migration_map.get(int(candidate.legacy_report_id))
+            if existing is None:
+                rows.append(candidate)
+                continue
+            rows.append(
+                candidate.model_copy(
+                    update={
+                        "already_migrated": True,
+                        "existing_report_slug": existing["slug"],
+                        "existing_report_status": existing["status"],
+                        "available_for_import": False,
+                        "unavailable_reason": (
+                            f"Already migrated to {existing['slug']} ({existing['status']})."
+                        ),
+                    }
+                )
+            )
+        return rows
+
+    async def import_legacy_reports(
+        self,
+        central_db: AsyncSession,
+        main_db: AsyncSession,
+        *,
+        report_ids: list[int],
+        user_id: int,
+    ) -> LegacyImportBatchResponse:
+        results: list[LegacyImportItemResult] = []
+        for report_id in report_ids:
+            results.append(
+                await self._import_legacy_report_item(
+                    central_db,
+                    main_db,
+                    report_id=int(report_id),
+                    user_id=user_id,
+                )
+            )
+
+        imported_count = sum(1 for item in results if item.status == "imported")
+        imported_with_issues_count = sum(
+            1 for item in results if item.status == "imported_with_issues"
+        )
+        failed_count = sum(1 for item in results if item.status == "failed")
+        return LegacyImportBatchResponse(
+            results=results,
+            total_requested=len(report_ids),
+            imported_count=imported_count,
+            imported_with_issues_count=imported_with_issues_count,
+            failed_count=failed_count,
         )
 
     async def _save_report(
@@ -249,9 +315,11 @@ class ReportAdminService:
         slug: str,
         user_id: int,
         report_id: int | None = None,
+        validate: bool = True,
     ) -> ReportDefinition:
         definition = self._build_definition(payload, slug=slug)
-        self.validator.validate_draft(definition)
+        if validate:
+            self.validator.validate_draft(definition)
         definition_json = definition.model_dump_json()
 
         if report_id is None:
@@ -423,6 +491,105 @@ class ReportAdminService:
         row = result.fetchone()
         return dict(row._mapping) if row else None
 
+    async def _import_legacy_report_item(
+        self,
+        central_db: AsyncSession,
+        main_db: AsyncSession,
+        *,
+        report_id: int,
+        user_id: int,
+    ) -> LegacyImportItemResult:
+        try:
+            imported = await self.legacy_imports.build_draft_from_legacy(
+                main_db,
+                report_id=report_id,
+            )
+            payload = ReportDraftUpsertRequest.model_validate(imported["definition"])
+            slug = self._normalize_slug(payload.slug)
+            existing = await self._fetch_report_row(central_db, slug)
+            if existing is None:
+                report = await self._save_report(
+                    central_db,
+                    payload,
+                    slug=slug,
+                    user_id=user_id,
+                    validate=False,
+                )
+            else:
+                report = await self._save_report(
+                    central_db,
+                    payload,
+                    slug=slug,
+                    user_id=user_id,
+                    report_id=int(existing["id"]),
+                    validate=False,
+                )
+            issues = [
+                LegacyImportIssue.model_validate(item)
+                for item in imported.get("issues") or []
+            ]
+            return LegacyImportItemResult(
+                legacy_report_id=int(report_id),
+                name=str(imported.get("report_name") or report.name),
+                status="imported_with_issues" if issues else "imported",
+                report=report,
+                issues=issues,
+            )
+        except HTTPException as exc:
+            return LegacyImportItemResult(
+                legacy_report_id=int(report_id),
+                name=f"Legacy Report {report_id}",
+                status="failed",
+                issues=[
+                    self._legacy_failure_issue(
+                        "legacy_report_not_found" if exc.status_code == 404 else "legacy_report_unavailable",
+                        str(exc.detail) or "Legacy report import failed.",
+                    )
+                ],
+            )
+        except Exception as exc:
+            return LegacyImportItemResult(
+                legacy_report_id=int(report_id),
+                name=f"Legacy Report {report_id}",
+                status="failed",
+                issues=[
+                    self._legacy_failure_issue(
+                        "legacy_import_failed",
+                        "The legacy report could not be imported. Try again, or inspect the technical detail below.",
+                        technical_detail=str(exc),
+                    )
+                ],
+            )
+
+    async def _load_legacy_migration_map(
+        self,
+        central_db: AsyncSession,
+    ) -> dict[int, dict[str, str]]:
+        try:
+            result = await central_db.execute(
+                text(
+                    """
+                    SELECT slug, status, source_legacy_report_id
+                    FROM report_definitions
+                    WHERE source_legacy_report_id IS NOT NULL
+                    """
+                )
+            )
+        except Exception:
+            return {}
+
+        rows: dict[int, dict[str, str]] = {}
+        for row in result.fetchall():
+            row_map = row._mapping
+            legacy_id = row_map.get("source_legacy_report_id")
+            if legacy_id is None:
+                continue
+            rows[int(legacy_id)] = {
+                "slug": str(row_map.get("slug") or ""),
+                "status": str(row_map.get("status") or "draft"),
+            }
+        return rows
+
     def _build_definition(
         self,
         payload: ReportDraftUpsertRequest,
@@ -455,3 +622,16 @@ class ReportAdminService:
     @staticmethod
     def _normalize_slug(value: str) -> str:
         return value.strip().lower().replace("_", "-")
+
+    @staticmethod
+    def _legacy_failure_issue(
+        code: str,
+        message: str,
+        *,
+        technical_detail: str | None = None,
+    ) -> LegacyImportIssue:
+        return LegacyImportIssue(
+            code=code,
+            message=message,
+            technical_detail=technical_detail,
+        )

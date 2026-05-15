@@ -11,6 +11,7 @@ from app.core.database import get_central_db_session, get_main_db_session
 from app.core.prism_guard import CallerContext, require_any_caller
 from app.core.response import success_response
 from app.modules.reports.schemas.models import (
+    LegacyImportBatchRequest,
     ReportAdminStatus,
     ReportDraftUpsertRequest,
     ReportQueryRequest,
@@ -100,6 +101,40 @@ async def import_legacy_report_draft(
     return success_response(
         data=imported.model_dump(mode="json"),
         message="Legacy report imported as draft",
+    ).model_dump(mode="json")
+
+
+@router.get("/admin/legacy/reports")
+async def list_admin_legacy_reports(
+    caller: CallerContext = Depends(require_any_caller),
+    central_db: AsyncSession = Depends(get_central_db_session),
+    main_db: AsyncSession = Depends(get_main_db_session),
+):
+    await permission_service.require_manage(caller, central_db)
+    reports = await admin_service.list_legacy_reports(central_db, main_db)
+    return success_response(
+        data={"reports": [item.model_dump(mode="json") for item in reports]},
+        message="Legacy reports fetched",
+    ).model_dump(mode="json")
+
+
+@router.post("/admin/legacy/import")
+async def import_legacy_report_batch(
+    payload: LegacyImportBatchRequest,
+    caller: CallerContext = Depends(require_any_caller),
+    central_db: AsyncSession = Depends(get_central_db_session),
+    main_db: AsyncSession = Depends(get_main_db_session),
+):
+    await permission_service.require_manage(caller, central_db)
+    imported = await admin_service.import_legacy_reports(
+        central_db,
+        main_db,
+        report_ids=[int(item) for item in payload.report_ids],
+        user_id=int(caller.user_id),
+    )
+    return success_response(
+        data=imported.model_dump(mode="json"),
+        message="Legacy reports imported",
     ).model_dump(mode="json")
 
 

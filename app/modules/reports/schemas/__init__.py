@@ -1,6 +1,11 @@
 """Report platform schemas."""
 
 from .models import (
+    LegacyImportBatchRequest,
+    LegacyImportBatchResponse,
+    LegacyImportIssue,
+    LegacyImportItemResult,
+    LegacyReportCandidate,
     ReportAction,
     ReportAdminListResponse,
     ReportAdminSaveRequest,
@@ -24,6 +29,11 @@ from .models import (
 )
 
 __all__ = [
+    "LegacyImportBatchRequest",
+    "LegacyImportBatchResponse",
+    "LegacyImportIssue",
+    "LegacyImportItemResult",
+    "LegacyReportCandidate",
     "ReportAction",
     "ReportAdminListResponse",
     "ReportAdminSaveRequest",

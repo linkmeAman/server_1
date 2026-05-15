@@ -190,4 +190,45 @@ class ReportDraftListResponse(BaseModel):
     drafts: list[ReportDefinition] = Field(default_factory=list)
 
 
+class LegacyReportCandidate(BaseModel):
+    legacy_report_id: int
+    name: str
+    description: str | None = None
+    category: str = "Legacy Reports"
+    source_table: str | None = None
+    dynamic_report: bool = False
+    already_migrated: bool = False
+    existing_report_slug: str | None = None
+    existing_report_status: ReportStatus | None = None
+    available_for_import: bool = True
+    unavailable_reason: str | None = None
+
+
+class LegacyImportIssue(BaseModel):
+    code: str = Field(..., min_length=1, max_length=64)
+    message: str = Field(..., min_length=1, max_length=512)
+    field_path: str | None = Field(default=None, max_length=256)
+    technical_detail: str | None = Field(default=None, max_length=1000)
+
+
+class LegacyImportItemResult(BaseModel):
+    legacy_report_id: int
+    name: str
+    status: Literal["imported", "imported_with_issues", "failed"]
+    report: ReportDefinition | None = None
+    issues: list[LegacyImportIssue] = Field(default_factory=list)
+
+
+class LegacyImportBatchRequest(BaseModel):
+    report_ids: list[int] = Field(default_factory=list, min_length=1)
+
+
+class LegacyImportBatchResponse(BaseModel):
+    results: list[LegacyImportItemResult] = Field(default_factory=list)
+    total_requested: int = Field(default=0, ge=0)
+    imported_count: int = Field(default=0, ge=0)
+    imported_with_issues_count: int = Field(default=0, ge=0)
+    failed_count: int = Field(default=0, ge=0)
+
+
 ReportAdminSaveRequest = ReportDraftUpsertRequest
