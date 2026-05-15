@@ -9,6 +9,7 @@ from app.modules.example.router import router as example_router
 from app.modules.geosearch.router import router as geosearch_router
 from app.modules.google_calendar_v1.router import router as google_calendar_v1_router
 from app.modules.google_reviews.router import router as google_reviews_router
+from app.modules.hr.router import router as hr_router
 from app.modules.workforce.router import router as workforce_router
 from app.modules.llm.router import router as llm_router
 from app.modules.orders.router import router as orders_router
@@ -37,10 +38,13 @@ api_router.include_router(google_reviews_router)
 api_router.include_router(sqlgw_admin_router)
 api_router.include_router(reports_router)
 
-# 3) Orders explicit routes
+# 3) HR module (TDS certificates, etc.)
+api_router.include_router(hr_router)
+
+# 4) Orders explicit routes
 api_router.include_router(orders_router)
 
-# 4) PRISM — Access Control (roles, policies, assignments, attributes, registry)
+# 5) PRISM — Access Control (roles, policies, assignments, attributes, registry)
 api_router.include_router(prism_router)
 
 

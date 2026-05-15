@@ -207,7 +207,17 @@ class Settings(BaseSettings):
     SQL_GATEWAY_POLICY_CACHE_TTL_SECONDS: int = 60
     SQL_GATEWAY_SCHEMA_CACHE_TTL_SECONDS: int = 600
     SQLGW_ADMIN_REQUIRE_RBAC: bool = True
-    
+
+    # AWS S3 — general file storage
+    AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
+    AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+    AWS_REGION: str = os.getenv("AWS_REGION", "ap-south-1")
+    S3_BUCKET: str = os.getenv("S3_BUCKET", "")
+    # Folder prefix inside the bucket for TDS certificates
+    S3_TDS_FOLDER: str = os.getenv("S3_TDS_FOLDER", "hr/tds")
+    # Pre-signed URL expiry in seconds (default 1 hour)
+    S3_PRESIGN_EXPIRY_SECONDS: int = int(os.getenv("S3_PRESIGN_EXPIRY_SECONDS", 3600))
+
     class Config:
         env_file = str(PROJECT_ROOT / ".env")
         case_sensitive = True
