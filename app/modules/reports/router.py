@@ -176,6 +176,13 @@ def _infer_column_type(data_type: str) -> str:
     return "text"
 
 
+def _default_display_label(column_name: str) -> str:
+    cleaned = " ".join(part for part in str(column_name or "").replace("-", "_").split("_") if part)
+    if not cleaned:
+        return ""
+    return " ".join(chunk[:1].upper() + chunk[1:] for chunk in cleaned.split())
+
+
 @router.get("/admin/discovery/databases")
 async def list_report_discovery_databases(
     caller: CallerContext = Depends(require_any_caller),
@@ -254,6 +261,7 @@ async def list_report_discovery_columns(
         columns.append(
             {
                 "name": name,
+                "display_label": _default_display_label(name),
                 "data_type": data_type,
                 "report_type": _infer_column_type(data_type),
                 "is_primary_key": key_flag.upper() == "PRI",
