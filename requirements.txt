@@ -49,3 +49,4 @@ transformers==4.40.0
 #   pip install torch --index-url https://download.pytorch.org/whl/cpu
 langdetect==1.0.9
 scikit-learn==1.4.2
+boto3==1.36.0
