@@ -284,6 +284,20 @@ async def get_admin_report(
     ).model_dump(mode="json")
 
 
+@router.get("/admin/reports/{slug}/versions")
+async def list_admin_report_versions(
+    slug: str,
+    caller: CallerContext = Depends(require_any_caller),
+    central_db: AsyncSession = Depends(get_central_db_session),
+):
+    await permission_service.require_manage(caller, central_db)
+    versions = await admin_service.list_report_versions(central_db, slug)
+    return success_response(
+        data={"versions": [item.model_dump(mode="json") for item in versions]},
+        message="Admin report versions fetched",
+    ).model_dump(mode="json")
+
+
 @router.put("/admin/reports/{slug}")
 async def update_report_draft(
     slug: str,
@@ -343,6 +357,32 @@ async def archive_report(
     return success_response(
         data={"report": definition.model_dump(mode="json")},
         message="Report archived",
+    ).model_dump(mode="json")
+
+
+@router.post("/admin/reports/{slug}/versions/{version}/restore")
+async def restore_admin_report_version(
+    slug: str,
+    version: int,
+    caller: CallerContext = Depends(require_any_caller),
+    central_db: AsyncSession = Depends(get_central_db_session),
+):
+    await permission_service.require_manage(caller, central_db)
+    restored = await admin_service.restore_report_version(
+        central_db,
+        slug,
+        version,
+        user_id=int(caller.user_id),
+    )
+    return success_response(
+        data={
+            "report": restored.model_dump(mode="json"),
+            "validation_issues": [
+                item.model_dump(mode="json")
+                for item in admin_service.collect_draft_validation_issues(restored)
+            ],
+        },
+        message="Report version restored",
     ).model_dump(mode="json")
 
 

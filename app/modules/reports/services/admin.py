@@ -18,6 +18,7 @@ from app.modules.reports.schemas.models import (
     ReportDraftUpsertRequest,
     ReportFieldError,
     ReportImportDraftResponse,
+    ReportVersionSummary,
 )
 
 from .definition import ReportDefinitionService
@@ -57,6 +58,65 @@ class ReportAdminService:
     ) -> ReportDefinition | None:
         rows = await self._load_db_definitions(central_db, slug=self._normalize_slug(slug), status="all")
         return rows[0] if rows else None
+
+    async def list_report_versions(
+        self,
+        central_db: AsyncSession,
+        slug: str,
+    ) -> list[ReportVersionSummary]:
+        normalized = self._normalize_slug(slug)
+        existing = await self._fetch_report_row(central_db, normalized)
+        if existing is None:
+            raise ReportApiException(
+                404,
+                error_code="ReportNotFound",
+                message="Report not found",
+            )
+
+        result = await central_db.execute(
+            text(
+                """
+                SELECT
+                    d.slug,
+                    d.active_version_id,
+                    v.id,
+                    v.version,
+                    v.status,
+                    v.definition_json,
+                    v.created_by_user_id,
+                    v.created_at
+                FROM report_definitions d
+                JOIN report_versions v ON v.report_id = d.id
+                WHERE d.id = :report_id
+                ORDER BY v.version DESC
+                """
+            ),
+            {"report_id": int(existing["id"])},
+        )
+
+        versions: list[ReportVersionSummary] = []
+        for row in result.fetchall():
+            row_map = row._mapping
+            definition = self._definition_from_snapshot(
+                row_map["definition_json"],
+                slug=str(row_map["slug"]),
+                status=str(row_map["status"]),
+                version=int(row_map["version"]),
+            )
+            versions.append(
+                ReportVersionSummary(
+                    id=int(row_map["id"]),
+                    slug=str(row_map["slug"]),
+                    version=int(row_map["version"]),
+                    status=str(row_map["status"]),
+                    created_at=self._datetime_to_iso(row_map.get("created_at")),
+                    created_by_user_id=row_map.get("created_by_user_id"),
+                    is_active=int(row_map["id"]) == int(existing["active_version_id"]),
+                    is_published=str(row_map["status"]) == "published",
+                    report=definition,
+                )
+            )
+        return versions
 
     async def create_report(
         self,
@@ -172,6 +232,65 @@ class ReportAdminService:
                 message="Report was published but could not be reloaded.",
             )
         return published
+
+    async def restore_report_version(
+        self,
+        central_db: AsyncSession,
+        slug: str,
+        version: int,
+        *,
+        user_id: int,
+    ) -> ReportDefinition:
+        normalized = self._normalize_slug(slug)
+        existing = await self._fetch_report_row(central_db, normalized)
+        if existing is None:
+            raise ReportApiException(
+                404,
+                error_code="ReportNotFound",
+                message="Report not found",
+            )
+        if str(existing["status"]) == "archived":
+            raise ReportApiException(
+                409,
+                error_code="ReportArchived",
+                message="Archived reports cannot be restored.",
+            )
+
+        result = await central_db.execute(
+            text(
+                """
+                SELECT definition_json
+                FROM report_versions
+                WHERE report_id = :report_id
+                  AND version = :version
+                LIMIT 1
+                """
+            ),
+            {"report_id": int(existing["id"]), "version": int(version)},
+        )
+        row = result.fetchone()
+        if row is None:
+            raise ReportApiException(
+                404,
+                error_code="ReportVersionNotFound",
+                message="Report version not found",
+            )
+
+        definition = self._definition_from_snapshot(
+            row._mapping["definition_json"],
+            slug=normalized,
+            status="draft",
+            version=int(version),
+        )
+        payload = ReportDraftUpsertRequest.model_validate(definition.model_dump(mode="python"))
+        return await self._save_report(
+            central_db,
+            payload,
+            slug=normalized,
+            user_id=user_id,
+            report_id=int(existing["id"]),
+            validate=False,
+        )
 
     async def archive_report(
         self,
@@ -500,11 +619,14 @@ class ReportAdminService:
         for row in result.fetchall():
             row_map = row._mapping
             try:
-                payload = json.loads(row_map["definition_json"])
-                payload["slug"] = str(row_map["slug"])
-                payload["status"] = str(row_map["version_status"])
-                payload["version"] = int(row_map["version"])
-                definitions.append(ReportDefinition.model_validate(payload))
+                definitions.append(
+                    self._definition_from_snapshot(
+                        row_map["definition_json"],
+                        slug=str(row_map["slug"]),
+                        status=str(row_map["version_status"]),
+                        version=int(row_map["version"]),
+                    )
+                )
             except Exception:
                 continue
         return definitions
@@ -655,6 +777,29 @@ class ReportAdminService:
             }
         )
         return ReportDefinition.model_validate(data)
+
+    @staticmethod
+    def _definition_from_snapshot(
+        definition_json: str,
+        *,
+        slug: str,
+        status: str,
+        version: int,
+    ) -> ReportDefinition:
+        payload = json.loads(definition_json)
+        payload["slug"] = slug
+        payload["status"] = status
+        payload["version"] = version
+        return ReportDefinition.model_validate(payload)
+
+    @staticmethod
+    def _datetime_to_iso(value: Any) -> str | None:
+        if value is None:
+            return None
+        isoformat = getattr(value, "isoformat", None)
+        if callable(isoformat):
+            return str(isoformat())
+        return str(value)
 
     @staticmethod
     def _normalize_slug(value: str) -> str:

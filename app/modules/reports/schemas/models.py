@@ -178,6 +178,28 @@ class ReportDraftResponse(BaseModel):
     validation_issues: list[ReportFieldError] = Field(default_factory=list)
 
 
+class ReportVersionSummary(BaseModel):
+    id: int | str | None = None
+    slug: str | None = None
+    version: int = Field(..., ge=1)
+    status: ReportStatus = "draft"
+    created_at: str | None = None
+    updated_at: str | None = None
+    modified_at: str | None = None
+    created_by_user_id: int | str | None = None
+    created_by_name: str | None = None
+    modified_by_user_id: int | str | None = None
+    modified_by_name: str | None = None
+    owner_name: str | None = None
+    is_active: bool = False
+    is_published: bool = False
+    report: ReportDefinition | None = None
+
+
+class ReportVersionHistoryResponse(BaseModel):
+    versions: list[ReportVersionSummary] = Field(default_factory=list)
+
+
 class ReportAdminListResponse(BaseModel):
     reports: list[ReportDefinition] = Field(default_factory=list)
 

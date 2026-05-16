@@ -26,6 +26,8 @@ from .models import (
     ReportSource,
     ReportSort,
     ReportValidationErrorResponse,
+    ReportVersionHistoryResponse,
+    ReportVersionSummary,
 )
 
 __all__ = [
@@ -54,4 +56,6 @@ __all__ = [
     "ReportSource",
     "ReportSort",
     "ReportValidationErrorResponse",
+    "ReportVersionHistoryResponse",
+    "ReportVersionSummary",
 ]
