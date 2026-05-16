@@ -19,6 +19,9 @@ jobs:
         port: 22
         # Modify the cd path and port below to match your main production server folder
         script: |
+          # Exit immediately if a pipeline command fails
+          set -e
+          
           # 0. Trust directory (Fix for dubious ownership)
           git config --global --add safe.directory /var/www/py-workspace/server_1
           
