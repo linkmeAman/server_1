@@ -315,6 +315,35 @@ class TDSService:
                 doc["signed_url"] = None
         return docs
 
+    # ------------------------------------------------------------------
+    # Unmapped documents (cross-batch)
+    # ------------------------------------------------------------------
+
+    async def get_unmapped_documents(
+        self,
+        db: AsyncSession,
+        *,
+        q: str | None,
+        fiscal_year: str | None,
+        limit: int,
+        offset: int,
+    ) -> dict[str, Any]:
+        docs = await self.repo.list_unmapped_documents(
+            db, q=q, fiscal_year=fiscal_year, limit=limit, offset=offset
+        )
+        total = await self.repo.count_unmapped_documents(
+            db, q=q, fiscal_year=fiscal_year
+        )
+        return {"documents": docs, "total": total, "limit": limit, "offset": offset}
+
+    async def save_unmapped_mapping(
+        self,
+        db: AsyncSession,
+        mappings: list[dict[str, Any]],
+    ) -> None:
+        """Persist manual mappings for arbitrary unmapped documents (cross-batch)."""
+        await self.repo.apply_mapping(db, mappings)
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
