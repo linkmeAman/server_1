@@ -141,3 +141,39 @@ async def get_signed_url(
 ):
     url = _service.get_signed_url(key, expiry)
     return success_response({"signed_url": url, "expires_in": expiry})
+
+
+# ---------------------------------------------------------------------------
+# Unmapped documents (cross-batch)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/unmapped")
+async def list_unmapped_documents(
+    q: str | None = Query(default=None),
+    fiscal_year: str | None = Query(default=None),
+    limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_main_db_session),
+    caller: CallerContext = Depends(require_any_caller),
+):
+    data = await _service.get_unmapped_documents(
+        db, q=q, fiscal_year=fiscal_year, limit=limit, offset=offset
+    )
+    return success_response(data)
+
+
+class SaveUnmappedPayload(BaseModel):
+    mappings: list[MappingItemPayload]
+
+
+@router.post("/unmapped/save")
+async def save_unmapped_mapping(
+    payload: SaveUnmappedPayload,
+    db: AsyncSession = Depends(get_main_db_session),
+    caller: CallerContext = Depends(require_any_caller),
+):
+    await _service.save_unmapped_mapping(
+        db, [m.model_dump() for m in payload.mappings]
+    )
+    return success_response({"saved": len(payload.mappings)})

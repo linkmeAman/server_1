@@ -426,3 +426,76 @@ class TDSRepository:
             {"eid": employee_id, "fy": fiscal_year},
         )
         return [dict(r._mapping) for r in result.fetchall()]
+
+    # ------------------------------------------------------------------
+    # Unmapped documents (cross-batch)
+    # ------------------------------------------------------------------
+
+    async def list_unmapped_documents(
+        self,
+        db: AsyncSession,
+        *,
+        q: str | None,
+        fiscal_year: str | None,
+        limit: int,
+        offset: int,
+    ) -> list[dict[str, Any]]:
+        """Return all documents with mapping_status IN ('unmapped', 'failed')."""
+        filters = ["d.mapping_status IN ('unmapped', 'failed')"]
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+
+        if q:
+            filters.append("(d.original_filename LIKE :q OR d.parsed_name LIKE :q)")
+            params["q"] = f"%{q}%"
+        if fiscal_year:
+            filters.append("d.fiscal_year = :fiscal_year")
+            params["fiscal_year"] = fiscal_year
+
+        where = " AND ".join(filters)
+        result = await db.execute(
+            text(
+                f"""
+                SELECT
+                    d.id            AS doc_id,
+                    d.batch_id,
+                    d.s3_key,
+                    d.original_filename,
+                    d.parsed_name,
+                    d.quarter,
+                    d.fiscal_year,
+                    d.mapping_status,
+                    d.employee_id
+                FROM tds_document d
+                WHERE {where}
+                ORDER BY d.id DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            params,
+        )
+        return [dict(r._mapping) for r in result.fetchall()]
+
+    async def count_unmapped_documents(
+        self,
+        db: AsyncSession,
+        *,
+        q: str | None,
+        fiscal_year: str | None,
+    ) -> int:
+        filters = ["d.mapping_status IN ('unmapped', 'failed')"]
+        params: dict[str, Any] = {}
+
+        if q:
+            filters.append("(d.original_filename LIKE :q OR d.parsed_name LIKE :q)")
+            params["q"] = f"%{q}%"
+        if fiscal_year:
+            filters.append("d.fiscal_year = :fiscal_year")
+            params["fiscal_year"] = fiscal_year
+
+        where = " AND ".join(filters)
+        result = await db.execute(
+            text(f"SELECT COUNT(*) AS cnt FROM tds_document d WHERE {where}"),
+            params,
+        )
+        row = result.fetchone()
+        return int(row.cnt) if row else 0
