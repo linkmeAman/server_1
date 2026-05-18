@@ -320,7 +320,13 @@ class TDSRepository:
     ) -> list[dict[str, Any]]:
         """Return employee rows that have at least one TDS document, plus all
         employees (to show even those without documents)."""
-        filters = ["1=1"]
+        filters = [
+            "("
+            "TRIM(COALESCE(c.fname,'')) != '' OR "
+            "TRIM(COALESCE(c.mname,'')) != '' OR "
+            "TRIM(COALESCE(c.lname,'')) != ''"
+            ")"
+        ]
         params: dict[str, Any] = {"limit": limit, "offset": offset}
 
         if q:
@@ -368,7 +374,13 @@ class TDSRepository:
         q: str | None,
         status: int | None,
     ) -> int:
-        filters = ["1=1"]
+        filters = [
+            "("
+            "TRIM(COALESCE(c.fname,'')) != '' OR "
+            "TRIM(COALESCE(c.mname,'')) != '' OR "
+            "TRIM(COALESCE(c.lname,'')) != ''"
+            ")"
+        ]
         params: dict[str, Any] = {}
         if q:
             filters.append(
