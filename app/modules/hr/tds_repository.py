@@ -353,7 +353,6 @@ class TDSRepository:
                 FROM employee e
                 LEFT JOIN contact c ON c.id = e.contact_id
                 WHERE {where}
-                  AND (e.park IS NULL OR e.park = 0)
                 ORDER BY full_name ASC
                 LIMIT :limit OFFSET :offset
                 """
@@ -387,7 +386,6 @@ class TDSRepository:
                 FROM employee e
                 LEFT JOIN contact c ON c.id = e.contact_id
                 WHERE {where}
-                  AND (e.park IS NULL OR e.park = 0)
                 """
             ),
             params,

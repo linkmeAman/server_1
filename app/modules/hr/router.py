@@ -86,7 +86,7 @@ async def get_mapping_suggestions(
 ):
     # We need the full employee list for matching — load all (no pagination)
     employees_data = await _service.list_employees(
-        db, q=None, status=1, limit=2000, offset=0
+        db, q=None, status=None, limit=5000, offset=0
     )
     suggestions = await _service.get_mapping_suggestions(
         db, batch_id, employees_data["employees"]
