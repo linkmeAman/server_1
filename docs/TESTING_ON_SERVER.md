@@ -2,6 +2,8 @@
 
 Run these commands on the server from the project root.
 
+For the production CI/CD flow, use `docs/CI_CD_SERVER1_REFERENCE.md` as the canonical runbook. This file remains the lower-level server verification checklist.
+
 ## 1. Activate Environment
 
 ```bash
@@ -19,26 +21,26 @@ source pyenv/bin/activate
 ## 2. Install Dependencies
 
 ```bash
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python3 -m pip install --upgrade pip
+python3 -m pip install -r requirements.txt
 ```
 
 If `pytest` is still missing:
 
 ```bash
-python -m pip install pytest pytest-asyncio
+python3 -m pip install pytest pytest-asyncio
 ```
 
 ## 3. Fast Syntax Check
 
 ```bash
-python -m compileall app tests main.py routes scripts alembic
+python3 -m compileall app tests main.py routes scripts alembic
 ```
 
 ## 4. Run Full Test Suite
 
 ```bash
-python -m pytest tests -q
+python3 -m pytest tests -q
 ```
 
 ## 5. Run Targeted Suites
@@ -46,11 +48,11 @@ python -m pytest tests -q
 Examples:
 
 ```bash
-python -m pytest tests/test_routing_phase1.py -q
-python -m pytest tests/test_employee_events_v1_routes.py -q
-python -m pytest tests/test_google_calendar_v1_routes.py -q
-python -m pytest tests/test_query_gateway_cache_and_rate_limit.py -q
-python -m pytest tests/auth -q
+python3 -m pytest tests/test_routing_phase1.py -q
+python3 -m pytest tests/test_employee_events_v1_routes.py -q
+python3 -m pytest tests/test_google_calendar_v1_routes.py -q
+python3 -m pytest tests/test_query_gateway_cache_and_rate_limit.py -q
+python3 -m pytest tests/auth -q
 ```
 
 ## 6. Restart Service After Passing Tests
