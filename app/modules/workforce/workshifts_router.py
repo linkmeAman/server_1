@@ -159,7 +159,7 @@ async def _get_workshift_day_columns(db: AsyncSession) -> set[str]:
             await db.rollback()
         except Exception:
             pass
-        _WORKSHIFT_DAY_COLUMNS = {"workshift_id", "day", "start_time", "end_time", "wfh"}
+        _WORKSHIFT_DAY_COLUMNS = {"workshift_id", "day", "start_time", "end_time", "wfh", "block"}
     return _WORKSHIFT_DAY_COLUMNS
 
 
@@ -195,6 +195,7 @@ class WorkshiftDayInput(BaseModel):
     start_time: str = Field(..., min_length=1, max_length=16)
     end_time: str = Field(..., min_length=1, max_length=16)
     wfh: int = Field(default=0)
+    block: int = Field(default=0)
 
     @field_validator("day")
     @classmethod
@@ -203,11 +204,11 @@ class WorkshiftDayInput(BaseModel):
             return None
         return _normalize_day_label(v)
 
-    @field_validator("wfh")
+    @field_validator("wfh", "block")
     @classmethod
     def validate_wfh(cls, v: int) -> int:
         if v not in (0, 1):
-            raise ValueError("wfh must be 0 or 1")
+            raise ValueError("value must be 0 or 1")
         return v
 
     @model_validator(mode="after")
@@ -378,6 +379,8 @@ async def _replace_workshift_days(
         insert_cols.append("day_code")
     if "wfh" in columns:
         insert_cols.append("wfh")
+    if "block" in columns:
+        insert_cols.append("block")
 
     values_sql = ", ".join(f":{col}" for col in insert_cols)
     sql = text(
@@ -403,6 +406,8 @@ async def _replace_workshift_days(
             params["day_code"] = int(day_code) if day_code is not None else 0
         if "wfh" in insert_cols:
             params["wfh"] = int(entry.wfh)
+        if "block" in insert_cols:
+            params["block"] = int(entry.block)
         await db.execute(sql, params)
 
 
@@ -727,6 +732,8 @@ async def get_workshift(
     day_select.extend(["start_time", "end_time"])
     if "wfh" in day_columns:
         day_select.append("wfh")
+    if "block" in day_columns:
+        day_select.append("block")
     order_by = "day_code" if "day_code" in day_columns else "day"
 
     day_rows = _rows(
@@ -760,6 +767,7 @@ async def get_workshift(
                 "start_time": _format_time_hhmm(d.get("start_time")),
                 "end_time": _format_time_hhmm(d.get("end_time")),
                 "wfh": int(d.get("wfh") or 0),
+                "block": int(d.get("block") or 0),
             }
         )
 
