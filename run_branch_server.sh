@@ -32,7 +32,18 @@ esac
 echo "Branch: $BRANCH"
 echo "Mapped port: $PORT"
 
-git pull
+# Abort any stuck rebase/merge/cherry-pick before touching the tree.
+# This handles the case where a previous pull --rebase was interrupted,
+# leaving the repo in REBASE-IN-PROGRESS state.
+git rebase --abort 2>/dev/null || true
+git merge --abort  2>/dev/null || true
+
+# Use fetch + reset instead of pull to safely handle:
+#   1. Force-pushed/history-rewritten branches (git pull --rebase diverges)
+#   2. Servers whose local branch fell behind after a force-push
+#   3. Any local uncommitted noise (logs, .pyc leaks, etc.)
+git fetch origin
+git reset --hard origin/"$BRANCH"
 
 # Remove Python cache artifacts before startup.
 find . -type d \( -name "__pycache__" -o -name "_pycache_" \) -exec rm -rf {} +
