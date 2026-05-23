@@ -99,6 +99,7 @@ ACTION_MAP: dict[str, list[str]] = {
     "contacts":  ["list", "read", "create", "write"],
     "users":     ["list", "read", "create", "write", "delete"],
     "system":    ["list", "read", "create", "write", "delete"],
+    "ai-chat":   ["read"],
 }
 
 VERB_LABELS: dict[str, str] = {
