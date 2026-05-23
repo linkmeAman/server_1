@@ -67,3 +67,7 @@ resources:
     name: Reviews Sync
     parent: reviews
     sort_order: 20
+  - code: ai-chat
+    name: AI Chat / NL2SQL
+    parent: null
+    sort_order: 60
