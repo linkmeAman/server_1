@@ -217,6 +217,10 @@ class Settings(BaseSettings):
     S3_TDS_FOLDER: str = os.getenv("S3_TDS_FOLDER", "hr/tds")
     # Pre-signed URL expiry in seconds (default 1 hour)
     S3_PRESIGN_EXPIRY_SECONDS: int = int(os.getenv("S3_PRESIGN_EXPIRY_SECONDS", 3600))
+        # NL2SQL upstream wrapper
+    NL2SQL_SERVICE_BASE_URL: str = os.getenv("NL2SQL_SERVICE_BASE_URL", "")
+    NL2SQL_TIMEOUT_SECONDS: int = int(os.getenv("NL2SQL_TIMEOUT_SECONDS", 30))
+    NL2SQL_DEFAULT_TOP_K: int = int(os.getenv("NL2SQL_DEFAULT_TOP_K", 5))
 
     class Config:
         env_file = str(PROJECT_ROOT / ".env")
