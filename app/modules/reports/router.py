@@ -11,6 +11,7 @@ from app.core.database import get_central_db_session, get_main_db_session
 from app.core.prism_guard import CallerContext, require_any_caller
 from app.core.response import success_response
 from app.modules.reports.schemas.models import (
+    LegacyImportBatchRequest,
     ReportAdminStatus,
     ReportDraftUpsertRequest,
     ReportQueryRequest,
@@ -38,8 +39,9 @@ def _request_id(request: Request) -> str:
     return request.headers.get("X-Request-ID") or str(uuid4())
 
 
-@router.get("")
-async def list_reports(
+@router.get("", include_in_schema=False)
+@router.get("/catalog")
+async def list_report_catalog(
     caller: CallerContext = Depends(require_any_caller),
     central_db: AsyncSession = Depends(get_central_db_session),
     main_db: AsyncSession = Depends(get_main_db_session),
@@ -78,7 +80,13 @@ async def create_report_draft(
         user_id=int(caller.user_id),
     )
     return success_response(
-        data={"report": definition.model_dump(mode="json")},
+        data={
+            "report": definition.model_dump(mode="json"),
+            "validation_issues": [
+                item.model_dump(mode="json")
+                for item in admin_service.collect_draft_validation_issues(definition)
+            ],
+        },
         message="Report draft saved",
     ).model_dump(mode="json")
 
@@ -100,6 +108,40 @@ async def import_legacy_report_draft(
     return success_response(
         data=imported.model_dump(mode="json"),
         message="Legacy report imported as draft",
+    ).model_dump(mode="json")
+
+
+@router.get("/admin/legacy/reports")
+async def list_admin_legacy_reports(
+    caller: CallerContext = Depends(require_any_caller),
+    central_db: AsyncSession = Depends(get_central_db_session),
+    main_db: AsyncSession = Depends(get_main_db_session),
+):
+    await permission_service.require_manage(caller, central_db)
+    reports = await admin_service.list_legacy_reports(central_db, main_db)
+    return success_response(
+        data={"reports": [item.model_dump(mode="json") for item in reports]},
+        message="Legacy reports fetched",
+    ).model_dump(mode="json")
+
+
+@router.post("/admin/legacy/import")
+async def import_legacy_report_batch(
+    payload: LegacyImportBatchRequest,
+    caller: CallerContext = Depends(require_any_caller),
+    central_db: AsyncSession = Depends(get_central_db_session),
+    main_db: AsyncSession = Depends(get_main_db_session),
+):
+    await permission_service.require_manage(caller, central_db)
+    imported = await admin_service.import_legacy_reports(
+        central_db,
+        main_db,
+        report_ids=[int(item) for item in payload.report_ids],
+        user_id=int(caller.user_id),
+    )
+    return success_response(
+        data=imported.model_dump(mode="json"),
+        message="Legacy reports imported",
     ).model_dump(mode="json")
 
 
@@ -132,6 +174,13 @@ def _infer_column_type(data_type: str) -> str:
     if any(token in normalized for token in ("float", "double", "real")):
         return "number"
     return "text"
+
+
+def _default_display_label(column_name: str) -> str:
+    cleaned = " ".join(part for part in str(column_name or "").replace("-", "_").split("_") if part)
+    if not cleaned:
+        return ""
+    return " ".join(chunk[:1].upper() + chunk[1:] for chunk in cleaned.split())
 
 
 @router.get("/admin/discovery/databases")
@@ -212,6 +261,7 @@ async def list_report_discovery_columns(
         columns.append(
             {
                 "name": name,
+                "display_label": _default_display_label(name),
                 "data_type": data_type,
                 "report_type": _infer_column_type(data_type),
                 "is_primary_key": key_flag.upper() == "PRI",
@@ -242,6 +292,20 @@ async def get_admin_report(
     ).model_dump(mode="json")
 
 
+@router.get("/admin/reports/{slug}/versions")
+async def list_admin_report_versions(
+    slug: str,
+    caller: CallerContext = Depends(require_any_caller),
+    central_db: AsyncSession = Depends(get_central_db_session),
+):
+    await permission_service.require_manage(caller, central_db)
+    versions = await admin_service.list_report_versions(central_db, slug)
+    return success_response(
+        data={"versions": [item.model_dump(mode="json") for item in versions]},
+        message="Admin report versions fetched",
+    ).model_dump(mode="json")
+
+
 @router.put("/admin/reports/{slug}")
 async def update_report_draft(
     slug: str,
@@ -257,7 +321,13 @@ async def update_report_draft(
         user_id=int(caller.user_id),
     )
     return success_response(
-        data={"report": saved.model_dump(mode="json")},
+        data={
+            "report": saved.model_dump(mode="json"),
+            "validation_issues": [
+                item.model_dump(mode="json")
+                for item in admin_service.collect_draft_validation_issues(saved)
+            ],
+        },
         message="Report draft updated",
     ).model_dump(mode="json")
 
@@ -295,6 +365,32 @@ async def archive_report(
     return success_response(
         data={"report": definition.model_dump(mode="json")},
         message="Report archived",
+    ).model_dump(mode="json")
+
+
+@router.post("/admin/reports/{slug}/versions/{version}/restore")
+async def restore_admin_report_version(
+    slug: str,
+    version: int,
+    caller: CallerContext = Depends(require_any_caller),
+    central_db: AsyncSession = Depends(get_central_db_session),
+):
+    await permission_service.require_manage(caller, central_db)
+    restored = await admin_service.restore_report_version(
+        central_db,
+        slug,
+        version,
+        user_id=int(caller.user_id),
+    )
+    return success_response(
+        data={
+            "report": restored.model_dump(mode="json"),
+            "validation_issues": [
+                item.model_dump(mode="json")
+                for item in admin_service.collect_draft_validation_issues(restored)
+            ],
+        },
+        message="Report version restored",
     ).model_dump(mode="json")
 
 

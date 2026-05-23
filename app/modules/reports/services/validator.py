@@ -31,9 +31,10 @@ class ReportDefinitionValidator:
     }
 
     def validate_draft(self, definition: ReportDefinition) -> None:
-        errors = self._collect_errors(definition, publish=False)
-        if errors:
-            raise ReportValidationException(errors)
+        return None
+
+    def collect_draft_issues(self, definition: ReportDefinition) -> list[ReportFieldError]:
+        return self._collect_errors(definition, publish=True)
 
     def validate_publish(self, definition: ReportDefinition) -> None:
         errors = self._collect_errors(definition, publish=True)
@@ -297,7 +298,25 @@ class ReportDefinitionValidator:
         publish: bool,
     ) -> None:
         if definition.kind == "table":
+            database_name = (definition.source.database or "").strip()
             table_name = (definition.source.table or "").strip()
+            if not database_name:
+                errors.append(
+                    self._error(
+                        "source.database",
+                        "required",
+                        "Table reports require a source database.",
+                    )
+                )
+            elif not self._is_identifier(database_name):
+                errors.append(
+                    self._error(
+                        "source.database",
+                        "invalid_value",
+                        "Source database must use letters, numbers, and underscores only.",
+                    )
+                )
+
             if not table_name:
                 errors.append(
                     self._error(
@@ -364,6 +383,15 @@ class ReportDefinitionValidator:
                         "source.table",
                         "invalid_state",
                         "Route-backed reports cannot define a source table.",
+                    )
+                )
+
+            if definition.source.database:
+                errors.append(
+                    self._error(
+                        "source.database",
+                        "invalid_state",
+                        "Route-backed reports cannot define a source database.",
                     )
                 )
 

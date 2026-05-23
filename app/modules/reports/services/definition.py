@@ -51,18 +51,33 @@ class ReportDefinitionService:
         include_drafts: bool,
     ) -> list[ReportDefinition]:
         try:
-            where = "" if include_drafts else "AND d.status = 'published'"
+            if include_drafts:
+                version_join = "JOIN report_versions v ON v.id = d.active_version_id"
+                where = "WHERE d.status <> 'archived'"
+            else:
+                version_join = """
+                    JOIN (
+                        SELECT report_id, MAX(version) AS version
+                        FROM report_versions
+                        WHERE status = 'published'
+                        GROUP BY report_id
+                    ) latest ON latest.report_id = d.id
+                    JOIN report_versions v
+                      ON v.report_id = latest.report_id
+                     AND v.version = latest.version
+                     AND v.status = 'published'
+                """
+                where = "WHERE d.status = 'published'"
             result = await central_db.execute(
                 text(
                     f"""
                     SELECT
                         d.slug,
-                        d.status,
+                        v.status,
                         v.version,
                         v.definition_json
                     FROM report_definitions d
-                    JOIN report_versions v ON v.id = d.active_version_id
-                    WHERE d.status <> 'archived'
+                    {version_join}
                     {where}
                     """
                 )
