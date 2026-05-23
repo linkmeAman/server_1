@@ -1,7 +1,5 @@
 """Central explicit router registry for API v1."""
 
-import logging
-
 from fastapi import APIRouter
 
 from app.modules.auth.legacy_router import router as auth_router
@@ -22,21 +20,7 @@ from app.modules.reports.router import router as reports_router
 from app.modules.sqlgw_admin.router import router as sqlgw_admin_router
 from app.modules.users.router import router as users_router
 
-logger = logging.getLogger(__name__)
-
 api_router = APIRouter()
-
-try:
-    from app.modules.google_reviews.router import router as google_reviews_router
-except ModuleNotFoundError as exc:
-    if exc.name and (exc.name == "google" or exc.name.startswith("google.")):
-        google_reviews_router = None
-        logger.warning(
-            "Google Reviews routes were not registered because optional dependency %r is missing.",
-            exc.name,
-        )
-    else:
-        raise
 
 # 1) Auth routes (root paths)
 api_router.include_router(auth_router)
