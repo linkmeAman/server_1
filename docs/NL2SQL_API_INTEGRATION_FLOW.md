@@ -24,6 +24,7 @@ Frontend / py-proxy
 - `POST /api/nl2sql/v1/teach`
 - `POST /api/nl2sql/v1/teach/confirm`
 - `GET /api/nl2sql/v1/instructions`
+- `GET /api/nl2sql/v1/failures`
 - `POST /api/nl2sql/v1/ingest/groups`
 - `POST /api/nl2sql/v1/ingest/knowledge`
 - `POST /api/nl2sql/v1/ingest/patterns`
@@ -57,6 +58,7 @@ The same request id is forwarded to upstream and returned to the caller.
 | `/api/nl2sql/v1/teach` | `/teach` |
 | `/api/nl2sql/v1/teach/confirm` | `/teach/confirm` |
 | `/api/nl2sql/v1/instructions` | `/instructions` |
+| `/api/nl2sql/v1/failures` | `/failures` |
 | `/api/nl2sql/v1/ingest/groups` | `/ingest/groups` |
 | `/api/nl2sql/v1/ingest/knowledge` | `/ingest/knowledge` |
 | `/api/nl2sql/v1/ingest/patterns` | `/ingest/patterns` |
@@ -193,6 +195,7 @@ Useful for local debugging:
 - `/teach`
 - `/teach/confirm`
 - `/instructions`
+- `/failures`
 - `/ingest/groups`
 - `/ingest/knowledge`
 - `/ingest/patterns`
