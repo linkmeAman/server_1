@@ -40,6 +40,7 @@ backend/python/server_1/
 - `docs/ARCHITECTURE.md`
 - `docs/AUTH_AND_SECURITY.md`
 - `docs/NL2SQL_BACKEND_INTEGRATION.md`
+- `docs/NL2SQL_API_INTEGRATION_FLOW.md`
 - `docs/REPORT_PLATFORM_BACKEND_CHANGES.md`
 - `docs/ROUTING.md`
 - `docs/TESTING_ON_SERVER.md`
