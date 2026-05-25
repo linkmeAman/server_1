@@ -1,5 +1,6 @@
 """Main FastAPI application for the MARKX Python backend."""
 import logging
+import logging.handlers
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -59,6 +60,24 @@ def setup_logging():
             logging.StreamHandler(sys.stdout)
         ]
     )
+
+    # Dedicated daily-rotating log file for NL2SQL upstream calls
+    nl2sql_log_path = os.path.join(log_dir or "logs", "nl2sql.log")
+    nl2sql_handler = logging.handlers.TimedRotatingFileHandler(
+        nl2sql_log_path,
+        when="midnight",
+        interval=1,
+        backupCount=30,
+        encoding="utf-8",
+        utc=False,
+    )
+    nl2sql_handler.suffix = "%Y-%m-%d"
+    nl2sql_handler.setFormatter(
+        logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    )
+    nl2sql_handler.setLevel(logging.DEBUG)
+    logging.getLogger("app.modules.nl2sql").addHandler(nl2sql_handler)
+    logging.getLogger("app.modules.nl2sql").setLevel(logging.DEBUG)
     
     # Set specific logger levels
     logging.getLogger("uvicorn").setLevel(logging.INFO)

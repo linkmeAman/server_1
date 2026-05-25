@@ -219,7 +219,7 @@ class Settings(BaseSettings):
     S3_PRESIGN_EXPIRY_SECONDS: int = int(os.getenv("S3_PRESIGN_EXPIRY_SECONDS", 3600))
         # NL2SQL upstream wrapper
     NL2SQL_SERVICE_BASE_URL: str = os.getenv("NL2SQL_SERVICE_BASE_URL", "http://localhost:8080")
-    NL2SQL_TIMEOUT_SECONDS: int = int(os.getenv("NL2SQL_TIMEOUT_SECONDS", 30))
+    NL2SQL_TIMEOUT_SECONDS: int = int(os.getenv("NL2SQL_TIMEOUT_SECONDS", 120))
     NL2SQL_DEFAULT_TOP_K: int = int(os.getenv("NL2SQL_DEFAULT_TOP_K", 5))
 
     class Config:
