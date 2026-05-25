@@ -4,19 +4,21 @@
 
 `server_1` exposes an authenticated NL2SQL wrapper under `/api/nl2sql/v1`.
 It validates app-facing payloads, enforces `ai-chat:read`, forwards requests to
-the standalone NL2SQL service, validates upstream responses, and returns the
-standard backend success/error envelope.
+the standalone NL2SQL service, validates JSON responses, and streams
+`/ask/stream` without buffering the whole response.
 
 ## Wrapper Routes
 
 | Method | Path | Upstream |
 |---|---|---|
+| `POST` | `/api/nl2sql/v1/ask/stream` | `/ask/stream` |
 | `POST` | `/api/nl2sql/v1/ask` | `/ask` |
 | `POST` | `/api/nl2sql/v1/generate-sql` | `/generate-sql` |
 | `POST` | `/api/nl2sql/v1/teach` | `/teach` |
 | `POST` | `/api/nl2sql/v1/teach/confirm` | `/teach/confirm` |
 | `GET` | `/api/nl2sql/v1/instructions` | `/instructions` |
 | `GET` | `/api/nl2sql/v1/failures` | `/failures` |
+| `GET` | `/api/nl2sql/v1/telemetry/trace/{request_id}` | `/telemetry/trace/{request_id}` |
 | `POST` | `/api/nl2sql/v1/ingest/groups` | `/ingest/groups` |
 | `POST` | `/api/nl2sql/v1/ingest/knowledge` | `/ingest/knowledge` |
 | `POST` | `/api/nl2sql/v1/ingest/patterns` | `/ingest/patterns` |
@@ -46,134 +48,74 @@ Resolution order:
 2. `X-Request-ID` header
 3. generated UUID
 
-The resolved request id is:
+The resolved request id is forwarded as JSON where supported, forwarded as
+`X-Request-ID`, returned in the wrapper response header, and included in error
+envelopes under `data.request_id`.
 
-- forwarded to the upstream service in the JSON body when supported
-- forwarded as `X-Request-ID`
-- returned in the wrapper response header
-- included in error envelopes under `data.request_id`
+## Streaming Ask
 
-## Request Models
+`POST /ask/stream` returns `application/x-ndjson`. The wrapper uses
+`httpx.AsyncClient.stream()` and yields upstream bytes directly, so stage events
+arrive in the browser while the standalone service is still working.
 
-### Ask and Generate SQL
-
-```json
-{
-  "query": "show unpaid invoices by counselor",
-  "top_k": 5,
-  "request_id": "optional-request-id"
-}
-```
-
-### Teach
+Example stream lines:
 
 ```json
-{
-  "instruction_type": "term_mapping",
-  "content": "counselor means employee",
-  "tables_affected": ["employee"],
-  "source_query": "show counselor invoices"
-}
+{"event":"trace","request_id":"req-1","seq":2,"stage":"schema_retrieval","status":"completed","message":"Retrieved 3 table(s)."}
+{"event":"final","response":{"status":"ok","answer":"Done.","sql":"SELECT ..."}}
 ```
 
-### Teach Confirm
+The wrapper preserves `X-Request-ID` on the stream response and logs stream
+request, HTTP status, success, timeout, and unavailable cases.
 
-```json
-{
-  "confirmation_token": "TOKEN",
-  "action": "replace"
-}
-```
+## Trace Lookup
 
-### Instructions Query
-
-Query params:
-
-- `instruction_type`
-- `active_only`
-
-### Ingest Groups
-
-```json
-{
-  "group_names": ["inquiry_lifecycle"]
-}
-```
-
-### Ingest Knowledge
-
-Supports the standalone service include flags and limits:
-
-- `include_column_catalog`
-- `include_sql_examples`
-- `include_relations`
-- `include_graph`
-- `include_view_registry`
-- `include_onboarding_rules`
-- `column_limit`
-- `sql_example_limit`
-- `relation_limit`
-- `graph_limit`
-- `view_registry_limit`
-
-`/ingest/patterns` and `/ingest/instructions` use empty JSON bodies.
-
-## Response Contracts
-
-All successful wrapper responses use the normal backend envelope:
+`GET /api/nl2sql/v1/telemetry/trace/{request_id}?limit=500` returns the standard
+success envelope:
 
 ```json
 {
   "success": true,
-  "data": {},
-  "message": "..."
+  "data": {
+    "request_id": "req-1",
+    "results": [],
+    "total": 0
+  }
 }
 ```
 
-### Cache Metadata
+Trace event shape:
 
-`/ask` and `/generate-sql` expose first-class cache fields:
+```json
+{
+  "request_id": "req-1",
+  "seq": 1,
+  "layer": "nl2sql-service",
+  "stage": "request_received",
+  "status": "started",
+  "message": "Received ask request.",
+  "duration_ms": null,
+  "warning_codes": [],
+  "error_source": null,
+  "details": {},
+  "created_at": "2026-05-25T00:00:00Z"
+}
+```
 
-- `cache_hit`
-- `cache_source`
+## Timeouts
 
-`cache_source` values:
+Timeouts should remain ordered from inner to outer:
 
-- `none`
-- `memory_exact`
-- `memory_semantic`
-- `db_exact`
-- `db_semantic`
+```text
+Standalone /generate-sql timeout: 90s default
+Standalone /ask timeout:         105s default
+server_1 wrapper timeout:        configured above standalone
+Frontend py-proxy timeout:       300000ms for NL2SQL
+External reverse proxy:          above frontend timeout
+```
 
-### Teach Responses
-
-Wrapper passes through:
-
-- `learning_status`
-- `message`
-- `instruction_id`
-- `similar_instructions`
-- `requires_confirmation`
-- `confirmation_token`
-
-### Instructions Responses
-
-Wrapper returns the validated array of instruction objects from the upstream
-service.
-
-### Ingest Responses
-
-Wrapper passes through version-aware ingest counters:
-
-- `inserted`
-- `updated`
-- `skipped`
-- `source`
-
-Extra fields by route:
-
-- groups: `failure_count`, `failed_groups`, `enrichment_summary`
-- patterns/instructions: `embedded`
+If `server_1` is configured with `NL2SQL_TIMEOUT_SECONDS=280`, the frontend
+`PY_PROXY_NL2SQL_TIMEOUT_MS` must stay above that value.
 
 ## Error Handling
 
@@ -182,7 +124,6 @@ Known wrapper errors:
 | Condition | HTTP | Error code |
 |---|---:|---|
 | invalid JSON body | `400` | `BadRequest` |
-| non-object JSON body | `400` | `BadRequest` |
 | request validation failure | `422` | `ValidationError` |
 | missing `NL2SQL_SERVICE_BASE_URL` | `503` | `NL2SQL_NOT_CONFIGURED` |
 | upstream timeout | `502` | `NL2SQL_UPSTREAM_TIMEOUT` |
@@ -191,26 +132,22 @@ Known wrapper errors:
 | upstream invalid JSON | `502` | `NL2SQL_INVALID_RESPONSE` |
 | upstream schema mismatch | `502` | `NL2SQL_INVALID_RESPONSE` |
 
-## Timeouts
+## Finding A Stuck Request
 
-Current backend default from `app/core/settings.py`:
+Use the request id from frontend diagnostics or logs:
 
-```env
-NL2SQL_TIMEOUT_SECONDS=120
-NL2SQL_DEFAULT_TOP_K=5
+```bash
+curl 'http://server-1/api/nl2sql/v1/telemetry/trace/REQ_ID?limit=500'
 ```
 
-Timeouts should remain ordered from inner to outer:
+Sort by `seq` and inspect the last stage. A `started` event without a later
+`completed`, `warning`, `failed`, or `complete` event identifies the likely
+stall point.
 
-```text
-Standalone /generate-sql timeout: 90s
-Standalone /ask timeout:         105s
-server_1 wrapper timeout:        120s
-Frontend py-proxy timeout:       > 120s
-External reverse proxy:          > frontend timeout
+## Verification
+
+Focused wrapper check:
+
+```bash
+DEBUG=true python -m pytest tests/test_nl2sql_routes.py
 ```
-
-## Related Docs
-
-- `docs/NL2SQL_API_INTEGRATION_FLOW.md`
-- `README.md`

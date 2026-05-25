@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from typing import Any, AsyncIterator
 
 import httpx
 from fastapi import HTTPException
@@ -20,6 +20,7 @@ from app.modules.nl2sql.schemas.models import (
     INGEST_RESPONSE_ADAPTER,
     INSTRUCTIONS_RESPONSE_ADAPTER,
     TEACH_RESPONSE_ADAPTER,
+    TRACE_EVENTS_RESPONSE_ADAPTER,
     Nl2SqlConfirmTeachRequest,
     Nl2SqlIngestGroupsRequest,
     Nl2SqlIngestKnowledgeRequest,
@@ -28,6 +29,16 @@ from app.modules.nl2sql.schemas.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class _TraceEnvelopeAdapter:
+    def __init__(self, inner_adapter) -> None:
+        self.inner_adapter = inner_adapter
+
+    def validate_python(self, payload):
+        if isinstance(payload, dict) and isinstance(payload.get("results"), list):
+            return self.inner_adapter.validate_python(payload["results"])
+        return self.inner_adapter.validate_python(payload)
 
 
 class Nl2SqlClientError(HTTPException):
@@ -65,6 +76,23 @@ class Nl2SqlClient:
             route_path=route_path,
             response_adapter=ASK_RESPONSE_ADAPTER,
         )
+
+    async def ask_stream(
+        self,
+        *,
+        request_data: Nl2SqlRequest,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> AsyncIterator[bytes]:
+        async for chunk in self._post_stream(
+            upstream_path="/ask/stream",
+            request_data=request_data,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+        ):
+            yield chunk
 
     async def generate_sql(
         self,
@@ -223,6 +251,24 @@ class Nl2SqlClient:
             request_id=request_id,
             route_path=route_path,
             response_adapter=FAILURE_LOG_RESPONSE_ADAPTER,
+        )
+
+    async def list_trace_events(
+        self,
+        *,
+        trace_request_id: str,
+        limit: int = 500,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> list[dict[str, Any]]:
+        return await self._get(
+            upstream_path=f"/telemetry/trace/{trace_request_id}",
+            query_params={"limit": str(limit)},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=_TraceEnvelopeAdapter(TRACE_EVENTS_RESPONSE_ADAPTER),
         )
 
     async def _post(
@@ -427,6 +473,142 @@ class Nl2SqlClient:
         )
         return normalized
 
+    async def _post_stream(
+        self,
+        *,
+        upstream_path: str,
+        request_data,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> AsyncIterator[bytes]:
+        settings = get_settings()
+        base_url = str(getattr(settings, "NL2SQL_SERVICE_BASE_URL", "") or "").strip().rstrip("/")
+        timeout_seconds = float(getattr(settings, "NL2SQL_TIMEOUT_SECONDS", 30))
+        default_top_k = int(getattr(settings, "NL2SQL_DEFAULT_TOP_K", 5))
+
+        if not base_url:
+            raise Nl2SqlClientError(
+                503,
+                error_code="NL2SQL_NOT_CONFIGURED",
+                message="NL2SQL service base URL is not configured",
+                data={"request_id": request_id},
+            )
+
+        upstream_url = f"{base_url}{upstream_path}"
+        upstream_payload = self._build_upstream_payload(
+            request_data=request_data,
+            request_id=request_id,
+            default_top_k=default_top_k,
+        )
+        started = time.perf_counter()
+
+        logger.info(
+            "NL2SQL → STREAM_REQUEST | request_id=%s user_id=%s route=%s upstream_url=%s "
+            "payload=%s timeout_s=%.0f",
+            request_id,
+            actor_user_id,
+            route_path,
+            upstream_url,
+            upstream_payload,
+            timeout_seconds,
+        )
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                async with client.stream(
+                    "POST",
+                    upstream_url,
+                    json=upstream_payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Accept": "application/x-ndjson, application/json",
+                        "X-Request-ID": request_id,
+                    },
+                ) as response:
+                    logger.info(
+                        "NL2SQL → STREAM_HTTP | request_id=%s user_id=%s route=%s upstream_url=%s "
+                        "http_status=%d duration_ms=%d",
+                        request_id,
+                        actor_user_id,
+                        route_path,
+                        upstream_url,
+                        response.status_code,
+                        _duration_ms(started),
+                    )
+                    if response.status_code != 200:
+                        body = (await response.aread()).decode("utf-8", errors="replace")
+                        logger.warning(
+                            "NL2SQL → STREAM_ERROR | request_id=%s user_id=%s route=%s upstream_url=%s "
+                            "http_status=%d body_preview=%r",
+                            request_id,
+                            actor_user_id,
+                            route_path,
+                            upstream_url,
+                            response.status_code,
+                            body[:500],
+                        )
+                        raise Nl2SqlClientError(
+                            response.status_code,
+                            error_code="NL2SQL_UPSTREAM_ERROR",
+                            message=body or f"NL2SQL upstream stream failed ({response.status_code})",
+                            data={
+                                "request_id": request_id,
+                                "upstream_path": upstream_path,
+                                "upstream_status": response.status_code,
+                            },
+                        )
+
+                    async for chunk in response.aiter_bytes():
+                        if chunk:
+                            yield chunk
+        except httpx.TimeoutException as exc:
+            logger.warning(
+                "NL2SQL → STREAM_TIMEOUT | request_id=%s user_id=%s route=%s upstream_url=%s "
+                "duration_ms=%d timeout_s=%.0f error=%s",
+                request_id,
+                actor_user_id,
+                route_path,
+                upstream_url,
+                _duration_ms(started),
+                timeout_seconds,
+                str(exc),
+            )
+            raise Nl2SqlClientError(
+                502,
+                error_code="NL2SQL_UPSTREAM_TIMEOUT",
+                message=f"NL2SQL upstream timed out while streaming {upstream_path}",
+                data={"request_id": request_id, "upstream_path": upstream_path},
+            ) from exc
+        except httpx.RequestError as exc:
+            logger.warning(
+                "NL2SQL → STREAM_UNAVAILABLE | request_id=%s user_id=%s route=%s upstream_url=%s "
+                "duration_ms=%d error_type=%s error=%s",
+                request_id,
+                actor_user_id,
+                route_path,
+                upstream_url,
+                _duration_ms(started),
+                type(exc).__name__,
+                str(exc),
+            )
+            raise Nl2SqlClientError(
+                502,
+                error_code="NL2SQL_UPSTREAM_UNAVAILABLE",
+                message=f"Could not reach NL2SQL upstream while streaming {upstream_path}",
+                data={"request_id": request_id, "upstream_path": upstream_path},
+            ) from exc
+
+        logger.info(
+            "NL2SQL → STREAM_SUCCESS | request_id=%s user_id=%s route=%s upstream_url=%s "
+            "duration_ms=%d",
+            request_id,
+            actor_user_id,
+            route_path,
+            upstream_url,
+            _duration_ms(started),
+        )
+
     async def _get(
         self,
         *,
@@ -577,4 +759,3 @@ def _extract_error_message(response: httpx.Response) -> tuple[str, dict[str, Any
         return message, details
 
     return default_message, {}
-
