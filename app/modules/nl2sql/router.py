@@ -6,7 +6,7 @@ import json
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 
 from app.core.prism_guard import CallerContext
@@ -139,6 +139,32 @@ async def ask(
         route_path=request.url.path,
     )
     return _success_response(result, "NL2SQL ask completed", request_id)
+
+
+@router.post("/ask/stream")
+async def ask_stream(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    payload, error = await _parse_request_body(request, Nl2SqlRequest)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request, payload)
+    stream = nl2sql_client.ask_stream(
+        request_data=payload,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return StreamingResponse(
+        stream,
+        media_type="application/x-ndjson",
+        headers={
+            "X-Request-ID": request_id,
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.post("/generate-sql")
@@ -300,3 +326,25 @@ async def list_failures(
         route_path=request.url.path,
     )
     return _success_response({"results": result, "total": len(result)}, "NL2SQL failure log retrieved", request_id)
+
+
+@router.get("/telemetry/trace/{trace_request_id}")
+async def list_trace_events(
+    trace_request_id: str,
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    limit = int(request.query_params.get("limit", 500))
+    result = await nl2sql_client.list_trace_events(
+        trace_request_id=trace_request_id,
+        limit=limit,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(
+        {"request_id": trace_request_id, "results": result, "total": len(result)},
+        "NL2SQL trace events retrieved",
+        request_id,
+    )

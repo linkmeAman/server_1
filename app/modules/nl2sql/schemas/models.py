@@ -300,3 +300,22 @@ class Nl2SqlFailureLogEntry(BaseModel):
 
 
 FAILURE_LOG_RESPONSE_ADAPTER = TypeAdapter(list[Nl2SqlFailureLogEntry])
+
+
+class Nl2SqlTraceEvent(BaseModel):
+    request_id: str
+    seq: int
+    layer: str
+    stage: str
+    status: str
+    message: str
+    duration_ms: int | None = None
+    warning_codes: list[str] = Field(default_factory=list)
+    error_source: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+
+    model_config = ConfigDict(extra="allow")
+
+
+TRACE_EVENTS_RESPONSE_ADAPTER = TypeAdapter(list[Nl2SqlTraceEvent])
