@@ -14,6 +14,7 @@ from app.core.settings import get_settings
 from app.modules.nl2sql.schemas.models import (
     ASK_RESPONSE_ADAPTER,
     EMBEDDED_INGEST_RESPONSE_ADAPTER,
+    FAILURE_LOG_RESPONSE_ADAPTER,
     GENERATE_SQL_RESPONSE_ADAPTER,
     INGEST_GROUPS_RESPONSE_ADAPTER,
     INGEST_RESPONSE_ADAPTER,
@@ -201,6 +202,27 @@ class Nl2SqlClient:
             request_id=request_id,
             route_path=route_path,
             response_adapter=EMBEDDED_INGEST_RESPONSE_ADAPTER,
+        )
+
+    async def list_failures(
+        self,
+        *,
+        limit: int = 50,
+        endpoint: str | None = None,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> list[dict[str, Any]]:
+        query_params: dict[str, str | None] = {"limit": str(limit)}
+        if endpoint:
+            query_params["endpoint"] = endpoint
+        return await self._get(
+            upstream_path="/failures",
+            query_params=query_params,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=FAILURE_LOG_RESPONSE_ADAPTER,
         )
 
     async def _post(

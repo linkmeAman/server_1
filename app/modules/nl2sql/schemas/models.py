@@ -281,3 +281,22 @@ INSTRUCTIONS_RESPONSE_ADAPTER = TypeAdapter(list[Nl2SqlInstruction])
 INGEST_GROUPS_RESPONSE_ADAPTER = TypeAdapter(Nl2SqlIngestGroupsResponse)
 INGEST_RESPONSE_ADAPTER = TypeAdapter(Nl2SqlIngestResponse)
 EMBEDDED_INGEST_RESPONSE_ADAPTER = TypeAdapter(Nl2SqlEmbeddedIngestResponse)
+
+
+class Nl2SqlFailureLogEntry(BaseModel):
+    id: int
+    request_id: str
+    endpoint: str
+    query_text: str
+    warning_codes: list[str] = Field(default_factory=list)
+    error_source: str | None = None
+    sql_preview: str | None = None
+    tables_attempted: list[str] = Field(default_factory=list)
+    latency_ms: int = 0
+    suggest_teach: dict | None = None
+    created_at: str
+
+    model_config = ConfigDict(extra="allow")
+
+
+FAILURE_LOG_RESPONSE_ADAPTER = TypeAdapter(list[Nl2SqlFailureLogEntry])

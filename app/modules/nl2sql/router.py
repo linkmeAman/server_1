@@ -282,3 +282,21 @@ async def ingest_instructions(
         route_path=request.url.path,
     )
     return _success_response(result, "NL2SQL instruction ingest completed", request_id)
+
+
+@router.get("/failures")
+async def list_failures(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    limit = int(request.query_params.get("limit", 50))
+    endpoint = request.query_params.get("endpoint")
+    result = await nl2sql_client.list_failures(
+        limit=limit,
+        endpoint=endpoint,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response({"results": result, "total": len(result)}, "NL2SQL failure log retrieved", request_id)

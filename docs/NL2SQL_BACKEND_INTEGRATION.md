@@ -16,6 +16,7 @@ standard backend success/error envelope.
 | `POST` | `/api/nl2sql/v1/teach` | `/teach` |
 | `POST` | `/api/nl2sql/v1/teach/confirm` | `/teach/confirm` |
 | `GET` | `/api/nl2sql/v1/instructions` | `/instructions` |
+| `GET` | `/api/nl2sql/v1/failures` | `/failures` |
 | `POST` | `/api/nl2sql/v1/ingest/groups` | `/ingest/groups` |
 | `POST` | `/api/nl2sql/v1/ingest/knowledge` | `/ingest/knowledge` |
 | `POST` | `/api/nl2sql/v1/ingest/patterns` | `/ingest/patterns` |
