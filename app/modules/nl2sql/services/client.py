@@ -48,7 +48,6 @@ class Nl2SqlClient:
         route_path: str,
     ) -> dict[str, Any]:
         return await self._post(
-            route_name="ask",
             upstream_path="/ask",
             request_data=request_data,
             actor_user_id=actor_user_id,
@@ -66,7 +65,6 @@ class Nl2SqlClient:
         route_path: str,
     ) -> dict[str, Any]:
         return await self._post(
-            route_name="generate-sql",
             upstream_path="/generate-sql",
             request_data=request_data,
             actor_user_id=actor_user_id,
@@ -78,7 +76,6 @@ class Nl2SqlClient:
     async def _post(
         self,
         *,
-        route_name: str,
         upstream_path: str,
         request_data: Nl2SqlRequest,
         actor_user_id: int | str,
@@ -108,6 +105,19 @@ class Nl2SqlClient:
 
         started = time.perf_counter()
 
+        logger.info(
+            "NL2SQL → REQUEST  | request_id=%s user_id=%s route=%s upstream_url=%s "
+            "query=%r query_len=%d top_k=%d timeout_s=%.0f",
+            request_id,
+            actor_user_id,
+            route_path,
+            upstream_url,
+            request_data.query,
+            len(request_data.query),
+            upstream_payload["top_k"],
+            timeout_seconds,
+        )
+
         try:
             async with httpx.AsyncClient(timeout=timeout_seconds) as client:
                 response = await client.post(
@@ -120,13 +130,17 @@ class Nl2SqlClient:
                     },
                 )
         except httpx.TimeoutException as exc:
-            self._log_failure(
-                route_name=route_name,
-                route_path=route_path,
-                actor_user_id=actor_user_id,
-                request_id=request_id,
-                warning_codes=["NL2SQL_UPSTREAM_TIMEOUT"],
-                duration_ms=_duration_ms(started),
+            duration_ms = _duration_ms(started)
+            logger.warning(
+                "NL2SQL → TIMEOUT  | request_id=%s user_id=%s route=%s upstream_url=%s "
+                "duration_ms=%d timeout_s=%.0f error=%s",
+                request_id,
+                actor_user_id,
+                route_path,
+                upstream_url,
+                duration_ms,
+                timeout_seconds,
+                str(exc),
             )
             raise Nl2SqlClientError(
                 502,
@@ -135,13 +149,17 @@ class Nl2SqlClient:
                 data={"request_id": request_id, "upstream_path": upstream_path},
             ) from exc
         except httpx.RequestError as exc:
-            self._log_failure(
-                route_name=route_name,
-                route_path=route_path,
-                actor_user_id=actor_user_id,
-                request_id=request_id,
-                warning_codes=["NL2SQL_UPSTREAM_UNAVAILABLE"],
-                duration_ms=_duration_ms(started),
+            duration_ms = _duration_ms(started)
+            logger.warning(
+                "NL2SQL → UNAVAILABLE | request_id=%s user_id=%s route=%s upstream_url=%s "
+                "duration_ms=%d error_type=%s error=%s",
+                request_id,
+                actor_user_id,
+                route_path,
+                upstream_url,
+                duration_ms,
+                type(exc).__name__,
+                str(exc),
             )
             raise Nl2SqlClientError(
                 502,
@@ -152,16 +170,32 @@ class Nl2SqlClient:
 
         duration_ms = _duration_ms(started)
 
+        logger.info(
+            "NL2SQL → HTTP     | request_id=%s user_id=%s route=%s upstream_url=%s "
+            "http_status=%d duration_ms=%d content_length=%s",
+            request_id,
+            actor_user_id,
+            route_path,
+            upstream_url,
+            response.status_code,
+            duration_ms,
+            response.headers.get("content-length", "unknown"),
+        )
+
         if response.status_code != 200:
             message, details = _extract_error_message(response)
-            self._log_failure(
-                route_name=route_name,
-                route_path=route_path,
-                actor_user_id=actor_user_id,
-                request_id=request_id,
-                warning_codes=[],
-                duration_ms=duration_ms,
-                upstream_status=response.status_code,
+            raw_body = response.text[:2000] if response.text else ""
+            logger.warning(
+                "NL2SQL → ERROR    | request_id=%s user_id=%s route=%s upstream_url=%s "
+                "http_status=%d duration_ms=%d message=%r body_preview=%r",
+                request_id,
+                actor_user_id,
+                route_path,
+                upstream_url,
+                response.status_code,
+                duration_ms,
+                message,
+                raw_body,
             )
             raise Nl2SqlClientError(
                 response.status_code,
@@ -178,14 +212,17 @@ class Nl2SqlClient:
         try:
             payload = response.json()
         except ValueError as exc:
-            self._log_failure(
-                route_name=route_name,
-                route_path=route_path,
-                actor_user_id=actor_user_id,
-                request_id=request_id,
-                warning_codes=["NL2SQL_INVALID_RESPONSE"],
-                duration_ms=duration_ms,
-                upstream_status=response.status_code,
+            logger.warning(
+                "NL2SQL → INVALID_JSON | request_id=%s user_id=%s route=%s upstream_url=%s "
+                "http_status=%d duration_ms=%d body_preview=%r error=%s",
+                request_id,
+                actor_user_id,
+                route_path,
+                upstream_url,
+                response.status_code,
+                duration_ms,
+                response.text[:500],
+                str(exc),
             )
             raise Nl2SqlClientError(
                 502,
@@ -197,14 +234,16 @@ class Nl2SqlClient:
         try:
             validated = response_adapter.validate_python(payload)
         except ValidationError as exc:
-            self._log_failure(
-                route_name=route_name,
-                route_path=route_path,
-                actor_user_id=actor_user_id,
-                request_id=request_id,
-                warning_codes=["NL2SQL_INVALID_RESPONSE"],
-                duration_ms=duration_ms,
-                upstream_status=response.status_code,
+            logger.warning(
+                "NL2SQL → INVALID_SCHEMA | request_id=%s user_id=%s route=%s upstream_url=%s "
+                "http_status=%d duration_ms=%d validation_errors=%s",
+                request_id,
+                actor_user_id,
+                route_path,
+                upstream_url,
+                response.status_code,
+                duration_ms,
+                exc.errors(),
             )
             raise Nl2SqlClientError(
                 502,
@@ -219,40 +258,24 @@ class Nl2SqlClient:
 
         normalized = validated.model_dump(mode="json")
         warning_codes = _warning_codes(normalized)
+
         logger.info(
-            "NL2SQL request_id=%s user_id=%s route=%s upstream=%s duration_ms=%s status=%s warnings=%s",
+            "NL2SQL → SUCCESS  | request_id=%s user_id=%s route=%s upstream_url=%s "
+            "duration_ms=%d status=%s warnings=%s attempt_count=%s "
+            "row_count=%s tables=%s sql_preview=%r",
             request_id,
             actor_user_id,
             route_path,
-            upstream_path,
+            upstream_url,
             duration_ms,
             normalized.get("status"),
             warning_codes,
+            normalized.get("attempt_count"),
+            normalized.get("row_count"),
+            normalized.get("tables_used"),
+            (normalized.get("sql") or "")[:120],
         )
         return normalized
-
-    def _log_failure(
-        self,
-        *,
-        route_name: str,
-        route_path: str,
-        actor_user_id: int | str,
-        request_id: str,
-        warning_codes: list[str],
-        duration_ms: int,
-        upstream_status: int | None = None,
-    ) -> None:
-        logger.warning(
-            "NL2SQL request_id=%s user_id=%s route=%s upstream=%s duration_ms=%s status=error upstream_status=%s warnings=%s",
-            request_id,
-            actor_user_id,
-            route_path,
-            route_name,
-            duration_ms,
-            upstream_status,
-            warning_codes,
-        )
-
 
 def _duration_ms(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
