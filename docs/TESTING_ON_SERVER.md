@@ -35,13 +35,29 @@ python -m pip install pytest pytest-asyncio
 python -m compileall app tests main.py routes scripts alembic
 ```
 
-## 4. Run Full Test Suite
+## 4. Apply Database Migrations
+
+Run migrations before restarting code that depends on new tables:
+
+```bash
+alembic upgrade head
+```
+
+For notification changes, verify these tables exist after migration:
+
+- `notification_event`
+- `notification_user_state`
+- `notification_user_preference`
+
+If Alembic fails, do not restart the service.
+
+## 5. Run Full Test Suite
 
 ```bash
 python -m pytest tests -q
 ```
 
-## 5. Run Targeted Suites
+## 6. Run Targeted Suites
 
 Examples:
 
@@ -53,7 +69,7 @@ python -m pytest tests/test_query_gateway_cache_and_rate_limit.py -q
 python -m pytest tests/auth -q
 ```
 
-## 6. Restart Service After Passing Tests
+## 7. Restart Service After Passing Tests
 
 Example production service:
 
@@ -63,7 +79,7 @@ sudo systemctl status py-server-1
 journalctl -u py-server-1 -f
 ```
 
-## 7. Useful Smoke Tests
+## 8. Useful Smoke Tests
 
 ```bash
 curl -I http://127.0.0.1:8010/health
@@ -79,9 +95,20 @@ If you intentionally run with `DEBUG=True`, you can also check:
 curl -I http://127.0.0.1:8010/docs
 ```
 
-## 8. What To Verify After Hardening
+Notification smoke checks:
+
+```bash
+curl -N http://127.0.0.1:8010/api/notifications/v1/stream \
+  -H 'Authorization: Bearer <token>'
+
+curl http://127.0.0.1:8010/api/notifications/v1/recent?limit=10 \
+  -H 'Authorization: Bearer <token>'
+```
+
+## 9. What To Verify After Hardening
 
 - startup does not fail due to missing production secrets in `.env`
 - PRISM-protected dynamic routes only work when explicit allow patterns exist
 - auth login and refresh still work
 - SQL gateway and employee-events routes still mount correctly
+- notification recent/read/clear/preference routes work after Alembic migrations
