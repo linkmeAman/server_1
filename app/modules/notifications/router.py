@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+from collections.abc import AsyncIterator
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Request
@@ -17,10 +19,25 @@ from app.modules.notifications.services.publisher import (
 )
 
 router = APIRouter(prefix="/api/notifications/v1", tags=["notifications-v1"])
+logger = logging.getLogger(__name__)
 
 
 def _request_id(request: Request) -> str:
     return request.headers.get("X-Request-ID") or str(uuid4())
+
+
+async def _logged_stream(
+    stream: AsyncIterator[bytes],
+    *,
+    user_id: int | str,
+    request_id: str,
+) -> AsyncIterator[bytes]:
+    logger.info("NOTIFICATION_STREAM_OPEN user_id=%s request_id=%s", user_id, request_id)
+    try:
+        async for chunk in stream:
+            yield chunk
+    finally:
+        logger.info("NOTIFICATION_STREAM_CLOSED user_id=%s request_id=%s", user_id, request_id)
 
 
 @router.get("/stream")
@@ -28,18 +45,24 @@ async def stream_notifications(
     request: Request,
     caller: CallerContext = Depends(require_any_caller),
 ):
+    request_id = _request_id(request)
     last_event_id = request.headers.get("Last-Event-ID")
     events = notification_broker.subscribe(
         user_id=caller.user_id,
         last_event_id=last_event_id,
     )
     return StreamingResponse(
-        heartbeat_stream(events),
+        _logged_stream(
+            heartbeat_stream(events),
+            user_id=caller.user_id,
+            request_id=request_id,
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-store",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
+            "X-Request-ID": request_id,
         },
     )
 
