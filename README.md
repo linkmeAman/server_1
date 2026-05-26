@@ -32,6 +32,7 @@ backend/python/server_1/
 - Explicit FastAPI routes are registered from `app/api/v1/router.py`.
 - Shared runtime utilities live in `app/core`.
 - Domain code lives in `app/modules`.
+- Universal realtime notifications live in `app/modules/notifications` and expose SSE under `/api/notifications/v1`.
 - Dynamic `/py/*` routing was removed.
 - Legacy `controllers/`, `core/`, and `api/` compatibility packages were removed.
 
@@ -41,6 +42,7 @@ backend/python/server_1/
 - `docs/AUTH_AND_SECURITY.md`
 - `docs/NL2SQL_BACKEND_INTEGRATION.md`
 - `docs/NL2SQL_API_INTEGRATION_FLOW.md`
+- Frontend workspace `docs/NOTIFICATION_SYSTEM.md` for the cross-stack notification contract.
 - `docs/REPORT_PLATFORM_BACKEND_CHANGES.md`
 - `docs/ROUTING.md`
 - `docs/TESTING_ON_SERVER.md`

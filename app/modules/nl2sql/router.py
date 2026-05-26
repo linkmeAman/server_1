@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Request
@@ -21,10 +22,20 @@ from app.modules.nl2sql.schemas.models import (
     Nl2SqlTeachRequest,
 )
 from app.modules.nl2sql.services.client import Nl2SqlClient
+from app.modules.notifications.services.publisher import publish_notification
 
 router = APIRouter(prefix="/api/nl2sql/v1", tags=["nl2sql-v1"])
 
 nl2sql_client = Nl2SqlClient()
+
+_NL2SQL_EVENT_MESSAGES = {
+    "SCHEMA_RETRIEVAL_STARTED": "Schema retrieval started",
+    "SCHEMA_RETRIEVAL_SUCCESS": "Schema retrieval completed",
+    "SQL_GENERATION_STARTED": "SQL generation started",
+    "SQL_GENERATION_FAILED": "SQL generation failed",
+    "QUERY_TIMEOUT": "Query execution timed out",
+    "QUERY_COMPLETED": "Query completed",
+}
 
 
 def _resolve_request_id(request: Request, payload: object | None = None) -> str:
@@ -68,6 +79,118 @@ def _error_response(
     response = JSONResponse(status_code=status_code, content=payload)
     response.headers["X-Request-ID"] = request_id
     return response
+
+
+def _severity_for_nl2sql_event(event_type: str, status: str | None = None) -> str:
+    normalized_status = (status or "").lower()
+    if event_type == "QUERY_TIMEOUT":
+        return "error"
+    if event_type.endswith("_FAILED") or normalized_status in {"error", "failed"}:
+        return "error"
+    if event_type.endswith("_SUCCESS") or event_type == "QUERY_COMPLETED":
+        return "success"
+    if normalized_status in {"warning", "warn"}:
+        return "warning"
+    return "info"
+
+
+def _event_type_from_trace(trace_event: dict) -> str | None:
+    stage = str(trace_event.get("stage") or "").upper()
+    status = str(trace_event.get("status") or "").upper()
+    message = str(trace_event.get("message") or "").lower()
+
+    if "TIMEOUT" in stage or "timed out" in message or "timeout" in message:
+        return "QUERY_TIMEOUT"
+    if "SCHEMA" in stage and status in {"STARTED", "START", "RUNNING"}:
+        return "SCHEMA_RETRIEVAL_STARTED"
+    if "SCHEMA" in stage and status in {"OK", "SUCCESS", "COMPLETED"}:
+        return "SCHEMA_RETRIEVAL_SUCCESS"
+    if "SQL" in stage and status in {"STARTED", "START", "RUNNING"}:
+        return "SQL_GENERATION_STARTED"
+    if "SQL" in stage and status in {"FAILED", "ERROR"}:
+        return "SQL_GENERATION_FAILED"
+    if stage in {"QUERY", "QUERY_EXECUTION", "EXECUTION"} and status in {"OK", "SUCCESS", "COMPLETED"}:
+        return "QUERY_COMPLETED"
+    if status in {"FAILED", "ERROR"}:
+        return f"{stage or 'NL2SQL'}_FAILED"
+    return None
+
+
+async def _publish_nl2sql_event(
+    *,
+    request_id: str,
+    event_type: str,
+    user_id: int | str,
+    message: str | None = None,
+    metadata: dict | None = None,
+    status: str | None = None,
+) -> None:
+    await publish_notification(
+        request_id=request_id,
+        event_type=event_type,
+        severity=_severity_for_nl2sql_event(event_type, status),
+        source="nl2sql",
+        message=message or _NL2SQL_EVENT_MESSAGES.get(event_type, event_type.replace("_", " ").title()),
+        metadata=metadata or {},
+        user_id=user_id,
+        group_key=f"nl2sql:{request_id}",
+        dedupe_key=f"nl2sql:{request_id}:{event_type}",
+    )
+
+
+async def _notification_stream_wrapper(
+    stream: AsyncIterator[bytes],
+    *,
+    request_id: str,
+    user_id: int | str,
+) -> AsyncIterator[bytes]:
+    buffer = ""
+    try:
+        async for chunk in stream:
+            decoded = chunk.decode("utf-8", errors="replace")
+            buffer += decoded
+            lines = buffer.splitlines(keepends=True)
+            buffer = ""
+            if lines and not lines[-1].endswith(("\n", "\r")):
+                buffer = lines.pop()
+
+            for line in lines:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    event = json.loads(stripped)
+                except ValueError:
+                    continue
+                if event.get("event") == "trace":
+                    event_type = _event_type_from_trace(event)
+                    if event_type:
+                        await _publish_nl2sql_event(
+                            request_id=request_id,
+                            event_type=event_type,
+                            user_id=user_id,
+                            message=str(event.get("message") or ""),
+                            metadata={"trace": event},
+                            status=str(event.get("status") or ""),
+                        )
+                elif event.get("event") == "final":
+                    await _publish_nl2sql_event(
+                        request_id=request_id,
+                        event_type="QUERY_COMPLETED",
+                        user_id=user_id,
+                        metadata={"stream_event": event.get("event")},
+                    )
+            yield chunk
+    except Exception as exc:
+        await _publish_nl2sql_event(
+            request_id=request_id,
+            event_type="SQL_GENERATION_FAILED",
+            user_id=user_id,
+            message="NL2SQL stream failed",
+            metadata={"error": str(exc), "error_type": type(exc).__name__},
+            status="failed",
+        )
+        raise
 
 
 async def _parse_request_body(request: Request, model_cls) -> tuple[object | None, JSONResponse | None]:
@@ -132,11 +255,39 @@ async def ask(
         return error
 
     request_id = _resolve_request_id(request, payload)
-    result = await nl2sql_client.ask(
-        request_data=payload,
-        actor_user_id=caller.user_id,
+    await _publish_nl2sql_event(
         request_id=request_id,
-        route_path=request.url.path,
+        event_type="SQL_GENERATION_STARTED",
+        user_id=caller.user_id,
+        metadata={"query": payload.query, "endpoint": "ask"},
+    )
+    try:
+        result = await nl2sql_client.ask(
+            request_data=payload,
+            actor_user_id=caller.user_id,
+            request_id=request_id,
+            route_path=request.url.path,
+        )
+    except Exception as exc:
+        await _publish_nl2sql_event(
+            request_id=request_id,
+            event_type="SQL_GENERATION_FAILED",
+            user_id=caller.user_id,
+            message="NL2SQL ask failed",
+            metadata={"error": str(exc), "error_type": type(exc).__name__},
+            status="failed",
+        )
+        raise
+    await _publish_nl2sql_event(
+        request_id=request_id,
+        event_type="QUERY_COMPLETED",
+        user_id=caller.user_id,
+        metadata={
+            "status": result.get("status"),
+            "row_count": result.get("row_count"),
+            "tables_used": result.get("tables_used", []),
+            "endpoint": "ask",
+        },
     )
     return _success_response(result, "NL2SQL ask completed", request_id)
 
@@ -151,14 +302,25 @@ async def ask_stream(
         return error
 
     request_id = _resolve_request_id(request, payload)
+    await _publish_nl2sql_event(
+        request_id=request_id,
+        event_type="SQL_GENERATION_STARTED",
+        user_id=caller.user_id,
+        metadata={"query": payload.query, "endpoint": "ask_stream"},
+    )
     stream = nl2sql_client.ask_stream(
         request_data=payload,
         actor_user_id=caller.user_id,
         request_id=request_id,
         route_path=request.url.path,
     )
-    return StreamingResponse(
+    notification_stream = _notification_stream_wrapper(
         stream,
+        request_id=request_id,
+        user_id=caller.user_id,
+    )
+    return StreamingResponse(
+        notification_stream,
         media_type="application/x-ndjson",
         headers={
             "X-Request-ID": request_id,
@@ -177,11 +339,38 @@ async def generate_sql(
         return error
 
     request_id = _resolve_request_id(request, payload)
-    result = await nl2sql_client.generate_sql(
-        request_data=payload,
-        actor_user_id=caller.user_id,
+    await _publish_nl2sql_event(
         request_id=request_id,
-        route_path=request.url.path,
+        event_type="SQL_GENERATION_STARTED",
+        user_id=caller.user_id,
+        metadata={"query": payload.query, "endpoint": "generate_sql"},
+    )
+    try:
+        result = await nl2sql_client.generate_sql(
+            request_data=payload,
+            actor_user_id=caller.user_id,
+            request_id=request_id,
+            route_path=request.url.path,
+        )
+    except Exception as exc:
+        await _publish_nl2sql_event(
+            request_id=request_id,
+            event_type="SQL_GENERATION_FAILED",
+            user_id=caller.user_id,
+            message="NL2SQL SQL preview failed",
+            metadata={"error": str(exc), "error_type": type(exc).__name__},
+            status="failed",
+        )
+        raise
+    await _publish_nl2sql_event(
+        request_id=request_id,
+        event_type="QUERY_COMPLETED",
+        user_id=caller.user_id,
+        metadata={
+            "status": result.get("status"),
+            "tables_used": result.get("tables_used", []),
+            "endpoint": "generate_sql",
+        },
     )
     return _success_response(result, "NL2SQL SQL preview completed", request_id)
 

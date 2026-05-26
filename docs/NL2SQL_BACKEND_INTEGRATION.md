@@ -5,7 +5,8 @@
 `server_1` exposes an authenticated NL2SQL wrapper under `/api/nl2sql/v1`.
 It validates app-facing payloads, enforces `ai-chat:read`, forwards requests to
 the standalone NL2SQL service, validates JSON responses, and streams
-`/ask/stream` without buffering the whole response.
+`/ask/stream` without buffering the whole response. The wrapper also publishes
+request-correlated events through the universal backend notification broker.
 
 ## Wrapper Routes
 
@@ -28,6 +29,7 @@ Routes are registered from `app/api/v1/router.py` via:
 
 ```python
 api_router.include_router(nl2sql_router)
+api_router.include_router(notifications_router)
 ```
 
 ## Access Control
@@ -67,6 +69,68 @@ Example stream lines:
 
 The wrapper preserves `X-Request-ID` on the stream response and logs stream
 request, HTTP status, success, timeout, and unavailable cases.
+
+## Notification Publishing
+
+The notification module is universal across MarkX. NL2SQL is one producer, but
+the same broker and SSE stream are intended for reports, communications,
+workforce, finance, auth, PRISM, system jobs, and future agent workflows.
+
+The notification module exposes:
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/notifications/v1/stream` | Authenticated SSE stream |
+| `GET` | `/api/notifications/v1/recent` | Process-retained recent events |
+| `POST` | `/api/notifications/v1/debug` | Authenticated debug publish endpoint |
+
+Any backend module can publish with
+`app.modules.notifications.services.publisher.publish_notification`. NL2SQL
+publishes lifecycle events using the same `request_id` as the wrapper request
+and trace telemetry. Event types include:
+
+- `SCHEMA_RETRIEVAL_STARTED`
+- `SCHEMA_RETRIEVAL_SUCCESS`
+- `SQL_GENERATION_STARTED`
+- `SQL_GENERATION_FAILED`
+- `QUERY_TIMEOUT`
+- `QUERY_COMPLETED`
+
+Event schema:
+
+```json
+{
+  "event_id": "uuid",
+  "request_id": "req-1",
+  "event_type": "QUERY_COMPLETED",
+  "severity": "success",
+  "source": "nl2sql",
+  "timestamp": "2026-05-26T00:00:00+00:00",
+  "message": "Query completed",
+  "metadata": {}
+}
+```
+
+Domain services publish through the same universal API:
+
+```python
+from app.modules.notifications.services.publisher import publish_notification
+
+await publish_notification(
+    request_id=request_id,
+    event_type="WORKFLOW_STEP_COMPLETED",
+    severity="success",
+    source="workflow",
+    message="Approval step completed",
+    metadata={"workflow_id": 12, "step": "finance-review"},
+    user_id=caller.user_id,
+    group_key=f"workflow:{request_id}",
+)
+```
+
+The current broker is process-local with bounded replay and pluggable
+persistence hooks. Replace the broker internals with Redis pub/sub when the
+deployment runs multiple backend workers.
 
 ## Trace Lookup
 
@@ -150,4 +214,10 @@ Focused wrapper check:
 
 ```bash
 DEBUG=true python -m pytest tests/test_nl2sql_routes.py
+```
+
+Route syntax and notification broker import check:
+
+```bash
+python -m compileall -q app/modules/notifications app/modules/nl2sql app/api/v1/router.py
 ```
