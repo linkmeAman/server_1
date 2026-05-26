@@ -12,37 +12,40 @@ jobs:
     
     steps:
     - name: Execute deployment commands via SSH
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.SERVER_HOST }}
-        username: ${{ secrets.SERVER_USER }}
-        key: ${{ secrets.SERVER_SSH_KEY }}
-        port: 22
-        # Modify the cd path and port below to match your main production server folder
-        script: |
-          # Exit immediately if a pipeline command fails
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        SERVER_USER: ${{ secrets.SERVER_USER }}
+      run: |
+        mkdir -p ~/.ssh
+        chmod 700 ~/.ssh
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+
+        ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
+
+        ssh "${SERVER_USER}@${SERVER_HOST}" bash -s <<'ENDSSH'
           set -e
-          
+
           # 0. Trust directory (Fix for dubious ownership)
           git config --global --add safe.directory /var/www/py-workspace/server_1
-          
+
           # 1. Navigate to the main application directory
           cd /var/www/py-workspace/server_1/
-          
+
           # 2. Pull latest code
           git pull --no-rebase
-          
+
           # 3. Install/Update Python dependencies
           /var/www/py-workspace/server_1/pyenv/bin/pip install -r requirements.txt
-          
+
           # 4. Apply database migrations before restarting the backend.
-          # If this fails, set -e stops the deploy and the running backend is left untouched.
           /var/www/py-workspace/server_1/pyenv/bin/alembic upgrade head
-          
+
           # 5. Clean up Python caches explicitly in the deployment folder.
-          # If cleanup fails, do not restart the backend with a partially failed deploy.
           sudo find /var/www/py-workspace/server_1/ -type d -name "__pycache__" -exec rm -rf {} +
           sudo find /var/www/py-workspace/server_1/ -type f -name "*.pyc" -delete
-          
+
           # 6. Restart the systemd service only after pull, install, migration, and cleanup succeed.
           sudo systemctl restart py-server-1
+        ENDSSH
