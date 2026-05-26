@@ -202,6 +202,7 @@ async def heartbeat_stream(
 
     task = asyncio.create_task(pump_events())
     try:
+        yield encode_sse(None)
         while True:
             try:
                 event = await asyncio.wait_for(queue.get(), timeout=heartbeat_seconds)
