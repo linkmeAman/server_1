@@ -55,8 +55,20 @@ class NotificationPublishRequest(BaseModel):
 class NotificationPreferencePatch(BaseModel):
     desktop_enabled: bool | None = None
     silent_mode: bool | None = None
-    minimum_severity: NotificationSeverity | None = None
     toast_enabled: bool | None = None
+    minimum_toast_severity: NotificationSeverity | None = None
+    minimum_desktop_severity: NotificationSeverity | None = None
+    center_severity_filter: NotificationSeverity | Literal["all"] | None = None
 
     model_config = ConfigDict(extra="ignore")
 
+
+class NotificationPreferences(BaseModel):
+    toast_enabled: bool = True
+    desktop_enabled: bool = True
+    silent_mode: bool = False
+    minimum_toast_severity: NotificationSeverity = "info"
+    minimum_desktop_severity: NotificationSeverity = "info"
+    center_severity_filter: NotificationSeverity | Literal["all"] = "all"
+
+    model_config = ConfigDict(extra="ignore")
