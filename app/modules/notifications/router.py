@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.prism_guard import CallerContext, require_any_caller
 from app.core.response import success_response
@@ -132,7 +133,7 @@ async def recent_notifications(
             min_severity=severity,
             limit=limit,
         )
-    except Exception:
+    except (RuntimeError, SQLAlchemyError):
         logger.exception(
             "Notification DB recent lookup failed; falling back to memory user_id=%s",
             caller.user_id,
