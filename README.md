@@ -32,7 +32,7 @@ backend/python/server_1/
 - Explicit FastAPI routes are registered from `app/api/v1/router.py`.
 - Shared runtime utilities live in `app/core`.
 - Domain code lives in `app/modules`.
-- Universal realtime notifications live in `app/modules/notifications` and expose SSE under `/api/notifications/v1`.
+- Universal realtime notifications live in `app/modules/notifications` and expose SSE, DB-backed recent events, read/clear state, and delivery preferences under `/api/notifications/v1`.
 - Dynamic `/py/*` routing was removed.
 - Legacy `controllers/`, `core/`, and `api/` compatibility packages were removed.
 
@@ -54,6 +54,25 @@ backend/python/server_1/
 cd backend/python/server_1
 python -m uvicorn main:app --host 127.0.0.1 --port 8010
 ```
+
+## Migrations
+
+Run Alembic before starting code that depends on new tables:
+
+```bash
+alembic upgrade head
+```
+
+The notification system requires migration `20260526_011_notifications.py`,
+which creates:
+
+- `notification_event`
+- `notification_user_state`
+- `notification_user_preference`
+
+The backend production workflow runs `alembic upgrade head` before restarting
+`py-server-1`. If migration fails, `set -e` stops the deployment and leaves the
+running service untouched.
 
 ## Server run
 
