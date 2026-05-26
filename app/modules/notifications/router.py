@@ -6,20 +6,34 @@ import logging
 from collections.abc import AsyncIterator
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.core.prism_guard import CallerContext, require_any_caller
 from app.core.response import success_response
-from app.modules.notifications.schemas.models import NotificationPublishRequest
+from app.modules.notifications.schemas.models import (
+    NotificationPreferencePatch,
+    NotificationPublishRequest,
+)
 from app.modules.notifications.services.publisher import (
     heartbeat_stream,
     notification_broker,
     publish_notification,
 )
+from app.modules.notifications.services.repository import (
+    clear_all_notifications,
+    clear_notification,
+    get_notification_preferences,
+    list_recent_notifications,
+    mark_all_notifications_read,
+    mark_notification_read,
+    save_notification_event,
+    update_notification_preferences,
+)
 
 router = APIRouter(prefix="/api/notifications/v1", tags=["notifications-v1"])
 logger = logging.getLogger(__name__)
+notification_broker.register_persistence_hook(save_notification_event)
 
 
 def _request_id(request: Request) -> str:
@@ -67,6 +81,44 @@ async def stream_notifications(
     )
 
 
+@router.get("/preferences")
+async def notification_preferences(
+    request: Request,
+    caller: CallerContext = Depends(require_any_caller),
+):
+    preferences = await get_notification_preferences(user_id=caller.user_id)
+    response = JSONResponse(
+        status_code=200,
+        content=success_response(
+            data=preferences.model_dump(mode="json"),
+            message="Notification preferences retrieved",
+        ).model_dump(mode="json"),
+    )
+    response.headers["X-Request-ID"] = _request_id(request)
+    return response
+
+
+@router.patch("/preferences")
+async def patch_notification_preferences(
+    payload: NotificationPreferencePatch,
+    request: Request,
+    caller: CallerContext = Depends(require_any_caller),
+):
+    preferences = await update_notification_preferences(
+        user_id=caller.user_id,
+        patch=payload,
+    )
+    response = JSONResponse(
+        status_code=200,
+        content=success_response(
+            data=preferences.model_dump(mode="json"),
+            message="Notification preferences updated",
+        ).model_dump(mode="json"),
+    )
+    response.headers["X-Request-ID"] = _request_id(request)
+    return response
+
+
 @router.get("/recent")
 async def recent_notifications(
     request: Request,
@@ -74,16 +126,103 @@ async def recent_notifications(
     limit: int = 100,
     caller: CallerContext = Depends(require_any_caller),
 ):
-    events = await notification_broker.recent(
-        user_id=caller.user_id,
-        min_severity=severity,
-        limit=limit,
-    )
+    try:
+        events = await list_recent_notifications(
+            user_id=caller.user_id,
+            min_severity=severity,
+            limit=limit,
+        )
+    except Exception:
+        logger.exception(
+            "Notification DB recent lookup failed; falling back to memory user_id=%s",
+            caller.user_id,
+        )
+        events = await notification_broker.recent(
+            user_id=caller.user_id,
+            min_severity=severity,
+            limit=limit,
+        )
     payload = success_response(
         data={"results": [event.model_dump(mode="json") for event in events], "total": len(events)},
         message="Notifications retrieved",
     ).model_dump(mode="json")
     response = JSONResponse(status_code=200, content=payload)
+    response.headers["X-Request-ID"] = _request_id(request)
+    return response
+
+
+@router.patch("/{event_id}/read")
+async def read_notification(
+    event_id: str,
+    request: Request,
+    caller: CallerContext = Depends(require_any_caller),
+):
+    found = await mark_notification_read(user_id=caller.user_id, event_id=event_id)
+    if not found:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    response = JSONResponse(
+        status_code=200,
+        content=success_response(
+            data={"event_id": event_id, "read": True},
+            message="Notification marked as read",
+        ).model_dump(mode="json"),
+    )
+    response.headers["X-Request-ID"] = _request_id(request)
+    return response
+
+
+@router.patch("/read-all")
+async def read_all_notifications(
+    request: Request,
+    caller: CallerContext = Depends(require_any_caller),
+):
+    count = await mark_all_notifications_read(user_id=caller.user_id)
+    response = JSONResponse(
+        status_code=200,
+        content=success_response(
+            data={"updated": count},
+            message="Notifications marked as read",
+        ).model_dump(mode="json"),
+    )
+    response.headers["X-Request-ID"] = _request_id(request)
+    return response
+
+
+@router.delete("/clear-all")
+async def clear_all_visible_notifications(
+    request: Request,
+    caller: CallerContext = Depends(require_any_caller),
+):
+    count = await clear_all_notifications(user_id=caller.user_id)
+    response = JSONResponse(
+        status_code=200,
+        content=success_response(
+            data={"updated": count},
+            message="Notifications cleared",
+        ).model_dump(mode="json"),
+    )
+    response.headers["X-Request-ID"] = _request_id(request)
+    return response
+
+
+@router.delete("/{event_id}")
+async def clear_visible_notification(
+    event_id: str,
+    request: Request,
+    caller: CallerContext = Depends(require_any_caller),
+):
+    found = await clear_notification(user_id=caller.user_id, event_id=event_id)
+    if not found:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    response = JSONResponse(
+        status_code=200,
+        content=success_response(
+            data={"event_id": event_id, "cleared": True},
+            message="Notification cleared",
+        ).model_dump(mode="json"),
+    )
     response.headers["X-Request-ID"] = _request_id(request)
     return response
 

@@ -40,6 +40,8 @@ class NotificationBroker:
         self._persistence_hooks: list[PersistenceHook] = []
 
     def register_persistence_hook(self, hook: PersistenceHook) -> None:
+        if hook in self._persistence_hooks:
+            return
         self._persistence_hooks.append(hook)
 
     async def publish(self, event: NotificationEvent) -> NotificationEvent:

@@ -34,9 +34,14 @@ jobs:
           # 3. Install/Update Python dependencies
           /var/www/py-workspace/server_1/pyenv/bin/pip install -r requirements.txt
           
-          # 4. Clean up Python caches explicitly in the deployment folder (using sudo to avoid permission denied)
-          sudo find /var/www/py-workspace/server_1/ -type d -name "__pycache__" -exec rm -rf {} + || true
-          sudo find /var/www/py-workspace/server_1/ -type f -name "*.pyc" -delete || true
+          # 4. Apply database migrations before restarting the backend.
+          # If this fails, set -e stops the deploy and the running backend is left untouched.
+          /var/www/py-workspace/server_1/pyenv/bin/alembic upgrade head
           
-          # 5. Restart the systemd service
+          # 5. Clean up Python caches explicitly in the deployment folder.
+          # If cleanup fails, do not restart the backend with a partially failed deploy.
+          sudo find /var/www/py-workspace/server_1/ -type d -name "__pycache__" -exec rm -rf {} +
+          sudo find /var/www/py-workspace/server_1/ -type f -name "*.pyc" -delete
+          
+          # 6. Restart the systemd service only after pull, install, migration, and cleanup succeed.
           sudo systemctl restart py-server-1
