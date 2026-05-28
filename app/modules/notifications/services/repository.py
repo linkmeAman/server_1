@@ -11,9 +11,15 @@ from sqlalchemy import bindparam, text
 
 from app.core.database import main_session_context
 from app.modules.notifications.schemas.models import (
+    DEFAULT_FOLLOWUP_OFFSETS,
+    DEFAULT_RECIPIENT_SCOPE,
+    FOLLOWUP_EVENT_TYPE,
+    FOLLOWUP_SOURCE,
+    NotificationDeliveryRule,
     NotificationEvent,
     NotificationPreferencePatch,
     NotificationPreferences,
+    NotificationRulePatch,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,6 +50,33 @@ def _metadata_from_json(value: str | None) -> dict[str, Any]:
         logger.warning("Invalid notification metadata JSON ignored")
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _offsets_json(value: list[int]) -> str:
+    offsets = sorted({int(item) for item in value if 0 <= int(item) <= 1440})
+    return json.dumps(offsets or DEFAULT_FOLLOWUP_OFFSETS, separators=(",", ":"))
+
+
+def _offsets_from_json(value: str | None) -> list[int]:
+    if not value:
+        return DEFAULT_FOLLOWUP_OFFSETS.copy()
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        logger.warning("Invalid notification reminder offsets JSON ignored")
+        return DEFAULT_FOLLOWUP_OFFSETS.copy()
+    if not isinstance(parsed, list):
+        return DEFAULT_FOLLOWUP_OFFSETS.copy()
+
+    offsets: set[int] = set()
+    for item in parsed:
+        try:
+            offset = int(item)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= offset <= 1440:
+            offsets.add(offset)
+    return sorted(offsets) or DEFAULT_FOLLOWUP_OFFSETS.copy()
 
 
 def _datetime_from_event_timestamp(value: str) -> datetime:
@@ -80,6 +113,28 @@ def _event_from_row(row: dict[str, Any]) -> NotificationEvent:
         group_key=row.get("group_key"),
         dedupe_key=row.get("dedupe_key"),
         read=row.get("read_at") is not None,
+    )
+
+
+def _default_followup_rule() -> NotificationDeliveryRule:
+    return NotificationDeliveryRule(
+        source=FOLLOWUP_SOURCE,
+        event_type=FOLLOWUP_EVENT_TYPE,
+        enabled=True,
+        reminder_offsets_minutes=DEFAULT_FOLLOWUP_OFFSETS.copy(),
+        recipient_scope=DEFAULT_RECIPIENT_SCOPE,
+        updated_at=None,
+    )
+
+
+def _rule_from_row(row: dict[str, Any]) -> NotificationDeliveryRule:
+    return NotificationDeliveryRule(
+        source=str(row["source"]),
+        event_type=str(row["event_type"]),
+        enabled=bool(row["enabled"]),
+        reminder_offsets_minutes=_offsets_from_json(row.get("reminder_offsets_json")),
+        recipient_scope=str(row["recipient_scope"]),  # type: ignore[arg-type]
+        updated_at=_timestamp_from_row(row["updated_at"]) if row.get("updated_at") else None,
     )
 
 
@@ -475,3 +530,128 @@ async def update_notification_preferences(
         await session.commit()
 
     return next_preferences
+
+
+async def list_notification_rules(*, user_id: int | str) -> list[NotificationDeliveryRule]:
+    async with main_session_context() as session:
+        result = await session.execute(
+            text(
+                """
+                SELECT
+                    source,
+                    event_type,
+                    enabled,
+                    reminder_offsets_json,
+                    recipient_scope,
+                    updated_at
+                FROM notification_delivery_rule
+                WHERE user_id = :viewer_user_id
+                ORDER BY source, event_type
+                """
+            ),
+            {"viewer_user_id": str(user_id)},
+        )
+        rows = [_rule_from_row(dict(row)) for row in result.mappings().all()]
+
+    default_rule = _default_followup_rule()
+    if not any(
+        rule.source == default_rule.source and rule.event_type == default_rule.event_type
+        for rule in rows
+    ):
+        rows.insert(0, default_rule)
+    return rows
+
+
+async def get_notification_rule(
+    *,
+    user_id: int | str,
+    source: str,
+    event_type: str,
+) -> NotificationDeliveryRule:
+    async with main_session_context() as session:
+        result = await session.execute(
+            text(
+                """
+                SELECT
+                    source,
+                    event_type,
+                    enabled,
+                    reminder_offsets_json,
+                    recipient_scope,
+                    updated_at
+                FROM notification_delivery_rule
+                WHERE user_id = :viewer_user_id
+                    AND source = :source
+                    AND event_type = :event_type
+                LIMIT 1
+                """
+            ),
+            {
+                "viewer_user_id": str(user_id),
+                "source": source,
+                "event_type": event_type,
+            },
+        )
+        row = result.mappings().first()
+
+    if row is not None:
+        return _rule_from_row(dict(row))
+    if source == FOLLOWUP_SOURCE and event_type == FOLLOWUP_EVENT_TYPE:
+        return _default_followup_rule()
+    return NotificationDeliveryRule(source=source, event_type=event_type)
+
+
+async def update_notification_rule(
+    *,
+    user_id: int | str,
+    patch: NotificationRulePatch,
+) -> NotificationDeliveryRule:
+    current = await get_notification_rule(
+        user_id=user_id,
+        source=patch.source,
+        event_type=patch.event_type,
+    )
+    next_rule = current.model_copy(update=patch.model_dump(exclude_none=True))
+
+    async with main_session_context() as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO notification_delivery_rule (
+                    user_id,
+                    source,
+                    event_type,
+                    enabled,
+                    reminder_offsets_json,
+                    recipient_scope
+                )
+                VALUES (
+                    :viewer_user_id,
+                    :source,
+                    :event_type,
+                    :enabled,
+                    :reminder_offsets_json,
+                    :recipient_scope
+                )
+                ON DUPLICATE KEY UPDATE
+                    enabled = VALUES(enabled),
+                    reminder_offsets_json = VALUES(reminder_offsets_json),
+                    recipient_scope = VALUES(recipient_scope)
+                """
+            ),
+            {
+                "viewer_user_id": str(user_id),
+                "source": next_rule.source,
+                "event_type": next_rule.event_type,
+                "enabled": int(next_rule.enabled),
+                "reminder_offsets_json": _offsets_json(next_rule.reminder_offsets_minutes),
+                "recipient_scope": next_rule.recipient_scope,
+            },
+        )
+        await session.commit()
+
+    return await get_notification_rule(
+        user_id=user_id,
+        source=next_rule.source,
+        event_type=next_rule.event_type,
+    )

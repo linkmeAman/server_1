@@ -42,7 +42,7 @@ backend/python/server_1/
 - `docs/AUTH_AND_SECURITY.md`
 - `docs/NL2SQL_BACKEND_INTEGRATION.md`
 - `docs/NL2SQL_API_INTEGRATION_FLOW.md`
-- Frontend workspace `docs/NOTIFICATION_SYSTEM.md` for the cross-stack notification contract.
+- `docs/NOTIFICATION_SYSTEM.md`
 - `docs/REPORT_PLATFORM_BACKEND_CHANGES.md`
 - `docs/ROUTING.md`
 - `docs/TESTING_ON_SERVER.md`
@@ -63,12 +63,14 @@ Run Alembic before starting code that depends on new tables:
 alembic upgrade head
 ```
 
-The notification system requires migration `20260526_011_notifications.py`,
-which creates:
+The notification system requires migrations `20260526_011_notifications.py`
+and `20260527_012_notification_rules_followup.py`, which create:
 
 - `notification_event`
 - `notification_user_state`
 - `notification_user_preference`
+- `notification_delivery_rule`
+- `notification_dispatch_ledger`
 
 The backend production workflow runs `alembic upgrade head` before restarting
 `py-server-1`. If migration fails, `set -e` stops the deployment and leaves the

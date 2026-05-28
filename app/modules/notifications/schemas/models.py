@@ -9,6 +9,12 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 
 NotificationSeverity = Literal["info", "success", "warning", "error", "critical"]
+NotificationRecipientScope = Literal["assigned_to_me", "managed_team", "branch"]
+
+FOLLOWUP_SOURCE = "followups"
+FOLLOWUP_EVENT_TYPE = "FOLLOWUP_REMINDER_DUE"
+DEFAULT_FOLLOWUP_OFFSETS = [5]
+DEFAULT_RECIPIENT_SCOPE: NotificationRecipientScope = "assigned_to_me"
 
 
 class NotificationEvent(BaseModel):
@@ -72,3 +78,56 @@ class NotificationPreferences(BaseModel):
     center_severity_filter: NotificationSeverity | Literal["all"] = "all"
 
     model_config = ConfigDict(extra="ignore")
+
+
+class NotificationDeliveryRule(BaseModel):
+    source: StrictStr
+    event_type: StrictStr
+    enabled: bool = True
+    reminder_offsets_minutes: list[int] = Field(
+        default_factory=lambda: DEFAULT_FOLLOWUP_OFFSETS.copy()
+    )
+    recipient_scope: NotificationRecipientScope = DEFAULT_RECIPIENT_SCOPE
+    updated_at: str | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("source", "event_type")
+    @classmethod
+    def strip_rule_key(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("field must not be blank")
+        return normalized
+
+    @field_validator("reminder_offsets_minutes")
+    @classmethod
+    def normalize_offsets(cls, value: list[int]) -> list[int]:
+        offsets = sorted({int(item) for item in value if 0 <= int(item) <= 1440})
+        return offsets or DEFAULT_FOLLOWUP_OFFSETS.copy()
+
+
+class NotificationRulePatch(BaseModel):
+    source: StrictStr
+    event_type: StrictStr
+    enabled: bool | None = None
+    reminder_offsets_minutes: list[int] | None = None
+    recipient_scope: NotificationRecipientScope | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("source", "event_type")
+    @classmethod
+    def strip_patch_key(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("field must not be blank")
+        return normalized
+
+    @field_validator("reminder_offsets_minutes")
+    @classmethod
+    def normalize_patch_offsets(cls, value: list[int] | None) -> list[int] | None:
+        if value is None:
+            return None
+        offsets = sorted({int(item) for item in value if 0 <= int(item) <= 1440})
+        return offsets or DEFAULT_FOLLOWUP_OFFSETS.copy()

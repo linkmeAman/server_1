@@ -15,6 +15,7 @@ from app.core.response import success_response
 from app.modules.notifications.schemas.models import (
     NotificationPreferencePatch,
     NotificationPublishRequest,
+    NotificationRulePatch,
 )
 from app.modules.notifications.services.publisher import (
     heartbeat_stream,
@@ -25,10 +26,12 @@ from app.modules.notifications.services.repository import (
     clear_all_notifications,
     clear_notification,
     get_notification_preferences,
+    list_notification_rules,
     list_recent_notifications,
     mark_all_notifications_read,
     mark_notification_read,
     save_notification_event,
+    update_notification_rule,
     update_notification_preferences,
 )
 
@@ -114,6 +117,41 @@ async def patch_notification_preferences(
         content=success_response(
             data=preferences.model_dump(mode="json"),
             message="Notification preferences updated",
+        ).model_dump(mode="json"),
+    )
+    response.headers["X-Request-ID"] = _request_id(request)
+    return response
+
+
+@router.get("/rules")
+async def notification_rules(
+    request: Request,
+    caller: CallerContext = Depends(require_any_caller),
+):
+    rules = await list_notification_rules(user_id=caller.user_id)
+    response = JSONResponse(
+        status_code=200,
+        content=success_response(
+            data={"results": [rule.model_dump(mode="json") for rule in rules]},
+            message="Notification rules retrieved",
+        ).model_dump(mode="json"),
+    )
+    response.headers["X-Request-ID"] = _request_id(request)
+    return response
+
+
+@router.patch("/rules")
+async def patch_notification_rules(
+    payload: NotificationRulePatch,
+    request: Request,
+    caller: CallerContext = Depends(require_any_caller),
+):
+    rule = await update_notification_rule(user_id=caller.user_id, patch=payload)
+    response = JSONResponse(
+        status_code=200,
+        content=success_response(
+            data=rule.model_dump(mode="json"),
+            message="Notification rule updated",
         ).model_dump(mode="json"),
     )
     response.headers["X-Request-ID"] = _request_id(request)
