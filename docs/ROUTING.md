@@ -22,6 +22,17 @@ This file mounts the current API modules under their own prefixes.
 - `app/modules/orders/router.py`
 - `app/modules/employee_events_v1/router.py`
 - `app/modules/google_calendar_v1/router.py`
+- `app/modules/notifications/router.py`
+
+## Notification Routes
+
+- `GET /api/notifications/v1/stream`
+- `GET /api/notifications/v1/recent`
+- `GET /api/notifications/v1/preferences`
+- `PATCH /api/notifications/v1/preferences`
+- `GET /api/notifications/v1/rules`
+- `PATCH /api/notifications/v1/rules`
+- Read/clear event routes under `/api/notifications/v1`
 
 ## Guidance
 

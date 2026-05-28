@@ -138,6 +138,19 @@ class Settings(BaseSettings):
         "on",
     }
 
+    # Notifications / follow-up reminders
+    NOTIFICATION_WORKSPACE_TIMEZONE: str = os.getenv(
+        "NOTIFICATION_WORKSPACE_TIMEZONE",
+        "Asia/Kolkata",
+    )
+    FOLLOWUP_REMINDERS_ENABLED: bool = os.getenv(
+        "FOLLOWUP_REMINDERS_ENABLED",
+        "true",
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    FOLLOWUP_REMINDER_SCAN_INTERVAL_SECONDS: int = int(
+        os.getenv("FOLLOWUP_REMINDER_SCAN_INTERVAL_SECONDS", 60)
+    )
+
     # Authentication v2
     AUTH_V2_ISSUER: str = os.getenv("AUTH_V2_ISSUER", "dynamic-api-auth-v2")
     AUTH_V2_AUDIENCE: str = os.getenv("AUTH_V2_AUDIENCE", "dynamic-api-clients")

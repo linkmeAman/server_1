@@ -20,6 +20,10 @@ from app.core.database import init_database
 from app.core.prism_cache import init_redis, close_redis
 from app.api.v1.router import api_router
 from app.modules.auth.services.common import AuthError
+from app.modules.notifications.services.followup_reminders import (
+    start_followup_reminder_scheduler,
+    stop_followup_reminder_scheduler,
+)
 from routes.tables import router as explorer_tables_router
 from routes.query import router as explorer_query_router
 from routes.export import router as explorer_export_router
@@ -101,6 +105,7 @@ async def lifespan(app: FastAPI):
     db_initialized = init_database()
     if db_initialized:
         logger.info("Database initialized successfully")
+        start_followup_reminder_scheduler(app)
     else:
         logger.warning("Database not configured or failed to initialize")
 
@@ -112,6 +117,7 @@ async def lifespan(app: FastAPI):
     yield
     
     # Shutdown
+    await stop_followup_reminder_scheduler(app)
     await close_redis()
     logger.info("Shutting down %s", get_settings().APP_NAME)
 

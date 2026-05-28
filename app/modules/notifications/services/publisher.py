@@ -30,6 +30,14 @@ _SEVERITY_RANK = {
 }
 
 
+def _visible_to_user(event: NotificationEvent, user_id: int | str | None) -> bool:
+    if event.user_id is None:
+        return True
+    if user_id is None:
+        return False
+    return str(event.user_id) == str(user_id)
+
+
 class NotificationBroker:
     def __init__(self, *, max_recent: int = 500, queue_size: int = 200) -> None:
         self._max_recent = max_recent
@@ -100,7 +108,7 @@ class NotificationBroker:
         filtered = [
             event
             for event in events
-            if (event.user_id in (None, user_id))
+            if _visible_to_user(event, user_id)
             and _SEVERITY_RANK.get(event.severity, 10) >= min_rank
         ]
         return filtered[: max(1, min(limit, self._max_recent))]
@@ -124,7 +132,7 @@ class NotificationBroker:
 
             while True:
                 event = await queue.get()
-                if event is not None and event.user_id not in (None, user_id):
+                if event is not None and not _visible_to_user(event, user_id):
                     continue
                 yield event
         finally:
@@ -144,7 +152,7 @@ class NotificationBroker:
         for event in self._recent:
             if event.event_id == last_event_id:
                 break
-            if event.user_id in (None, user_id):
+            if _visible_to_user(event, user_id):
                 replay.append(event)
         replay.reverse()
         return replay
