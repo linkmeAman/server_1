@@ -2124,6 +2124,46 @@ class WorkforceRepository:
         )
         return [dict(r) for r in result.mappings().all()]
 
+    async def lookup_pincode(self, db: AsyncSession, pincode: str) -> dict[str, Any] | None:
+        cleaned = str(pincode or "").strip()
+        if not cleaned:
+            return None
+
+        result = await db.execute(
+            text(
+                """
+                SELECT
+                    p.POSTAL_CODE AS pincode,
+                    p.CITY AS city,
+                    p.STATE AS state,
+                    p.COUNTRY AS country_code,
+                    c.name AS country
+                FROM pincodes p
+                LEFT JOIN countries c ON c.iso2 = p.COUNTRY
+                WHERE p.POSTAL_CODE = :pincode
+                LIMIT 1
+                """
+            ),
+            {"pincode": cleaned},
+        )
+        row = result.mappings().first()
+        if not row:
+            return None
+
+        def _clean(value: Any) -> str | None:
+            text_value = str(value or "").strip()
+            return text_value or None
+
+        country_name = _clean(row.get("country"))
+        country_code = _clean(row.get("country_code"))
+        return {
+            "pincode": _clean(row.get("pincode")) or cleaned,
+            "city": _clean(row.get("city")),
+            "state": _clean(row.get("state")),
+            "country_code": country_code,
+            "country": country_name or country_code,
+        }
+
     async def get_next_ecode(self, db: AsyncSession) -> int:
         """Return MAX(ecode) + 1 from the employee table."""
         result = await db.execute(text("SELECT MAX(ecode) AS max_ecode FROM employee"))

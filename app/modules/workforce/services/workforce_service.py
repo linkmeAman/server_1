@@ -1676,6 +1676,16 @@ class WorkforceService:
             ],
         }
 
+    async def lookup_pincode(
+        self,
+        main_db: AsyncSession,
+        pincode: str,
+    ) -> dict[str, Any] | None:
+        cleaned = self._as_text(pincode)
+        if not cleaned:
+            return None
+        return await self.repo.lookup_pincode(main_db, cleaned)
+
     async def create_employee(
         self,
         main_db: AsyncSession,
