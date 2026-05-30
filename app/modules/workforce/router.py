@@ -8,7 +8,7 @@ import re
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -77,7 +77,7 @@ class EmployeeCreateRequest(BaseModel):
     allowance: float | None = Field(default=None, ge=0)
     employee_type: int | None = Field(default=0)
     status: int | None = Field(default=1)
-    grade: int | None = Field(default=None)
+    grade: int | None = Field(default=1)
     # Contact additions
     mobile2: str | None = Field(default=None, max_length=20)
     country_code_2: str | None = Field(default="+91", max_length=10)
@@ -502,6 +502,17 @@ async def get_employee_form_meta(
     return success_response(data=data, message="Employee form meta fetched").model_dump(mode="json")
 
 
+@router.get("/pincodes/lookup")
+async def lookup_pincode(
+    pincode: str = Query(..., min_length=3, max_length=20),
+    _: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+):
+    """Lookup city/state/country for a pincode."""
+    data = await service.lookup_pincode(main_db, pincode)
+    return success_response(data=data, message="Pincode lookup fetched").model_dump(mode="json")
+
+
 # Filename validation — allow only safe chars (alphanumeric, hyphens, underscores, dots)
 _SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
 
@@ -523,18 +534,44 @@ async def serve_contact_document(
     from app.core.settings import get_settings  # local import to avoid circular deps
 
     settings = get_settings()
-    base_dir = os.path.realpath(settings.CONTACT_DOCUMENT_PATH)
-    target = os.path.realpath(os.path.join(base_dir, filename))
+    base_dir = settings.CONTACT_DOCUMENT_PATH
+    candidate_dirs = [base_dir]
 
-    # Guard against path traversal
-    if not target.startswith(base_dir + os.sep) and target != base_dir:
-        raise HTTPException(status_code=400, detail="Invalid filename")
+    if not os.path.isabs(base_dir):
+        module_root = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+        candidate_dirs.append(os.path.join(module_root, base_dir))
 
-    if not os.path.isfile(target):
-        raise HTTPException(status_code=404, detail="Document not found")
+    for candidate in candidate_dirs:
+        resolved_base = os.path.realpath(candidate)
+        target = os.path.realpath(os.path.join(resolved_base, filename))
 
-    media_type, _ = mimetypes.guess_type(filename)
-    return FileResponse(target, media_type=media_type or "application/octet-stream")
+        # Guard against path traversal
+        if not target.startswith(resolved_base + os.sep) and target != resolved_base:
+            continue
+
+        if os.path.isfile(target):
+            media_type, _ = mimetypes.guess_type(filename)
+            return FileResponse(target, media_type=media_type or "application/octet-stream")
+
+    if settings.S3_BUCKET:
+        try:
+            from app.shared.s3_service import generate_presigned_get_url
+
+            folder_name = os.path.basename(os.path.normpath(base_dir))
+            candidates = [filename]
+            if folder_name:
+                candidates.append(f"{folder_name}/{filename}")
+
+            for s3_key in candidates:
+                try:
+                    url = generate_presigned_get_url(s3_key)
+                    return RedirectResponse(url, status_code=302)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    raise HTTPException(status_code=404, detail="Document not found")
 
 
 @router.get("/employees/{employee_id}")
