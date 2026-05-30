@@ -2537,6 +2537,23 @@ class WorkforceRepository:
             params,
         )
 
+    async def update_contact_document(
+        self,
+        db: AsyncSession,
+        contact_id: int,
+        column: str,
+        filename: str,
+    ) -> bool:
+        allowed = {"document_image", "document_image_2", "document_image_3"}
+        if column not in allowed:
+            raise ValueError("Invalid document column")
+        result = await db.execute(
+            text(f"UPDATE contact SET {column} = :filename WHERE id = :contact_id"),
+            {"filename": filename, "contact_id": int(contact_id)},
+        )
+        await db.flush()
+        return bool(result.rowcount)
+
     async def create_employee_record(
         self,
         db: AsyncSession,

@@ -1686,6 +1686,21 @@ class WorkforceService:
             return None
         return await self.repo.lookup_pincode(main_db, cleaned)
 
+    async def save_contact_document(
+        self,
+        main_db: AsyncSession,
+        contact_id: int,
+        slot: int,
+        filename: str,
+    ) -> None:
+        slot_map = {1: "document_image", 2: "document_image_2", 3: "document_image_3"}
+        column = slot_map.get(slot)
+        if not column:
+            raise HTTPException(status_code=422, detail="slot must be 1, 2, or 3")
+        updated = await self.repo.update_contact_document(main_db, contact_id, column, filename)
+        if not updated:
+            raise HTTPException(status_code=404, detail="Contact not found")
+
     async def create_employee(
         self,
         main_db: AsyncSession,
