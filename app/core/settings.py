@@ -180,7 +180,7 @@ class Settings(BaseSettings):
     # Absolute path to the directory that holds contact_document files.
     # On the shared server this is typically ``<web_root>/content/contact_document``.
     CONTACT_DOCUMENT_PATH: str = os.getenv(
-        "CONTACT_DOCUMENT_PATH", "../content/contact_document"
+        "CONTACT_DOCUMENT_PATH", "/var/www/content/contact_document"
     )
 
     # Redis / PRISM cache (Phase 3)
