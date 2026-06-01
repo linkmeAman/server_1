@@ -584,10 +584,9 @@ async def lookup_pincode(
     pincode: str = Query(..., min_length=3, max_length=20),
     _: CallerContext = Depends(require_any_caller),
     main_db: AsyncSession = Depends(get_main_db_session),
-    central_db: AsyncSession = Depends(get_central_db_session),
 ):
     """Lookup city/state/country for a pincode."""
-    data = await service.lookup_pincode(main_db, central_db, pincode)
+    data = await service.lookup_pincode(main_db, pincode)
     return success_response(data=data, message="Pincode lookup fetched").model_dump(mode="json")
 
 
