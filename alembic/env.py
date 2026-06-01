@@ -1,4 +1,4 @@
-"""Alembic environment configuration for auth v2 central DB migrations only."""
+"""Alembic environment configuration with selectable main/central DB targets."""
 
 from __future__ import annotations
 
@@ -9,21 +9,20 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from app.core.database import get_central_async_engine
+from app.core.alembic_db_target import resolve_database_url
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Auth v2 tables are managed manually in migrations.
+# Migrations are managed manually in revision scripts.
 target_metadata = None
 
 
 def _database_url() -> str:
-    engine = get_central_async_engine()
     # `str(URL)` masks password as `***`; Alembic needs the real URL for connect.
-    return engine.url.render_as_string(hide_password=False)
+    return resolve_database_url(context.get_x_argument(as_dictionary=True))
 
 
 def run_migrations_offline() -> None:
@@ -70,4 +69,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-

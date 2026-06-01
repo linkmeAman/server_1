@@ -63,6 +63,18 @@ Run Alembic before starting code that depends on new tables:
 alembic upgrade head
 ```
 
+By default, Alembic upgrades against the central database (`pf_central`).
+Tenant notification migrations are schema-qualified and will still write to the
+main tenant DB resolved from `DATABASE_MAIN_URL` or `DB_NAME`. Set that main DB
+to `pf_TickleRight_9210` or the equivalent tenant DSN before running upgrades.
+
+Use the main DB as the Alembic connection target only when a migration is
+explicitly meant to run there:
+
+```bash
+alembic -x db_target=main upgrade head
+```
+
 The notification system requires migrations `20260526_011_notifications.py`
 and `20260527_012_notification_rules_followup.py`, which create:
 
