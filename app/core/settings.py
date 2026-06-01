@@ -147,6 +147,10 @@ class Settings(BaseSettings):
         "FOLLOWUP_REMINDERS_ENABLED",
         "true",
     ).strip().lower() in {"1", "true", "yes", "on"}
+    NOTIFICATIONS_ENABLED: bool = os.getenv(
+        "NOTIFICATIONS_ENABLED",
+        "false",
+    ).strip().lower() in {"1", "true", "yes", "on"}
     FOLLOWUP_REMINDER_SCAN_INTERVAL_SECONDS: int = int(
         os.getenv("FOLLOWUP_REMINDER_SCAN_INTERVAL_SECONDS", 60)
     )
