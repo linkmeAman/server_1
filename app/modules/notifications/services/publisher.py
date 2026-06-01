@@ -15,6 +15,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import suppress
 from typing import Any
 
+from app.core.settings import get_settings
 from app.modules.notifications.schemas.models import NotificationEvent
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,10 @@ def _visible_to_user(event: NotificationEvent, user_id: int | str | None) -> boo
     return str(event.user_id) == str(user_id)
 
 
+def notifications_enabled() -> bool:
+    return get_settings().NOTIFICATIONS_ENABLED
+
+
 class NotificationBroker:
     def __init__(self, *, max_recent: int = 500, queue_size: int = 200) -> None:
         self._max_recent = max_recent
@@ -53,6 +58,14 @@ class NotificationBroker:
         self._persistence_hooks.append(hook)
 
     async def publish(self, event: NotificationEvent) -> NotificationEvent:
+        if not notifications_enabled():
+            logger.debug(
+                "Notifications disabled; dropping event event_id=%s request_id=%s",
+                event.event_id,
+                event.request_id,
+            )
+            return event
+
         async with self._lock:
             self._recent.appendleft(event)
             subscribers = list(self._subscribers.items())
@@ -101,6 +114,8 @@ class NotificationBroker:
         min_severity: str | None = None,
         limit: int = 100,
     ) -> list[NotificationEvent]:
+        if not notifications_enabled():
+            return []
         min_rank = _SEVERITY_RANK.get(min_severity or "info", 10)
         async with self._lock:
             events = list(self._recent)
@@ -119,6 +134,8 @@ class NotificationBroker:
         user_id: int | str | None = None,
         last_event_id: str | None = None,
     ) -> AsyncIterator[NotificationEvent | None]:
+        if not notifications_enabled():
+            return
         queue: asyncio.Queue[NotificationEvent | None] = asyncio.Queue(maxsize=self._queue_size)
         subscriber_id = f"{id(queue)}"
 

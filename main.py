@@ -105,7 +105,8 @@ async def lifespan(app: FastAPI):
     db_initialized = init_database()
     if db_initialized:
         logger.info("Database initialized successfully")
-        start_followup_reminder_scheduler(app)
+        if get_settings().NOTIFICATIONS_ENABLED:
+            start_followup_reminder_scheduler(app)
     else:
         logger.warning("Database not configured or failed to initialize")
 
@@ -117,7 +118,8 @@ async def lifespan(app: FastAPI):
     yield
     
     # Shutdown
-    await stop_followup_reminder_scheduler(app)
+    if get_settings().NOTIFICATIONS_ENABLED:
+        await stop_followup_reminder_scheduler(app)
     await close_redis()
     logger.info("Shutting down %s", get_settings().APP_NAME)
 
@@ -278,4 +280,3 @@ if __name__ == "__main__":
         log_level=settings.LOG_LEVEL.lower(),
         access_log=True
     )
-
