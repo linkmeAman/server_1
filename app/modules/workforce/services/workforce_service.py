@@ -1679,12 +1679,24 @@ class WorkforceService:
     async def lookup_pincode(
         self,
         main_db: AsyncSession,
+        central_db: AsyncSession,
         pincode: str,
     ) -> dict[str, Any] | None:
         cleaned = self._as_text(pincode)
         if not cleaned:
             return None
-        return await self.repo.lookup_pincode(main_db, cleaned)
+        data = await self.repo.lookup_pincode(main_db, cleaned)
+        if not data:
+            return None
+
+        country_code = self._as_text(data.get("country_code"))
+        if country_code:
+            country_name = await self.repo.lookup_country_name(central_db, country_code)
+            if country_name:
+                data["country"] = country_name
+        if not self._as_text(data.get("country")):
+            data["country"] = country_code
+        return data
 
     async def save_contact_document(
         self,
@@ -1731,6 +1743,20 @@ class WorkforceService:
         # Auto-generate ecode: MAX(ecode) + 1
         ecode = await self.repo.get_next_ecode(main_db)
 
+        pincode = self._as_text(payload.get("pincode"))
+        city = self._as_text(payload.get("city"))
+        state = self._as_text(payload.get("state"))
+        country = self._as_text(payload.get("country"))
+        if pincode and (not city or not state or not country):
+            lookup = await self.lookup_pincode(main_db, central_db, pincode)
+            if lookup:
+                if not city:
+                    city = self._as_text(lookup.get("city"))
+                if not state:
+                    state = self._as_text(lookup.get("state"))
+                if not country:
+                    country = self._as_text(lookup.get("country"))
+
         contact_data: dict[str, Any] = {
             "contact_group_id": 2,  # 2 = Employee group (fixed)
             "fname": fname,
@@ -1746,10 +1772,10 @@ class WorkforceService:
             "gender": self._as_text(payload.get("gender")),
             "dob": self._as_text(payload.get("dob")),
             "address": self._as_text(payload.get("address")),
-            "city": self._as_text(payload.get("city")),
-            "state": self._as_text(payload.get("state")),
-            "country": self._as_text(payload.get("country")),
-            "pincode": self._as_text(payload.get("pincode")),
+            "city": city,
+            "state": state,
+            "country": country,
+            "pincode": pincode,
             "document_type_id": self._as_int(payload.get("document_type_id")),
             "document_number": self._as_text(payload.get("document_number")),
             "document_type_id_2": self._as_int(payload.get("document_type_id_2")),
@@ -1782,6 +1808,10 @@ class WorkforceService:
             contact_data["parent_id"] = emergency_contact_id
             contact_data["relation"] = relation
 
+        grade_value = self._as_int(payload.get("grade"))
+        if grade_value is None:
+            grade_value = 1
+
         employee_data: dict[str, Any] = {
             "ecode": ecode,
             "department_id": department_id,
@@ -1797,7 +1827,7 @@ class WorkforceService:
             "allowance": payload.get("allowance"),
             "type": self._as_int(payload.get("employee_type")) or 0,
             "status": self._as_int(payload.get("status")) if payload.get("status") is not None else 1,
-            "grade": self._as_int(payload.get("grade")),
+            "grade": grade_value,
             # Toggles
             "user_account": self._as_int(payload.get("user_account")) or 0,
             "is_admin": self._as_int(payload.get("is_admin")) or 0,
@@ -1937,6 +1967,21 @@ class WorkforceService:
                       "document_type_id_3"):
             if field in payload:
                 contact_data[field] = self._as_text(payload[field]) if isinstance(payload[field], str) else payload[field]
+
+        pincode = self._as_text(payload.get("pincode"))
+        if pincode:
+            needs_city = "city" not in payload and not self._as_text(existing.get("city"))
+            needs_state = "state" not in payload and not self._as_text(existing.get("state"))
+            needs_country = "country" not in payload and not self._as_text(existing.get("country"))
+            if needs_city or needs_state or needs_country:
+                lookup = await self.lookup_pincode(main_db, central_db, pincode)
+                if lookup:
+                    if needs_city and self._as_text(lookup.get("city")):
+                        contact_data["city"] = self._as_text(lookup.get("city"))
+                    if needs_state and self._as_text(lookup.get("state")):
+                        contact_data["state"] = self._as_text(lookup.get("state"))
+                    if needs_country and self._as_text(lookup.get("country")):
+                        contact_data["country"] = self._as_text(lookup.get("country"))
 
         # Handle emergency contact — create a new emergency contact row and link via parent_id
         ename = self._as_text(payload.get("ename"))
