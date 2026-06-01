@@ -213,6 +213,107 @@ class Nl2SqlInstructionsQuery(BaseModel):
         return normalized or None
 
 
+class Nl2SqlHealthLlmQuery(BaseModel):
+    role: Literal["sql", "reasoning", "query_rewrite", "answer", "default"] = "sql"
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class Nl2SqlTelemetryRecentQuery(BaseModel):
+    limit: int = Field(default=50, ge=1, le=500)
+    endpoint: StrictStr | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("endpoint")
+    @classmethod
+    def normalize_endpoint(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class Nl2SqlTelemetrySummaryQuery(BaseModel):
+    endpoint: StrictStr | None = None
+    since_minutes: int = Field(default=1440, ge=1)
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("endpoint")
+    @classmethod
+    def normalize_summary_endpoint(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class Nl2SqlBenchmarkCaseCreateRequest(BaseModel):
+    query: StrictStr
+    gold_sql: StrictStr | None = None
+    expected_status: StrictStr
+    slices: list[StrictStr] = Field(default_factory=list)
+    error_label: StrictStr | None = None
+    source: StrictStr | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("query", "expected_status")
+    @classmethod
+    def validate_required_strings(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("field must not be blank")
+        return normalized
+
+    @field_validator("gold_sql", "error_label", "source")
+    @classmethod
+    def normalize_optional_strings(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class Nl2SqlBenchmarkCasesQuery(BaseModel):
+    limit: int = Field(default=100, ge=1, le=500)
+    active_only: bool = True
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class Nl2SqlGovernanceValidateRequest(BaseModel):
+    sql: StrictStr
+    query: StrictStr
+    tables_in_scope: list[StrictStr] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("sql", "query")
+    @classmethod
+    def validate_non_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("field must not be blank")
+        return normalized
+
+
+class Nl2SqlPatternFeedbackRequest(BaseModel):
+    pattern_id: StrictInt
+    helpful: StrictBool
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class Nl2SqlTeachPendingQuery(BaseModel):
+    limit: int = Field(default=100, ge=1, le=500)
+    include_expired: bool = False
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class Nl2SqlIngestGroupsRequest(BaseModel):
     group_names: list[StrictStr] | None = None
 
@@ -319,3 +420,5 @@ class Nl2SqlTraceEvent(BaseModel):
 
 
 TRACE_EVENTS_RESPONSE_ADAPTER = TypeAdapter(list[Nl2SqlTraceEvent])
+GENERIC_OBJECT_RESPONSE_ADAPTER = TypeAdapter(dict[str, Any])
+GENERIC_LIST_RESPONSE_ADAPTER = TypeAdapter(list[dict[str, Any]])
