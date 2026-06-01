@@ -15,6 +15,7 @@ from app.modules.nl2sql.schemas.models import (
     ASK_RESPONSE_ADAPTER,
     EMBEDDED_INGEST_RESPONSE_ADAPTER,
     FAILURE_LOG_RESPONSE_ADAPTER,
+    GENERIC_OBJECT_RESPONSE_ADAPTER,
     GENERATE_SQL_RESPONSE_ADAPTER,
     INGEST_GROUPS_RESPONSE_ADAPTER,
     INGEST_RESPONSE_ADAPTER,
@@ -145,6 +146,119 @@ class Nl2SqlClient:
             response_adapter=TEACH_RESPONSE_ADAPTER,
         )
 
+    async def health(
+        self,
+        *,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._get(
+            upstream_path="/health",
+            query_params={},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def health_config(
+        self,
+        *,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._get(
+            upstream_path="/health/config",
+            query_params={},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def health_runtime(
+        self,
+        *,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._get(
+            upstream_path="/health/runtime",
+            query_params={},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def health_llm(
+        self,
+        *,
+        role: str,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._get(
+            upstream_path="/health/llm",
+            query_params={"role": role},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def health_vector(
+        self,
+        *,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._get(
+            upstream_path="/health/vector",
+            query_params={},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def metrics_llm(
+        self,
+        *,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._get(
+            upstream_path="/metrics/llm",
+            query_params={},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def metrics_teach(
+        self,
+        *,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._get(
+            upstream_path="/metrics/teach",
+            query_params={},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
     async def list_instructions(
         self,
         *,
@@ -269,6 +383,267 @@ class Nl2SqlClient:
             request_id=request_id,
             route_path=route_path,
             response_adapter=_TraceEnvelopeAdapter(TRACE_EVENTS_RESPONSE_ADAPTER),
+        )
+
+    async def telemetry_recent(
+        self,
+        *,
+        limit: int,
+        endpoint: str | None,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        query_params: dict[str, str | None] = {"limit": str(limit), "endpoint": endpoint}
+        return await self._get(
+            upstream_path="/telemetry/recent",
+            query_params=query_params,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def telemetry_summary(
+        self,
+        *,
+        endpoint: str | None,
+        since_minutes: int,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        query_params: dict[str, str | None] = {
+            "endpoint": endpoint,
+            "since_minutes": str(since_minutes),
+        }
+        return await self._get(
+            upstream_path="/telemetry/summary",
+            query_params=query_params,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def cache_stats(
+        self,
+        *,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._get(
+            upstream_path="/cache/stats",
+            query_params={},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def cache_clear(
+        self,
+        *,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._post(
+            upstream_path="/cache/clear",
+            request_data=None,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def governance_rules(
+        self,
+        *,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._get(
+            upstream_path="/governance/rules",
+            query_params={},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def governance_validate(
+        self,
+        *,
+        request_data,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._post(
+            upstream_path="/governance/validate",
+            request_data=request_data,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def benchmark_add_case(
+        self,
+        *,
+        request_data,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._post(
+            upstream_path="/benchmark/cases",
+            request_data=request_data,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def benchmark_list_cases(
+        self,
+        *,
+        limit: int,
+        active_only: bool,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._get(
+            upstream_path="/benchmark/cases",
+            query_params={"limit": str(limit), "active_only": str(active_only).lower()},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def ingest_groups_status(
+        self,
+        *,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._get(
+            upstream_path="/ingest/groups/status",
+            query_params={},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def query(
+        self,
+        *,
+        request_data: Nl2SqlRequest,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._post(
+            upstream_path="/query",
+            request_data=request_data,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def query_groups(
+        self,
+        *,
+        request_data: Nl2SqlRequest,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._post(
+            upstream_path="/query/groups",
+            request_data=request_data,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def list_pending_teach_confirmations(
+        self,
+        *,
+        limit: int,
+        include_expired: bool,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._get(
+            upstream_path="/teach/pending",
+            query_params={
+                "limit": str(limit),
+                "include_expired": str(include_expired).lower(),
+            },
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def cleanup_pending_teach_confirmations(
+        self,
+        *,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._post(
+            upstream_path="/teach/pending/cleanup",
+            request_data=None,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def delete_instruction(
+        self,
+        *,
+        instruction_id: int,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._delete(
+            upstream_path=f"/instructions/{instruction_id}",
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def pattern_feedback(
+        self,
+        *,
+        request_data,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._post(
+            upstream_path="/patterns/feedback",
+            request_data=request_data,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
         )
 
     async def _post(
@@ -452,7 +827,7 @@ class Nl2SqlClient:
                 },
             ) from exc
 
-        normalized = validated.model_dump(mode="json")
+        normalized = _normalize_validated_payload(validated)
         warning_codes = _warning_codes(normalized)
 
         logger.info(
@@ -618,7 +993,7 @@ class Nl2SqlClient:
         request_id: str,
         route_path: str,
         response_adapter,
-    ) -> list[dict[str, Any]]:
+    ) -> Any:
         settings = get_settings()
         base_url = str(getattr(settings, "NL2SQL_SERVICE_BASE_URL", "") or "").strip().rstrip("/")
         timeout_seconds = float(getattr(settings, "NL2SQL_TIMEOUT_SECONDS", 30))
@@ -701,7 +1076,96 @@ class Nl2SqlClient:
                 },
             ) from exc
 
-        return [item.model_dump(mode="json") for item in validated]
+        return _normalize_validated_payload(validated)
+
+    async def _delete(
+        self,
+        *,
+        upstream_path: str,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+        response_adapter,
+    ) -> dict[str, Any]:
+        settings = get_settings()
+        base_url = str(getattr(settings, "NL2SQL_SERVICE_BASE_URL", "") or "").strip().rstrip("/")
+        timeout_seconds = float(getattr(settings, "NL2SQL_TIMEOUT_SECONDS", 30))
+
+        if not base_url:
+            raise Nl2SqlClientError(
+                503,
+                error_code="NL2SQL_NOT_CONFIGURED",
+                message="NL2SQL service base URL is not configured",
+                data={"request_id": request_id},
+            )
+
+        upstream_url = f"{base_url}{upstream_path}"
+        started = time.perf_counter()
+        try:
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                response = await client.delete(
+                    upstream_url,
+                    headers={
+                        "Accept": "application/json",
+                        "X-Request-ID": request_id,
+                    },
+                )
+        except httpx.TimeoutException as exc:
+            raise Nl2SqlClientError(
+                502,
+                error_code="NL2SQL_UPSTREAM_TIMEOUT",
+                message=f"NL2SQL upstream timed out while calling {upstream_path}",
+                data={"request_id": request_id, "upstream_path": upstream_path},
+            ) from exc
+        except httpx.RequestError as exc:
+            raise Nl2SqlClientError(
+                502,
+                error_code="NL2SQL_UPSTREAM_UNAVAILABLE",
+                message=f"Could not reach NL2SQL upstream while calling {upstream_path}",
+                data={"request_id": request_id, "upstream_path": upstream_path},
+            ) from exc
+
+        logger.info(
+            "NL2SQL → DELETE   | request_id=%s user_id=%s route=%s upstream_url=%s "
+            "http_status=%d duration_ms=%d",
+            request_id,
+            actor_user_id,
+            route_path,
+            upstream_url,
+            response.status_code,
+            _duration_ms(started),
+        )
+
+        if response.status_code != 200:
+            message, details = _extract_error_message(response)
+            raise Nl2SqlClientError(
+                response.status_code,
+                error_code="NL2SQL_UPSTREAM_ERROR",
+                message=message,
+                data={
+                    "request_id": request_id,
+                    "upstream_path": upstream_path,
+                    "upstream_status": response.status_code,
+                    "details": details,
+                },
+            )
+
+        try:
+            payload = response.json()
+            validated = response_adapter.validate_python(payload)
+        except (ValueError, ValidationError) as exc:
+            raise Nl2SqlClientError(
+                502,
+                error_code="NL2SQL_INVALID_RESPONSE",
+                message="NL2SQL upstream returned an unexpected response shape",
+                data={
+                    "request_id": request_id,
+                    "upstream_path": upstream_path,
+                    "errors": getattr(exc, "errors", lambda: [])(),
+                },
+            ) from exc
+
+        return _normalize_validated_payload(validated)
 
     @staticmethod
     def _build_upstream_payload(
@@ -733,6 +1197,17 @@ def _warning_codes(payload: dict[str, Any]) -> list[str]:
             if code:
                 warning_codes.append(code)
     return warning_codes
+
+
+def _normalize_validated_payload(validated: Any) -> Any:
+    if hasattr(validated, "model_dump"):
+        return validated.model_dump(mode="json")
+    if isinstance(validated, list):
+        return [
+            item.model_dump(mode="json") if hasattr(item, "model_dump") else item
+            for item in validated
+        ]
+    return validated
 
 
 def _extract_error_message(response: httpx.Response) -> tuple[str, dict[str, Any]]:

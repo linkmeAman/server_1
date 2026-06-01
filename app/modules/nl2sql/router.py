@@ -14,12 +14,20 @@ from app.core.prism_guard import CallerContext
 from app.core.response import error_response, success_response
 from app.modules.nl2sql.dependencies import require_nl2sql_access
 from app.modules.nl2sql.schemas.models import (
+    Nl2SqlBenchmarkCaseCreateRequest,
+    Nl2SqlBenchmarkCasesQuery,
     Nl2SqlConfirmTeachRequest,
+    Nl2SqlGovernanceValidateRequest,
+    Nl2SqlHealthLlmQuery,
     Nl2SqlIngestGroupsRequest,
     Nl2SqlIngestKnowledgeRequest,
     Nl2SqlInstructionsQuery,
+    Nl2SqlPatternFeedbackRequest,
     Nl2SqlRequest,
     Nl2SqlTeachRequest,
+    Nl2SqlTeachPendingQuery,
+    Nl2SqlTelemetryRecentQuery,
+    Nl2SqlTelemetrySummaryQuery,
 )
 from app.modules.nl2sql.services.client import Nl2SqlClient
 from app.modules.notifications.services.publisher import publish_notification
@@ -413,6 +421,109 @@ async def teach_confirm(
     return _success_response(result, "NL2SQL teach confirmation completed", request_id)
 
 
+@router.get("/health")
+async def health(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.health(
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL health retrieved", request_id)
+
+
+@router.get("/health/config")
+async def health_config(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.health_config(
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL config health retrieved", request_id)
+
+
+@router.get("/health/runtime")
+async def health_runtime(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.health_runtime(
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL runtime health retrieved", request_id)
+
+
+@router.get("/health/llm")
+async def health_llm(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    payload, error = _parse_query_params(request, Nl2SqlHealthLlmQuery)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.health_llm(
+        role=payload.role,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL LLM health retrieved", request_id)
+
+
+@router.get("/health/vector")
+async def health_vector(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.health_vector(
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL vector health retrieved", request_id)
+
+
+@router.get("/metrics/llm")
+async def metrics_llm(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.metrics_llm(
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL LLM metrics retrieved", request_id)
+
+
+@router.get("/metrics/teach")
+async def metrics_teach(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.metrics_teach(
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL teach metrics retrieved", request_id)
+
+
 @router.get("/instructions")
 async def list_instructions(
     request: Request,
@@ -433,6 +544,22 @@ async def list_instructions(
     return _success_response(result, "NL2SQL instructions retrieved", request_id)
 
 
+@router.delete("/instructions/{instruction_id}")
+async def delete_instruction(
+    instruction_id: int,
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.delete_instruction(
+        instruction_id=instruction_id,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL instruction deactivated", request_id)
+
+
 @router.post("/ingest/groups")
 async def ingest_groups(
     request: Request,
@@ -450,6 +577,20 @@ async def ingest_groups(
         route_path=request.url.path,
     )
     return _success_response(result, "NL2SQL group ingest completed", request_id)
+
+
+@router.get("/ingest/groups/status")
+async def ingest_groups_status(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.ingest_groups_status(
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL group ingest status retrieved", request_id)
 
 
 @router.post("/ingest/knowledge")
@@ -499,6 +640,84 @@ async def ingest_instructions(
     return _success_response(result, "NL2SQL instruction ingest completed", request_id)
 
 
+@router.post("/query")
+async def query(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    payload, error = await _parse_request_body(request, Nl2SqlRequest)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request, payload)
+    result = await nl2sql_client.query(
+        request_data=payload,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL retrieval completed", request_id)
+
+
+@router.post("/query/groups")
+async def query_groups(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    payload, error = await _parse_request_body(request, Nl2SqlRequest)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request, payload)
+    result = await nl2sql_client.query_groups(
+        request_data=payload,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL grouped retrieval completed", request_id)
+
+
+@router.get("/telemetry/recent")
+async def telemetry_recent(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    payload, error = _parse_query_params(request, Nl2SqlTelemetryRecentQuery)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.telemetry_recent(
+        limit=payload.limit,
+        endpoint=payload.endpoint,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL recent telemetry retrieved", request_id)
+
+
+@router.get("/telemetry/summary")
+async def telemetry_summary(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    payload, error = _parse_query_params(request, Nl2SqlTelemetrySummaryQuery)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.telemetry_summary(
+        endpoint=payload.endpoint,
+        since_minutes=payload.since_minutes,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL telemetry summary retrieved", request_id)
+
+
 @router.get("/failures")
 async def list_failures(
     request: Request,
@@ -515,6 +734,159 @@ async def list_failures(
         route_path=request.url.path,
     )
     return _success_response({"results": result, "total": len(result)}, "NL2SQL failure log retrieved", request_id)
+
+
+@router.get("/teach/pending")
+async def list_pending_teach_confirmations(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    payload, error = _parse_query_params(request, Nl2SqlTeachPendingQuery)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.list_pending_teach_confirmations(
+        limit=payload.limit,
+        include_expired=payload.include_expired,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL pending teach confirmations retrieved", request_id)
+
+
+@router.post("/teach/pending/cleanup")
+async def cleanup_pending_teach_confirmations(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.cleanup_pending_teach_confirmations(
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL pending teach confirmations cleaned", request_id)
+
+
+@router.get("/cache/stats")
+async def cache_stats(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.cache_stats(
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL cache stats retrieved", request_id)
+
+
+@router.post("/cache/clear")
+async def cache_clear(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.cache_clear(
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL caches cleared", request_id)
+
+
+@router.get("/governance/rules")
+async def governance_rules(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.governance_rules(
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL governance rules retrieved", request_id)
+
+
+@router.post("/governance/validate")
+async def governance_validate(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    payload, error = await _parse_request_body(request, Nl2SqlGovernanceValidateRequest)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.governance_validate(
+        request_data=payload,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL governance validation completed", request_id)
+
+
+@router.post("/benchmark/cases")
+async def benchmark_add_case(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    payload, error = await _parse_request_body(request, Nl2SqlBenchmarkCaseCreateRequest)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.benchmark_add_case(
+        request_data=payload,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL benchmark case stored", request_id)
+
+
+@router.get("/benchmark/cases")
+async def benchmark_list_cases(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    payload, error = _parse_query_params(request, Nl2SqlBenchmarkCasesQuery)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.benchmark_list_cases(
+        limit=payload.limit,
+        active_only=payload.active_only,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL benchmark cases retrieved", request_id)
+
+
+@router.post("/patterns/feedback")
+async def pattern_feedback(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    payload, error = await _parse_request_body(request, Nl2SqlPatternFeedbackRequest)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.pattern_feedback(
+        request_data=payload,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL pattern feedback applied", request_id)
 
 
 @router.get("/telemetry/trace/{trace_request_id}")

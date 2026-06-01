@@ -200,6 +200,102 @@ class TestNl2SqlRoutes(unittest.TestCase):
         self.assertEqual(response.headers.get("X-Request-ID"), "req-123")
         self.assertEqual(mock_call.await_args.kwargs["request_id"], "req-123")
 
+    def test_health_runtime_route_returns_runtime_payload(self) -> None:
+        payload = {
+            "status": "ok",
+            "mysql_target": {"status": "ok", "issues": []},
+            "schema_assets": {"status": "ok", "issues": []},
+        }
+
+        with patch.object(nl2sql_client, "health_runtime", AsyncMock(return_value=payload)) as mock_call:
+            response = self.client.get("/api/nl2sql/v1/health/runtime")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["data"]["mysql_target"]["status"], "ok")
+        self.assertEqual(mock_call.await_count, 1)
+
+    def test_query_groups_route_forwards_payload(self) -> None:
+        payload = {
+            "matched_groups": ["billing"],
+            "tables_in_scope": ["invoice"],
+            "context": "Group: billing",
+            "results": [],
+        }
+
+        with patch.object(nl2sql_client, "query_groups", AsyncMock(return_value=payload)) as mock_call:
+            response = self.client.post(
+                "/api/nl2sql/v1/query/groups",
+                json={"query": "show unpaid invoices by counselor", "top_k": 3},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["data"]["matched_groups"], ["billing"])
+        self.assertEqual(mock_call.await_count, 1)
+
+    def test_pending_teach_route_forwards_query_params(self) -> None:
+        payload = {
+            "results": [
+                {
+                    "token": "abc123",
+                    "instruction_type": "term_mapping",
+                    "content": "counselor means employee",
+                    "is_expired": False,
+                }
+            ],
+            "stats": {"pending_active_count": 1},
+        }
+
+        with patch.object(
+            nl2sql_client,
+            "list_pending_teach_confirmations",
+            AsyncMock(return_value=payload),
+        ) as mock_call:
+            response = self.client.get("/api/nl2sql/v1/teach/pending?limit=20&include_expired=false")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["data"]["stats"]["pending_active_count"], 1)
+        self.assertEqual(mock_call.await_count, 1)
+
+    def test_delete_instruction_route_forwards_path_param(self) -> None:
+        payload = {"deactivated": True, "instruction_id": 7}
+
+        with patch.object(nl2sql_client, "delete_instruction", AsyncMock(return_value=payload)) as mock_call:
+            response = self.client.delete("/api/nl2sql/v1/instructions/7")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["data"]["deactivated"])
+        self.assertEqual(mock_call.await_args.kwargs["instruction_id"], 7)
+
+    def test_cache_clear_route_returns_cache_counts(self) -> None:
+        payload = {
+            "embed_cleared": 1,
+            "sql_cleared": 2,
+            "semantic_sql_cleared": 3,
+            "ask_cleared": 4,
+            "db_query_cache_cleared": 5,
+        }
+
+        with patch.object(nl2sql_client, "cache_clear", AsyncMock(return_value=payload)) as mock_call:
+            response = self.client.post("/api/nl2sql/v1/cache/clear", json={})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data"]["db_query_cache_cleared"], 5)
+        self.assertEqual(mock_call.await_count, 1)
+
+    def test_benchmark_list_route_forwards_query_params(self) -> None:
+        payload = {"results": [{"id": 1, "query": "show invoices"}]}
+
+        with patch.object(nl2sql_client, "benchmark_list_cases", AsyncMock(return_value=payload)) as mock_call:
+            response = self.client.get("/api/nl2sql/v1/benchmark/cases?limit=25&active_only=true")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data"]["results"][0]["id"], 1)
+        self.assertEqual(mock_call.await_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
