@@ -5,9 +5,11 @@ from __future__ import annotations
 import mimetypes
 import os
 import re
+import secrets
+import time
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -79,7 +81,7 @@ class EmployeeCreateRequest(BaseModel):
     allowance: float | None = Field(default=None, ge=0)
     employee_type: int | None = Field(default=0)
     status: int | None = Field(default=1)
-    grade: int | None = Field(default=None)
+    grade: int | None = Field(default=1)
     # Contact additions
     mobile2: str | None = Field(default=None, max_length=20)
     country_code_2: str | None = Field(default="+91", max_length=10)
@@ -504,8 +506,94 @@ async def get_employee_form_meta(
     return success_response(data=data, message="Employee form meta fetched").model_dump(mode="json")
 
 
+@router.post("/documents/contact/{contact_id}/{slot}")
+async def upload_contact_document(
+    contact_id: int,
+    slot: int,
+    file: UploadFile = File(...),
+    caller: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+    central_db: AsyncSession = Depends(get_central_db_session),
+):
+    if slot not in {1, 2, 3}:
+        raise HTTPException(status_code=422, detail="slot must be 1, 2, or 3")
+
+    if not caller.is_super:
+        pdp_result = await evaluate(
+            PDPRequest(
+                user_id=caller.user_id,
+                action="employee:update",
+                resource_type="employee",
+                resource_id=str(contact_id),
+            ),
+            central_db,
+        )
+        if pdp_result.decision != "Allow":
+            raise HTTPException(status_code=403, detail="PRISM: Not authorized to update employees")
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="File is required")
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in _ALLOWED_DOC_EXTS:
+        raise HTTPException(status_code=400, detail="File must be JPG or PNG")
+
+    from app.core.settings import get_settings  # local import to avoid circular deps
+
+    settings = get_settings()
+    base_dir = os.path.realpath(settings.CONTACT_DOCUMENT_PATH)
+    os.makedirs(base_dir, exist_ok=True)
+
+    filename = f"{secrets.randbelow(1000) + 1}_{int(time.time())}{ext}"
+    target = os.path.realpath(os.path.join(base_dir, filename))
+
+    if not target.startswith(base_dir + os.sep):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    written = False
+    size = 0
+    try:
+        with open(target, "wb") as out:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > _MAX_DOC_BYTES:
+                    raise HTTPException(status_code=413, detail="File size must be less than 10 MB")
+                out.write(chunk)
+        written = True
+    finally:
+        await file.close()
+        if not written and os.path.isfile(target):
+            try:
+                os.remove(target)
+            except OSError:
+                pass
+
+    await service.save_contact_document(main_db, contact_id, slot, filename)
+    await main_db.commit()
+    return success_response(
+        data={"filename": filename, "slot": slot},
+        message="Document uploaded",
+    ).model_dump(mode="json")
+
+
+@router.get("/pincodes/lookup")
+async def lookup_pincode(
+    pincode: str = Query(..., min_length=3, max_length=20),
+    _: CallerContext = Depends(require_any_caller),
+    main_db: AsyncSession = Depends(get_main_db_session),
+):
+    """Lookup city/state/country for a pincode."""
+    data = await service.lookup_pincode(main_db, pincode)
+    return success_response(data=data, message="Pincode lookup fetched").model_dump(mode="json")
+
+
 # Filename validation — allow only safe chars (alphanumeric, hyphens, underscores, dots)
 _SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
+_ALLOWED_DOC_EXTS = {".jpg", ".jpeg", ".png"}
+_MAX_DOC_BYTES = 10 * 1024 * 1024
 
 
 @router.get("/documents/contact/{filename}")
@@ -525,18 +613,26 @@ async def serve_contact_document(
     from app.core.settings import get_settings  # local import to avoid circular deps
 
     settings = get_settings()
-    base_dir = os.path.realpath(settings.CONTACT_DOCUMENT_PATH)
-    target = os.path.realpath(os.path.join(base_dir, filename))
+    base_dir = settings.CONTACT_DOCUMENT_PATH
+    candidate_dirs = [base_dir]
 
-    # Guard against path traversal
-    if not target.startswith(base_dir + os.sep) and target != base_dir:
-        raise HTTPException(status_code=400, detail="Invalid filename")
+    if not os.path.isabs(base_dir):
+        module_root = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+        candidate_dirs.append(os.path.join(module_root, base_dir))
 
-    if not os.path.isfile(target):
-        raise HTTPException(status_code=404, detail="Document not found")
+    for candidate in candidate_dirs:
+        resolved_base = os.path.realpath(candidate)
+        target = os.path.realpath(os.path.join(resolved_base, filename))
 
-    media_type, _ = mimetypes.guess_type(filename)
-    return FileResponse(target, media_type=media_type or "application/octet-stream")
+        # Guard against path traversal
+        if not target.startswith(resolved_base + os.sep) and target != resolved_base:
+            continue
+
+        if os.path.isfile(target):
+            media_type, _ = mimetypes.guess_type(filename)
+            return FileResponse(target, media_type=media_type or "application/octet-stream")
+
+    raise HTTPException(status_code=404, detail="Document not found")
 
 
 @router.get("/employees/{employee_id}")
