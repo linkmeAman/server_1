@@ -2136,10 +2136,8 @@ class WorkforceRepository:
                     p.POSTAL_CODE AS pincode,
                     p.CITY AS city,
                     p.STATE AS state,
-                    p.COUNTRY AS country_code,
-                    c.name AS country
+                    p.COUNTRY AS country_code
                 FROM pincodes p
-                LEFT JOIN countries c ON c.iso2 = p.COUNTRY
                 WHERE p.POSTAL_CODE = :pincode
                 LIMIT 1
                 """
@@ -2154,15 +2152,35 @@ class WorkforceRepository:
             text_value = str(value or "").strip()
             return text_value or None
 
-        country_name = _clean(row.get("country"))
         country_code = _clean(row.get("country_code"))
         return {
             "pincode": _clean(row.get("pincode")) or cleaned,
             "city": _clean(row.get("city")),
             "state": _clean(row.get("state")),
             "country_code": country_code,
-            "country": country_name or country_code,
+            "country": None,
         }
+
+    async def lookup_country_name(self, db: AsyncSession, country_code: str) -> str | None:
+        cleaned = str(country_code or "").strip()
+        if not cleaned:
+            return None
+        result = await db.execute(
+            text(
+                """
+                SELECT name
+                FROM countries
+                WHERE iso2 = :country_code
+                LIMIT 1
+                """
+            ),
+            {"country_code": cleaned},
+        )
+        row = result.mappings().first()
+        if not row:
+            return None
+        name = str(row.get("name") or "").strip()
+        return name or None
 
     async def get_next_ecode(self, db: AsyncSession) -> int:
         """Return MAX(ecode) + 1 from the employee table."""
