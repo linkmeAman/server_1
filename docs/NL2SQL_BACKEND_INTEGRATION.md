@@ -41,6 +41,8 @@ Current app-facing wrapper routes in `server_1`:
 | `GET` | `/api/nl2sql/v1/health/runtime` | `/health/runtime` |
 | `GET` | `/api/nl2sql/v1/health/llm` | `/health/llm` |
 | `GET` | `/api/nl2sql/v1/health/vector` | `/health/vector` |
+| `GET` | `/api/nl2sql/v1/config/model-routing` | `/config/model-routing` |
+| `PATCH` | `/api/nl2sql/v1/config/model-routing` | `/config/model-routing` |
 | `GET` | `/api/nl2sql/v1/metrics/llm` | `/metrics/llm` |
 | `GET` | `/api/nl2sql/v1/metrics/teach` | `/metrics/teach` |
 | `GET` | `/api/nl2sql/v1/telemetry/recent` | `/telemetry/recent` |
@@ -103,6 +105,8 @@ Canonical upstream route details live in the standalone docs:
 ## Access Control
 
 The wrapper remains gated by `require_nl2sql_access`.
+
+- `PATCH /config/model-routing` additionally requires `caller.is_super`
 
 - action: `ai-chat:read`
 - resource type: `ai-chat`
@@ -302,6 +306,15 @@ Returned cache metadata:
 - `db_semantic`
 
 Teach and ingest mutations bump the persistent cache epoch and clear in-memory caches.
+
+## Model Routing Controls
+
+The wrapper exposes the live model routing surface from the standalone service:
+
+- `GET /api/nl2sql/v1/config/model-routing` returns the current task-to-model mapping for `llm`, `sql`, `reasoning`, `query_rewrite`, `answer`, and `embedding`
+- `PATCH /api/nl2sql/v1/config/model-routing` updates the running standalone process immediately
+- patch requests require a super caller through `server_1`
+- these changes are runtime-only and are not persisted to the env file or across restarts
 
 ## Teach Semantics
 

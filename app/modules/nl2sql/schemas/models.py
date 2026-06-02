@@ -340,6 +340,63 @@ class Nl2SqlIngestEmbeddedRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+class Nl2SqlModelRoutingPatchRequest(BaseModel):
+    llm_provider: str | None = None
+    llm_model: str | None = None
+    llm_api_key: str | None = None
+    llm_base_url: str | None = None
+    llm_fallback_provider: str | None = None
+    llm_fallback_model: str | None = None
+    llm_fallback_api_key: str | None = None
+    llm_fallback_base_url: str | None = None
+
+    sql_model_provider: str | None = None
+    sql_model: str | None = None
+    sql_model_api_key: str | None = None
+    sql_model_base_url: str | None = None
+    sql_fallback_provider: str | None = None
+    sql_fallback_model: str | None = None
+    sql_fallback_api_key: str | None = None
+    sql_fallback_base_url: str | None = None
+
+    reasoning_model_provider: str | None = None
+    reasoning_model: str | None = None
+    reasoning_model_api_key: str | None = None
+    reasoning_model_base_url: str | None = None
+    reasoning_fallback_provider: str | None = None
+    reasoning_fallback_model: str | None = None
+    reasoning_fallback_api_key: str | None = None
+    reasoning_fallback_base_url: str | None = None
+
+    query_rewrite_model_provider: str | None = None
+    query_rewrite_model: str | None = None
+    query_rewrite_model_api_key: str | None = None
+    query_rewrite_model_base_url: str | None = None
+    query_rewrite_fallback_provider: str | None = None
+    query_rewrite_fallback_model: str | None = None
+    query_rewrite_fallback_api_key: str | None = None
+    query_rewrite_fallback_base_url: str | None = None
+
+    answer_model_provider: str | None = None
+    answer_model: str | None = None
+    answer_model_api_key: str | None = None
+    answer_model_base_url: str | None = None
+    answer_fallback_provider: str | None = None
+    answer_fallback_model: str | None = None
+    answer_fallback_api_key: str | None = None
+    answer_fallback_base_url: str | None = None
+
+    embedding_provider: str | None = None
+    embedding_model: str | None = None
+    embedding_api_key: str | None = None
+    embedding_base_url: str | None = None
+    embedding_api_url: str | None = None
+
+    startup_enforcement_mode: str | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class Nl2SqlEnrichmentSummary(BaseModel):
     groups_with_columns: int
     groups_without_columns: int

@@ -25,6 +25,7 @@ from app.modules.nl2sql.schemas.models import (
     Nl2SqlConfirmTeachRequest,
     Nl2SqlIngestGroupsRequest,
     Nl2SqlIngestKnowledgeRequest,
+    Nl2SqlModelRoutingPatchRequest,
     Nl2SqlRequest,
     Nl2SqlTeachRequest,
 )
@@ -220,6 +221,22 @@ class Nl2SqlClient:
     ) -> dict[str, Any]:
         return await self._get(
             upstream_path="/health/vector",
+            query_params={},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def get_model_routing(
+        self,
+        *,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._get(
+            upstream_path="/config/model-routing",
             query_params={},
             actor_user_id=actor_user_id,
             request_id=request_id,
@@ -646,6 +663,23 @@ class Nl2SqlClient:
             response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
         )
 
+    async def patch_model_routing(
+        self,
+        *,
+        request_data: Nl2SqlModelRoutingPatchRequest,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._patch(
+            upstream_path="/config/model-routing",
+            request_data=request_data,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
     async def _post(
         self,
         *,
@@ -845,6 +879,191 @@ class Nl2SqlClient:
             normalized.get("row_count"),
             normalized.get("tables_used"),
             (normalized.get("sql") or "")[:120],
+        )
+        return normalized
+
+    async def _patch(
+        self,
+        *,
+        upstream_path: str,
+        request_data,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+        response_adapter,
+    ) -> dict[str, Any]:
+        settings = get_settings()
+        base_url = str(getattr(settings, "NL2SQL_SERVICE_BASE_URL", "") or "").strip().rstrip("/")
+        timeout_seconds = float(getattr(settings, "NL2SQL_TIMEOUT_SECONDS", 30))
+        default_top_k = int(getattr(settings, "NL2SQL_DEFAULT_TOP_K", 5))
+
+        if not base_url:
+            raise Nl2SqlClientError(
+                503,
+                error_code="NL2SQL_NOT_CONFIGURED",
+                message="NL2SQL service base URL is not configured",
+                data={"request_id": request_id},
+            )
+
+        upstream_url = f"{base_url}{upstream_path}"
+        upstream_payload = self._build_upstream_payload(
+            request_data=request_data,
+            request_id=request_id,
+            default_top_k=default_top_k,
+        )
+
+        started = time.perf_counter()
+
+        logger.info(
+            "NL2SQL → PATCH_REQUEST | request_id=%s user_id=%s route=%s upstream_url=%s "
+            "payload=%s timeout_s=%.0f",
+            request_id,
+            actor_user_id,
+            route_path,
+            upstream_url,
+            upstream_payload,
+            timeout_seconds,
+        )
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                response = await client.patch(
+                    upstream_url,
+                    json=upstream_payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "X-Request-ID": request_id,
+                    },
+                )
+        except httpx.TimeoutException as exc:
+            duration_ms = _duration_ms(started)
+            logger.warning(
+                "NL2SQL → TIMEOUT  | request_id=%s user_id=%s route=%s upstream_url=%s "
+                "duration_ms=%d timeout_s=%.0f error=%s",
+                request_id,
+                actor_user_id,
+                route_path,
+                upstream_url,
+                duration_ms,
+                timeout_seconds,
+                str(exc),
+            )
+            raise Nl2SqlClientError(
+                502,
+                error_code="NL2SQL_UPSTREAM_TIMEOUT",
+                message=f"NL2SQL upstream timed out while calling {upstream_path}",
+                data={"request_id": request_id, "upstream_path": upstream_path},
+            ) from exc
+        except httpx.RequestError as exc:
+            duration_ms = _duration_ms(started)
+            logger.warning(
+                "NL2SQL → UNAVAILABLE | request_id=%s user_id=%s route=%s upstream_url=%s "
+                "duration_ms=%d error_type=%s error=%s",
+                request_id,
+                actor_user_id,
+                route_path,
+                upstream_url,
+                duration_ms,
+                type(exc).__name__,
+                str(exc),
+            )
+            raise Nl2SqlClientError(
+                502,
+                error_code="NL2SQL_UPSTREAM_UNAVAILABLE",
+                message=f"Could not reach NL2SQL upstream while calling {upstream_path}",
+                data={"request_id": request_id, "upstream_path": upstream_path},
+            ) from exc
+
+        duration_ms = _duration_ms(started)
+
+        if response.status_code != 200:
+            message, details = _extract_error_message(response)
+            raw_body = response.text[:2000] if response.text else ""
+            logger.warning(
+                "NL2SQL → ERROR    | request_id=%s user_id=%s route=%s upstream_url=%s "
+                "http_status=%d duration_ms=%d message=%r body_preview=%r",
+                request_id,
+                actor_user_id,
+                route_path,
+                upstream_url,
+                response.status_code,
+                duration_ms,
+                message,
+                raw_body,
+            )
+            raise Nl2SqlClientError(
+                response.status_code,
+                error_code="NL2SQL_UPSTREAM_ERROR",
+                message=message,
+                data={
+                    "request_id": request_id,
+                    "upstream_path": upstream_path,
+                    "upstream_status": response.status_code,
+                    "details": details,
+                },
+            )
+
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            logger.warning(
+                "NL2SQL → INVALID_JSON | request_id=%s user_id=%s route=%s upstream_url=%s "
+                "http_status=%d duration_ms=%d body_preview=%r error=%s",
+                request_id,
+                actor_user_id,
+                route_path,
+                upstream_url,
+                response.status_code,
+                duration_ms,
+                response.text[:500],
+                str(exc),
+            )
+            raise Nl2SqlClientError(
+                502,
+                error_code="NL2SQL_INVALID_RESPONSE",
+                message="NL2SQL upstream returned invalid JSON",
+                data={"request_id": request_id, "upstream_path": upstream_path},
+            ) from exc
+
+        try:
+            validated = response_adapter.validate_python(payload)
+        except ValidationError as exc:
+            logger.warning(
+                "NL2SQL → INVALID_SCHEMA | request_id=%s user_id=%s route=%s upstream_url=%s "
+                "http_status=%d duration_ms=%d validation_errors=%s",
+                request_id,
+                actor_user_id,
+                route_path,
+                upstream_url,
+                response.status_code,
+                duration_ms,
+                exc.errors(),
+            )
+            raise Nl2SqlClientError(
+                502,
+                error_code="NL2SQL_INVALID_RESPONSE",
+                message="NL2SQL upstream returned an unexpected response shape",
+                data={
+                    "request_id": request_id,
+                    "upstream_path": upstream_path,
+                    "errors": exc.errors(),
+                },
+            ) from exc
+
+        normalized = _normalize_validated_payload(validated)
+        warning_codes = _warning_codes(normalized)
+
+        logger.info(
+            "NL2SQL → SUCCESS  | request_id=%s user_id=%s route=%s upstream_url=%s "
+            "duration_ms=%d status=%s warnings=%s",
+            request_id,
+            actor_user_id,
+            route_path,
+            upstream_url,
+            duration_ms,
+            normalized.get("status"),
+            warning_codes,
         )
         return normalized
 
