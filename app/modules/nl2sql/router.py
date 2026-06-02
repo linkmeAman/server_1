@@ -6,7 +6,7 @@ import json
 from collections.abc import AsyncIterator
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 
@@ -22,6 +22,7 @@ from app.modules.nl2sql.schemas.models import (
     Nl2SqlIngestGroupsRequest,
     Nl2SqlIngestKnowledgeRequest,
     Nl2SqlInstructionsQuery,
+    Nl2SqlModelRoutingPatchRequest,
     Nl2SqlPatternFeedbackRequest,
     Nl2SqlRequest,
     Nl2SqlTeachRequest,
@@ -494,6 +495,42 @@ async def health_vector(
         route_path=request.url.path,
     )
     return _success_response(result, "NL2SQL vector health retrieved", request_id)
+
+
+@router.get("/config/model-routing")
+async def get_model_routing(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.get_model_routing(
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL model routing retrieved", request_id)
+
+
+@router.patch("/config/model-routing")
+async def patch_model_routing(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    if not caller.is_super:
+        raise HTTPException(status_code=403, detail="NL2SQL model routing changes require super access")
+
+    payload, error = await _parse_request_body(request, Nl2SqlModelRoutingPatchRequest)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request, payload)
+    result = await nl2sql_client.patch_model_routing(
+        request_data=payload,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL model routing updated", request_id)
 
 
 @router.get("/metrics/llm")

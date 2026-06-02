@@ -11,11 +11,15 @@ from app.modules.nl2sql.router import nl2sql_client, router
 
 class TestNl2SqlRoutes(unittest.TestCase):
     def setUp(self) -> None:
+        self.client = self._make_client(is_super=False)
+
+    def _make_client(self, *, is_super: bool) -> TestClient:
         app = FastAPI()
         app.include_router(router)
-        app.dependency_overrides[require_nl2sql_access] = lambda: CallerContext(user_id=1, is_super=False)
-        self.client = TestClient(app)
-        self.addCleanup(self.client.close)
+        app.dependency_overrides[require_nl2sql_access] = lambda: CallerContext(user_id=1, is_super=is_super)
+        client = TestClient(app)
+        self.addCleanup(client.close)
+        return client
 
     def test_generate_sql_passes_cache_fields(self) -> None:
         payload = {
@@ -215,6 +219,51 @@ class TestNl2SqlRoutes(unittest.TestCase):
         self.assertTrue(body["success"])
         self.assertEqual(body["data"]["mysql_target"]["status"], "ok")
         self.assertEqual(mock_call.await_count, 1)
+
+    def test_get_model_routing_route_returns_payload(self) -> None:
+        payload = {
+            "llm": {"provider": "openai", "model": "gpt-4o-mini"},
+            "sql": {"provider": "ollama", "model": "sqlcoder"},
+        }
+
+        with patch.object(nl2sql_client, "get_model_routing", AsyncMock(return_value=payload)) as mock_call:
+            response = self.client.get("/api/nl2sql/v1/config/model-routing")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["data"]["sql"]["provider"], "ollama")
+        self.assertEqual(mock_call.await_count, 1)
+
+    def test_patch_model_routing_requires_super_access(self) -> None:
+        response = self.client.patch(
+            "/api/nl2sql/v1/config/model-routing",
+            json={"sql_model_provider": "ollama", "sql_model": "sqlcoder"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_patch_model_routing_route_updates_runtime_config(self) -> None:
+        payload = {
+            "updated": True,
+            "model_routing": {"sql": {"provider": "ollama", "model": "sqlcoder"}},
+        }
+        super_client = self._make_client(is_super=True)
+
+        with patch.object(nl2sql_client, "patch_model_routing", AsyncMock(return_value=payload)) as mock_call:
+            response = super_client.patch(
+                "/api/nl2sql/v1/config/model-routing",
+                json={
+                    "sql_model_provider": "ollama",
+                    "sql_model": "sqlcoder",
+                    "startup_enforcement_mode": "warn",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["data"]["model_routing"]["sql"]["provider"], "ollama")
+        self.assertEqual(mock_call.await_args.kwargs["request_data"].sql_model_provider, "ollama")
 
     def test_query_groups_route_forwards_payload(self) -> None:
         payload = {
