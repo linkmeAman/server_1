@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import dataclass
 from typing import Any, AsyncIterator
 
 import httpx
@@ -31,6 +32,12 @@ from app.modules.nl2sql.schemas.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class RawUpstreamResponse:
+    content: bytes
+    content_type: str
 
 
 class _TraceEnvelopeAdapter:
@@ -275,6 +282,83 @@ class Nl2SqlClient:
             route_path=route_path,
             response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
         )
+
+    async def metrics_prometheus(
+        self,
+        *,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> RawUpstreamResponse:
+        return await self._get_raw(
+            upstream_path="/metrics/prometheus",
+            query_params={},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            accept="text/plain",
+            default_media_type="text/plain; version=0.0.4",
+        )
+
+    async def logs_days(
+        self,
+        *,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._get(
+            upstream_path="/logs/days",
+            query_params={},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def logs_recent(
+        self,
+        *,
+        day: str,
+        lines: int,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._get(
+            upstream_path="/logs/recent",
+            query_params={"day": day, "lines": str(lines)},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def logs_stream(
+        self,
+        *,
+        day: str,
+        backlog: int,
+        follow: bool,
+        poll_interval_ms: int,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> AsyncIterator[bytes]:
+        async for chunk in self._get_stream(
+            upstream_path="/logs/stream",
+            query_params={
+                "day": day,
+                "backlog": str(backlog),
+                "follow": str(follow).lower(),
+                "poll_interval_ms": str(poll_interval_ms),
+            },
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            accept="application/x-ndjson, application/json",
+        ):
+            yield chunk
 
     async def list_instructions(
         self,
@@ -1202,6 +1286,164 @@ class Nl2SqlClient:
             upstream_url,
             _duration_ms(started),
         )
+
+    async def _get_stream(
+        self,
+        *,
+        upstream_path: str,
+        query_params: dict[str, str | None],
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+        accept: str,
+    ) -> AsyncIterator[bytes]:
+        settings = get_settings()
+        base_url = str(getattr(settings, "NL2SQL_SERVICE_BASE_URL", "") or "").strip().rstrip("/")
+        timeout_seconds = float(getattr(settings, "NL2SQL_TIMEOUT_SECONDS", 30))
+
+        if not base_url:
+            raise Nl2SqlClientError(
+                503,
+                error_code="NL2SQL_NOT_CONFIGURED",
+                message="NL2SQL service base URL is not configured",
+                data={"request_id": request_id},
+            )
+
+        upstream_url = f"{base_url}{upstream_path}"
+        started = time.perf_counter()
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                async with client.stream(
+                    "GET",
+                    upstream_url,
+                    params={key: value for key, value in query_params.items() if value is not None},
+                    headers={
+                        "Accept": accept,
+                        "X-Request-ID": request_id,
+                    },
+                ) as response:
+                    logger.info(
+                        "NL2SQL → GET_STREAM_HTTP | request_id=%s user_id=%s route=%s upstream_url=%s "
+                        "http_status=%d duration_ms=%d query=%s",
+                        request_id,
+                        actor_user_id,
+                        route_path,
+                        upstream_url,
+                        response.status_code,
+                        _duration_ms(started),
+                        query_params,
+                    )
+                    if response.status_code != 200:
+                        body = (await response.aread()).decode("utf-8", errors="replace")
+                        raise Nl2SqlClientError(
+                            response.status_code,
+                            error_code="NL2SQL_UPSTREAM_ERROR",
+                            message=body or f"NL2SQL upstream stream failed ({response.status_code})",
+                            data={
+                                "request_id": request_id,
+                                "upstream_path": upstream_path,
+                                "upstream_status": response.status_code,
+                            },
+                        )
+
+                    async for chunk in response.aiter_bytes():
+                        if chunk:
+                            yield chunk
+        except httpx.TimeoutException as exc:
+            raise Nl2SqlClientError(
+                502,
+                error_code="NL2SQL_UPSTREAM_TIMEOUT",
+                message=f"NL2SQL upstream timed out while streaming {upstream_path}",
+                data={"request_id": request_id, "upstream_path": upstream_path},
+            ) from exc
+        except httpx.RequestError as exc:
+            raise Nl2SqlClientError(
+                502,
+                error_code="NL2SQL_UPSTREAM_UNAVAILABLE",
+                message=f"Could not reach NL2SQL upstream while streaming {upstream_path}",
+                data={"request_id": request_id, "upstream_path": upstream_path},
+            ) from exc
+
+    async def _get_raw(
+        self,
+        *,
+        upstream_path: str,
+        query_params: dict[str, str | None],
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+        accept: str,
+        default_media_type: str,
+    ) -> RawUpstreamResponse:
+        settings = get_settings()
+        base_url = str(getattr(settings, "NL2SQL_SERVICE_BASE_URL", "") or "").strip().rstrip("/")
+        timeout_seconds = float(getattr(settings, "NL2SQL_TIMEOUT_SECONDS", 30))
+
+        if not base_url:
+            raise Nl2SqlClientError(
+                503,
+                error_code="NL2SQL_NOT_CONFIGURED",
+                message="NL2SQL service base URL is not configured",
+                data={"request_id": request_id},
+            )
+
+        started = time.perf_counter()
+        upstream_url = f"{base_url}{upstream_path}"
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                response = await client.get(
+                    upstream_url,
+                    params={key: value for key, value in query_params.items() if value is not None},
+                    headers={
+                        "Accept": accept,
+                        "X-Request-ID": request_id,
+                    },
+                )
+        except httpx.TimeoutException as exc:
+            raise Nl2SqlClientError(
+                502,
+                error_code="NL2SQL_UPSTREAM_TIMEOUT",
+                message=f"NL2SQL upstream timed out while calling {upstream_path}",
+                data={"request_id": request_id, "upstream_path": upstream_path},
+            ) from exc
+        except httpx.RequestError as exc:
+            raise Nl2SqlClientError(
+                502,
+                error_code="NL2SQL_UPSTREAM_UNAVAILABLE",
+                message=f"Could not reach NL2SQL upstream while calling {upstream_path}",
+                data={"request_id": request_id, "upstream_path": upstream_path},
+            ) from exc
+
+        logger.info(
+            "NL2SQL → RAW_GET  | request_id=%s user_id=%s route=%s upstream_url=%s "
+            "http_status=%d duration_ms=%d query=%s",
+            request_id,
+            actor_user_id,
+            route_path,
+            upstream_url,
+            response.status_code,
+            _duration_ms(started),
+            query_params,
+        )
+
+        if response.status_code != 200:
+            message, details = _extract_error_message(response)
+            raise Nl2SqlClientError(
+                response.status_code,
+                error_code="NL2SQL_UPSTREAM_ERROR",
+                message=message,
+                data={
+                    "request_id": request_id,
+                    "upstream_path": upstream_path,
+                    "upstream_status": response.status_code,
+                    "details": details,
+                },
+            )
+
+        content_type = response.headers.get("content-type", default_media_type).strip() or default_media_type
+        return RawUpstreamResponse(content=response.content, content_type=content_type)
 
     async def _get(
         self,

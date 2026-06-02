@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import ValidationError
 
 from app.core.prism_guard import CallerContext
@@ -22,6 +22,8 @@ from app.modules.nl2sql.schemas.models import (
     Nl2SqlIngestGroupsRequest,
     Nl2SqlIngestKnowledgeRequest,
     Nl2SqlInstructionsQuery,
+    Nl2SqlLogsRecentQuery,
+    Nl2SqlLogsStreamQuery,
     Nl2SqlModelRoutingPatchRequest,
     Nl2SqlPatternFeedbackRequest,
     Nl2SqlRequest,
@@ -559,6 +561,86 @@ async def metrics_teach(
         route_path=request.url.path,
     )
     return _success_response(result, "NL2SQL teach metrics retrieved", request_id)
+
+
+@router.get("/metrics/prometheus")
+async def metrics_prometheus(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.metrics_prometheus(
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    response = Response(content=result.content, media_type="text/plain")
+    response.headers["Content-Type"] = result.content_type
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
+@router.get("/logs/days")
+async def logs_days(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.logs_days(
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL log days retrieved", request_id)
+
+
+@router.get("/logs/recent")
+async def logs_recent(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    payload, error = _parse_query_params(request, Nl2SqlLogsRecentQuery)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.logs_recent(
+        day=payload.day,
+        lines=payload.lines,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL recent logs retrieved", request_id)
+
+
+@router.get("/logs/stream")
+async def logs_stream(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    payload, error = _parse_query_params(request, Nl2SqlLogsStreamQuery)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request)
+    stream = nl2sql_client.logs_stream(
+        day=payload.day,
+        backlog=payload.backlog,
+        follow=payload.follow,
+        poll_interval_ms=payload.poll_interval_ms,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return StreamingResponse(
+        stream,
+        media_type="application/x-ndjson",
+        headers={
+            "X-Request-ID": request_id,
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.get("/instructions")
