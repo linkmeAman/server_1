@@ -345,6 +345,59 @@ class TestNl2SqlRoutes(unittest.TestCase):
         self.assertEqual(response.json()["data"]["results"][0]["id"], 1)
         self.assertEqual(mock_call.await_count, 1)
 
+    def test_logs_days_route_returns_wrapped_payload(self) -> None:
+        payload = {"log_dir": "logs", "results": [{"day": "current", "file": "nl2sql.log"}]}
+
+        with patch.object(nl2sql_client, "logs_days", AsyncMock(return_value=payload)) as mock_call:
+            response = self.client.get("/api/nl2sql/v1/logs/days")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data"]["results"][0]["day"], "current")
+        self.assertEqual(mock_call.await_count, 1)
+
+    def test_logs_recent_route_forwards_query_params(self) -> None:
+        payload = {
+            "day": "current",
+            "file": "nl2sql.log",
+            "path": "logs/nl2sql.log",
+            "lines": ["one"],
+            "total_lines_returned": 1,
+        }
+
+        with patch.object(nl2sql_client, "logs_recent", AsyncMock(return_value=payload)) as mock_call:
+            response = self.client.get("/api/nl2sql/v1/logs/recent?day=current&lines=25")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data"]["total_lines_returned"], 1)
+        self.assertEqual(mock_call.await_args.kwargs["day"], "current")
+        self.assertEqual(mock_call.await_args.kwargs["lines"], 25)
+
+    def test_metrics_prometheus_route_preserves_text_response(self) -> None:
+        payload = type("RawResponse", (), {"content": b"metric 1\n", "content_type": "text/plain; version=0.0.4"})()
+
+        with patch.object(nl2sql_client, "metrics_prometheus", AsyncMock(return_value=payload)) as mock_call:
+            response = self.client.get("/api/nl2sql/v1/metrics/prometheus")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.text, "metric 1\n")
+        self.assertIn("text/plain", response.headers["content-type"])
+        self.assertEqual(mock_call.await_count, 1)
+
+    def test_logs_stream_route_preserves_ndjson_stream(self) -> None:
+        async def fake_stream():
+            yield b"{\"event\":\"log_line\"}\n"
+
+        with patch.object(nl2sql_client, "logs_stream", return_value=fake_stream()) as mock_call:
+            response = self.client.get(
+                "/api/nl2sql/v1/logs/stream?day=current&backlog=10&follow=true&poll_interval_ms=500"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("application/x-ndjson", response.headers["content-type"])
+        self.assertIn("{\"event\":\"log_line\"}", response.text)
+        self.assertEqual(mock_call.call_args.kwargs["backlog"], 10)
+        self.assertEqual(mock_call.call_args.kwargs["poll_interval_ms"], 500)
+
 
 if __name__ == "__main__":
     unittest.main()

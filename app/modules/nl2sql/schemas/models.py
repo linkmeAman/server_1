@@ -249,6 +249,34 @@ class Nl2SqlTelemetrySummaryQuery(BaseModel):
         return normalized or None
 
 
+class Nl2SqlLogsRecentQuery(BaseModel):
+    day: StrictStr = "current"
+    lines: int = Field(default=200, ge=1, le=5000)
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("day")
+    @classmethod
+    def normalize_day(cls, value: str) -> str:
+        normalized = value.strip()
+        return normalized or "current"
+
+
+class Nl2SqlLogsStreamQuery(BaseModel):
+    day: StrictStr = "current"
+    backlog: int = Field(default=100, ge=0, le=5000)
+    follow: bool = True
+    poll_interval_ms: int = Field(default=1000, ge=100, le=60000)
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("day")
+    @classmethod
+    def normalize_stream_day(cls, value: str) -> str:
+        normalized = value.strip()
+        return normalized or "current"
+
+
 class Nl2SqlBenchmarkCaseCreateRequest(BaseModel):
     query: StrictStr
     gold_sql: StrictStr | None = None

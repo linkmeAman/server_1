@@ -45,6 +45,10 @@ Current app-facing wrapper routes in `server_1`:
 | `PATCH` | `/api/nl2sql/v1/config/model-routing` | `/config/model-routing` |
 | `GET` | `/api/nl2sql/v1/metrics/llm` | `/metrics/llm` |
 | `GET` | `/api/nl2sql/v1/metrics/teach` | `/metrics/teach` |
+| `GET` | `/api/nl2sql/v1/metrics/prometheus` | `/metrics/prometheus` |
+| `GET` | `/api/nl2sql/v1/logs/days` | `/logs/days` |
+| `GET` | `/api/nl2sql/v1/logs/recent` | `/logs/recent` |
+| `GET` | `/api/nl2sql/v1/logs/stream` | `/logs/stream` |
 | `GET` | `/api/nl2sql/v1/telemetry/recent` | `/telemetry/recent` |
 | `GET` | `/api/nl2sql/v1/telemetry/summary` | `/telemetry/summary` |
 | `GET` | `/api/nl2sql/v1/telemetry/trace/{request_id}` | `/telemetry/trace/{request_id}` |
@@ -96,6 +100,8 @@ These are primarily for local maintenance or operator-only HTML help.
 - `GET /help/{module}`
 - `GET /help/{module}/{route_slug}`
 - `POST /ingest`
+
+`/metrics/prometheus`, `/logs/days`, `/logs/recent`, and `/logs/stream` are now wrapped by `server_1` and are no longer direct-only.
 
 Canonical upstream route details live in the standalone docs:
 
