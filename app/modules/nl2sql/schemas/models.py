@@ -213,6 +213,135 @@ class Nl2SqlInstructionsQuery(BaseModel):
         return normalized or None
 
 
+class Nl2SqlHealthLlmQuery(BaseModel):
+    role: Literal["sql", "reasoning", "query_rewrite", "answer", "default"] = "sql"
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class Nl2SqlTelemetryRecentQuery(BaseModel):
+    limit: int = Field(default=50, ge=1, le=500)
+    endpoint: StrictStr | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("endpoint")
+    @classmethod
+    def normalize_endpoint(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class Nl2SqlTelemetrySummaryQuery(BaseModel):
+    endpoint: StrictStr | None = None
+    since_minutes: int = Field(default=1440, ge=1)
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("endpoint")
+    @classmethod
+    def normalize_summary_endpoint(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class Nl2SqlLogsRecentQuery(BaseModel):
+    day: StrictStr = "current"
+    lines: int = Field(default=200, ge=1, le=5000)
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("day")
+    @classmethod
+    def normalize_day(cls, value: str) -> str:
+        normalized = value.strip()
+        return normalized or "current"
+
+
+class Nl2SqlLogsStreamQuery(BaseModel):
+    day: StrictStr = "current"
+    backlog: int = Field(default=100, ge=0, le=5000)
+    follow: bool = True
+    poll_interval_ms: int = Field(default=1000, ge=100, le=60000)
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("day")
+    @classmethod
+    def normalize_stream_day(cls, value: str) -> str:
+        normalized = value.strip()
+        return normalized or "current"
+
+
+class Nl2SqlBenchmarkCaseCreateRequest(BaseModel):
+    query: StrictStr
+    gold_sql: StrictStr | None = None
+    expected_status: StrictStr
+    slices: list[StrictStr] = Field(default_factory=list)
+    error_label: StrictStr | None = None
+    source: StrictStr | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("query", "expected_status")
+    @classmethod
+    def validate_required_strings(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("field must not be blank")
+        return normalized
+
+    @field_validator("gold_sql", "error_label", "source")
+    @classmethod
+    def normalize_optional_strings(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class Nl2SqlBenchmarkCasesQuery(BaseModel):
+    limit: int = Field(default=100, ge=1, le=500)
+    active_only: bool = True
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class Nl2SqlGovernanceValidateRequest(BaseModel):
+    sql: StrictStr
+    query: StrictStr
+    tables_in_scope: list[StrictStr] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("sql", "query")
+    @classmethod
+    def validate_non_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("field must not be blank")
+        return normalized
+
+
+class Nl2SqlPatternFeedbackRequest(BaseModel):
+    pattern_id: StrictInt
+    helpful: StrictBool
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class Nl2SqlTeachPendingQuery(BaseModel):
+    limit: int = Field(default=100, ge=1, le=500)
+    include_expired: bool = False
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class Nl2SqlIngestGroupsRequest(BaseModel):
     group_names: list[StrictStr] | None = None
 
@@ -236,6 +365,63 @@ class Nl2SqlIngestKnowledgeRequest(BaseModel):
 
 
 class Nl2SqlIngestEmbeddedRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+
+class Nl2SqlModelRoutingPatchRequest(BaseModel):
+    llm_provider: str | None = None
+    llm_model: str | None = None
+    llm_api_key: str | None = None
+    llm_base_url: str | None = None
+    llm_fallback_provider: str | None = None
+    llm_fallback_model: str | None = None
+    llm_fallback_api_key: str | None = None
+    llm_fallback_base_url: str | None = None
+
+    sql_model_provider: str | None = None
+    sql_model: str | None = None
+    sql_model_api_key: str | None = None
+    sql_model_base_url: str | None = None
+    sql_fallback_provider: str | None = None
+    sql_fallback_model: str | None = None
+    sql_fallback_api_key: str | None = None
+    sql_fallback_base_url: str | None = None
+
+    reasoning_model_provider: str | None = None
+    reasoning_model: str | None = None
+    reasoning_model_api_key: str | None = None
+    reasoning_model_base_url: str | None = None
+    reasoning_fallback_provider: str | None = None
+    reasoning_fallback_model: str | None = None
+    reasoning_fallback_api_key: str | None = None
+    reasoning_fallback_base_url: str | None = None
+
+    query_rewrite_model_provider: str | None = None
+    query_rewrite_model: str | None = None
+    query_rewrite_model_api_key: str | None = None
+    query_rewrite_model_base_url: str | None = None
+    query_rewrite_fallback_provider: str | None = None
+    query_rewrite_fallback_model: str | None = None
+    query_rewrite_fallback_api_key: str | None = None
+    query_rewrite_fallback_base_url: str | None = None
+
+    answer_model_provider: str | None = None
+    answer_model: str | None = None
+    answer_model_api_key: str | None = None
+    answer_model_base_url: str | None = None
+    answer_fallback_provider: str | None = None
+    answer_fallback_model: str | None = None
+    answer_fallback_api_key: str | None = None
+    answer_fallback_base_url: str | None = None
+
+    embedding_provider: str | None = None
+    embedding_model: str | None = None
+    embedding_api_key: str | None = None
+    embedding_base_url: str | None = None
+    embedding_api_url: str | None = None
+
+    startup_enforcement_mode: str | None = None
+
     model_config = ConfigDict(extra="ignore")
 
 
@@ -319,3 +505,5 @@ class Nl2SqlTraceEvent(BaseModel):
 
 
 TRACE_EVENTS_RESPONSE_ADAPTER = TypeAdapter(list[Nl2SqlTraceEvent])
+GENERIC_OBJECT_RESPONSE_ADAPTER = TypeAdapter(dict[str, Any])
+GENERIC_LIST_RESPONSE_ADAPTER = TypeAdapter(list[dict[str, Any]])
