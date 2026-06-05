@@ -1,14 +1,16 @@
 """Google OAuth token manager for GMB API access.
 
-Loads credentials from settings (service account JSON or stored OAuth tokens)
-and provides a valid access token for API calls.
+Loads credentials from settings and provides a valid access token for API calls.
 
-Two supported modes (controlled by GMB_AUTH_MODE setting):
+Three supported modes (controlled by GMB_AUTH_MODE setting):
   - "service_account" : Uses a Google service account JSON key
+                        (blocked by Google — service accounts cannot be GBP managers)
   - "token_store"     : Reads/refreshes an OAuth token stored in the DB
-    (same table used by google_calendar_v1: google_drive_token)
+                        (same table used by google_calendar_v1: google_drive_token)
+  - "oauth_user"      : Uses GMB_REFRESH_TOKEN + GMB_CLIENT_ID + GMB_CLIENT_SECRET
+                        (RECOMMENDED — standard approach for GBP API access)
 
-Default: "service_account" (recommended for server-to-server).
+Default: "service_account" (set GMB_AUTH_MODE=oauth_user in .env for production use).
 """
 
 from __future__ import annotations
@@ -46,6 +48,10 @@ class GmbTokenManager:
             settings, "GOOGLE_OAUTH_TOKEN_URL", "https://oauth2.googleapis.com/token"
         )
         self._timeout: float = float(getattr(settings, "GMB_TIMEOUT_SECONDS", 30))
+        # oauth_user mode credentials
+        self._refresh_token: str = getattr(settings, "GMB_REFRESH_TOKEN", "")
+        self._client_id: str = getattr(settings, "GMB_CLIENT_ID", "")
+        self._client_secret: str = getattr(settings, "GMB_CLIENT_SECRET", "")
         # Simple in-memory cache to avoid redundant refreshes
         self._cached_token: Optional[str] = None
         self._token_expiry: Optional[datetime] = None
@@ -64,10 +70,12 @@ class GmbTokenManager:
             return await self._refresh_service_account()
         elif self._auth_mode == "token_store":
             return await self._refresh_from_token_store()
+        elif self._auth_mode == "oauth_user":
+            return await self._refresh_oauth_user()
         else:
             raise GoogleReviewsError(
                 code="GMB_CONFIG_ERROR",
-                message=f"Unknown GMB_AUTH_MODE: {self._auth_mode!r}. Use 'service_account' or 'token_store'.",
+                message=f"Unknown GMB_AUTH_MODE: {self._auth_mode!r}. Use 'service_account', 'token_store', or 'oauth_user'.",
                 status_code=500,
             )
 
@@ -181,6 +189,51 @@ class GmbTokenManager:
 
         self._cached_token = new_token["access_token"]
         self._token_expiry = datetime.now(tz=timezone.utc) + timedelta(seconds=new_token["expires_in"] - 60)
+        return self._cached_token
+
+    # ------------------------------------------------------------------
+    # OAuth user flow (GMB_AUTH_MODE=oauth_user)
+    # ------------------------------------------------------------------
+
+    async def _refresh_oauth_user(self) -> str:
+        """Exchange the stored refresh token for a new access token.
+
+        Uses GMB_REFRESH_TOKEN, GMB_CLIENT_ID, and GMB_CLIENT_SECRET from
+        settings. The refresh token itself is long-lived and does not change
+        on each call — only the access token rotates.
+        """
+        if not self._refresh_token:
+            raise GoogleReviewsError(
+                code="GMB_CONFIG_ERROR",
+                message="GMB_REFRESH_TOKEN is not configured (required for GMB_AUTH_MODE=oauth_user)",
+                status_code=500,
+            )
+        if not self._client_id:
+            raise GoogleReviewsError(
+                code="GMB_CONFIG_ERROR",
+                message="GMB_CLIENT_ID is not configured (required for GMB_AUTH_MODE=oauth_user)",
+                status_code=500,
+            )
+        if not self._client_secret:
+            raise GoogleReviewsError(
+                code="GMB_CONFIG_ERROR",
+                message="GMB_CLIENT_SECRET is not configured (required for GMB_AUTH_MODE=oauth_user)",
+                status_code=500,
+            )
+
+        logger.debug("GMB oauth_user: refreshing access token via refresh_token flow.")
+        new_token = await _do_refresh(
+            self._client_id,
+            self._client_secret,
+            self._refresh_token,
+            self._token_url,
+            self._timeout,
+        )
+
+        expires_in: int = int(new_token.get("expires_in", 3600))
+        self._cached_token = new_token["access_token"]
+        self._token_expiry = datetime.now(tz=timezone.utc) + timedelta(seconds=expires_in - 60)
+        logger.info("GMB oauth_user: access token refreshed (expires in %ds).", expires_in)
         return self._cached_token
 
 

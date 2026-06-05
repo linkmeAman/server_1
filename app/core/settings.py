@@ -121,11 +121,16 @@ class Settings(BaseSettings):
     )
 
     # Google My Business (Reviews v1)
-    # Auth mode: "service_account" (default) or "token_store" (reuses google_drive_token table)
+    # Auth mode: "service_account" | "token_store" | "oauth_user"
     GMB_AUTH_MODE: str = os.getenv("GMB_AUTH_MODE", "service_account")
     # JSON string of service account key (when GMB_AUTH_MODE=service_account)
     GMB_SERVICE_ACCOUNT_JSON: str = os.getenv("GMB_SERVICE_ACCOUNT_JSON", "")
     GMB_TIMEOUT_SECONDS: int = int(os.getenv("GMB_TIMEOUT_SECONDS", 30))
+    # OAuth user credentials (when GMB_AUTH_MODE=oauth_user)
+    # Run get_gmb_refresh_token.py once to obtain these values.
+    GMB_REFRESH_TOKEN: str = os.getenv("GMB_REFRESH_TOKEN", "")
+    GMB_CLIENT_ID: str = os.getenv("GMB_CLIENT_ID", "")
+    GMB_CLIENT_SECRET: str = os.getenv("GMB_CLIENT_SECRET", "")
 
     # Employee Events V1
     EMP_EVENT_APPROVED_STATUS: int = int(os.getenv("EMP_EVENT_APPROVED_STATUS", 1))
