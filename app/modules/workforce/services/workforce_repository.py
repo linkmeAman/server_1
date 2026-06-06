@@ -1797,7 +1797,7 @@ class WorkforceRepository:
         *,
         employee_id: int | None,
     ) -> int:
-        sql = "SELECT COUNT(*) AS total FROM employee e WHERE (e.park IS NULL OR e.park = 0)"
+        sql = "SELECT COUNT(*) AS total FROM employee e WHERE (e.park IS NULL OR e.park = 0) AND e.status = 1"
         params: dict[str, Any] = {}
         if employee_id is not None:
             sql += " AND e.id = :employee_id"
@@ -1873,6 +1873,7 @@ class WorkforceRepository:
                 {salary_where}
             ) s ON s.contact_id = e.contact_id AND s.rn = 1
             WHERE (e.park IS NULL OR e.park = 0)
+              AND e.status = 1
         """
         if employee_id is not None:
             sql += " AND e.id = :employee_id"
