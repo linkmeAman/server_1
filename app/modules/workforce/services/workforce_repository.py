@@ -1796,23 +1796,53 @@ class WorkforceRepository:
         db: AsyncSession,
         *,
         employee_id: int | None,
+        from_date: str | None,
+        to_date: str | None,
+        search: str | None,
+        salary_status: str | None,
+        year_month: str | None,
     ) -> int:
-        sql = """
+        params: dict[str, Any] = {}
+        salary_conditions: list[str] = []
+        target_ym: str | None = None
+        ref_date = from_date or to_date
+        if ref_date:
+            parts = ref_date.split("-")
+            if len(parts) >= 2:
+                target_ym = parts[0] + parts[1]
+        if target_ym:
+            salary_conditions.append("s_inner.year_month = :target_ym")
+            params["target_ym"] = target_ym
+        salary_where = ("WHERE " + " AND ".join(salary_conditions)) if salary_conditions else ""
+        where_sql, where_params = self._salary_track_where(
+            employee_id=employee_id,
+            search=search,
+            salary_status=salary_status,
+            year_month=year_month,
+        )
+        params.update(where_params)
+        sql = f"""
             SELECT COUNT(*) AS total
             FROM employee e
-            WHERE (e.park IS NULL OR e.park = 0)
-              AND e.status = 1
-              AND EXISTS (
-                    SELECT 1
-                    FROM employee_bid eb
-                    WHERE eb.employee_id = e.id
-                      AND eb.bid NOT IN (86, 35)
-              )
+            LEFT JOIN contact c ON c.id = e.contact_id
+            LEFT JOIN (
+                SELECT
+                    s_inner.id,
+                    s_inner.contact_id,
+                    s_inner.salary,
+                    s_inner.paid,
+                    s_inner.pay_mode,
+                    s_inner.year_month,
+                    s_inner.from_date,
+                    s_inner.to_date,
+                    ROW_NUMBER() OVER (PARTITION BY s_inner.contact_id ORDER BY s_inner.id DESC) AS rn
+                FROM salary s_inner
+                {salary_where}
+            ) s ON s.contact_id = e.contact_id AND s.rn = 1
+            {where_sql}
         """
-        params: dict[str, Any] = {}
-        if employee_id is not None:
-            sql += " AND e.id = :employee_id"
-            params["employee_id"] = int(employee_id)
+        params.pop("limit", None)
+        params.pop("offset", None)
         result = await db.execute(text(sql), params)
         row = result.fetchone()
         return int(row._mapping["total"]) if row else 0
@@ -1824,6 +1854,11 @@ class WorkforceRepository:
         employee_id: int | None,
         from_date: str | None,
         to_date: str | None,
+        search: str | None,
+        salary_status: str | None,
+        year_month: str | None,
+        sort_by: str | None,
+        sort_dir: str | None,
         limit: int,
         offset: int,
         position_map: dict[int, str] | None = None,
@@ -1846,6 +1881,14 @@ class WorkforceRepository:
             params["target_ym"] = target_ym
 
         salary_where = ("WHERE " + " AND ".join(salary_conditions)) if salary_conditions else ""
+        where_sql, where_params = self._salary_track_where(
+            employee_id=employee_id,
+            search=search,
+            salary_status=salary_status,
+            year_month=year_month,
+        )
+        params.update(where_params)
+        order_by_sql = self._salary_track_order_by(sort_by=sort_by, sort_dir=sort_dir)
 
         sql = f"""
             SELECT
@@ -1883,19 +1926,9 @@ class WorkforceRepository:
                 FROM salary s_inner
                 {salary_where}
             ) s ON s.contact_id = e.contact_id AND s.rn = 1
-            WHERE (e.park IS NULL OR e.park = 0)
-              AND e.status = 1
-              AND EXISTS (
-                    SELECT 1
-                    FROM employee_bid eb
-                    WHERE eb.employee_id = e.id
-                      AND eb.bid NOT IN (86, 35)
-              )
+            {where_sql}
         """
-        if employee_id is not None:
-            sql += " AND e.id = :employee_id"
-            params["employee_id"] = int(employee_id)
-        sql += " ORDER BY e.id DESC LIMIT :limit OFFSET :offset"
+        sql += f" {order_by_sql} LIMIT :limit OFFSET :offset"
         params["limit"] = int(limit)
         params["offset"] = int(offset)
 
@@ -1923,6 +1956,70 @@ class WorkforceRepository:
                 "salary_status": m.get("salary_status", "not_generated"),
             })
         return out
+
+    def _salary_track_where(
+        self,
+        *,
+        employee_id: int | None,
+        search: str | None,
+        salary_status: str | None,
+        year_month: str | None,
+    ) -> tuple[str, dict[str, Any]]:
+        conditions: list[str] = [
+            "(e.park IS NULL OR e.park = 0)",
+            "e.status = 1",
+            """
+            EXISTS (
+                SELECT 1
+                FROM employee_bid eb
+                WHERE eb.employee_id = e.id
+                  AND eb.bid NOT IN (86, 35)
+            )
+            """.strip(),
+        ]
+        params: dict[str, Any] = {}
+        if employee_id is not None:
+            conditions.append("e.id = :employee_id")
+            params["employee_id"] = int(employee_id)
+        if search and search.strip():
+            params["track_search"] = f"%{search.strip()}%"
+            conditions.append(
+                """
+                (
+                    CONCAT_WS(' ', NULLIF(TRIM(c.fname), ''), NULLIF(TRIM(c.mname), ''), NULLIF(TRIM(c.lname), '')) LIKE :track_search
+                    OR c.email LIKE :track_search
+                    OR c.mobile LIKE :track_search
+                    OR CAST(e.id AS CHAR) LIKE :track_search
+                    OR CAST(e.contact_id AS CHAR) LIKE :track_search
+                )
+                """.strip()
+            )
+        if salary_status == "paid":
+            conditions.append("s.id IS NOT NULL AND COALESCE(s.paid, 0) > 0")
+        elif salary_status == "processing":
+            conditions.append("s.id IS NOT NULL AND COALESCE(s.paid, 0) <= 0")
+        elif salary_status == "not_generated":
+            conditions.append("s.id IS NULL")
+        if year_month and year_month.strip():
+            conditions.append("CAST(s.year_month AS CHAR) LIKE :track_year_month")
+            params["track_year_month"] = f"%{year_month.strip()}%"
+        return "WHERE " + " AND ".join(conditions), params
+
+    def _salary_track_order_by(self, *, sort_by: str | None, sort_dir: str | None) -> str:
+        direction = "ASC" if (sort_dir or "").lower() == "asc" else "DESC"
+        sort_map = {
+            "employee_id": "e.id",
+            "employee": "full_name",
+            "year_month": "s.year_month",
+            "from_date": "s.from_date",
+            "to_date": "s.to_date",
+            "salary": "s.salary",
+            "paid": "s.paid",
+            "pay_mode": "s.pay_mode",
+            "status": "salary_status",
+        }
+        sort_key = sort_map.get((sort_by or "").lower(), "e.id")
+        return f"ORDER BY {sort_key} {direction}, e.id DESC"
 
     async def _payroll_records_query(
         self,
