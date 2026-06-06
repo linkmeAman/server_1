@@ -1802,11 +1802,11 @@ class WorkforceRepository:
             FROM employee e
             WHERE (e.park IS NULL OR e.park = 0)
               AND e.status = 1
-              AND NOT EXISTS (
+              AND EXISTS (
                     SELECT 1
                     FROM employee_bid eb
                     WHERE eb.employee_id = e.id
-                      AND eb.bid IN (86, 35)
+                      AND eb.bid NOT IN (86, 35)
               )
         """
         params: dict[str, Any] = {}
@@ -1885,11 +1885,11 @@ class WorkforceRepository:
             ) s ON s.contact_id = e.contact_id AND s.rn = 1
             WHERE (e.park IS NULL OR e.park = 0)
               AND e.status = 1
-              AND NOT EXISTS (
+              AND EXISTS (
                     SELECT 1
                     FROM employee_bid eb
                     WHERE eb.employee_id = e.id
-                      AND eb.bid IN (86, 35)
+                      AND eb.bid NOT IN (86, 35)
               )
         """
         if employee_id is not None:
