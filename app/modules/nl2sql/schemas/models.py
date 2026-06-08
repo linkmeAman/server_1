@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal, Union
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr, TypeAdapter, field_validator
 
@@ -423,6 +424,138 @@ class Nl2SqlModelRoutingPatchRequest(BaseModel):
     startup_enforcement_mode: str | None = None
 
     model_config = ConfigDict(extra="ignore")
+
+
+class Nl2SqlAskModelPatchRequest(BaseModel):
+    provider: str | None = None
+    model: str | None = None
+    api_key: str | None = None
+    base_url: str | None = None
+    fallback_provider: str | None = None
+    fallback_model: str | None = None
+    fallback_api_key: str | None = None
+    fallback_base_url: str | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class Nl2SqlActiveModelPatchRequest(BaseModel):
+    model_id: UUID
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class Nl2SqlCreateProviderRequest(BaseModel):
+    provider_name: StrictStr
+    display_name: StrictStr
+    base_url: StrictStr | None = None
+    org_id: StrictStr | None = None
+    is_local: StrictBool = False
+    extra_config: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("provider_name", "display_name")
+    @classmethod
+    def strip_required_provider_fields(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("field must not be blank")
+        return normalized
+
+    @field_validator("base_url", "org_id")
+    @classmethod
+    def strip_optional_provider_fields(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class Nl2SqlUpdateProviderRequest(BaseModel):
+    display_name: StrictStr | None = None
+    base_url: StrictStr | None = None
+    org_id: StrictStr | None = None
+    is_active: StrictBool | None = None
+    is_local: StrictBool | None = None
+    extra_config: dict[str, Any] | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("display_name", "base_url", "org_id")
+    @classmethod
+    def strip_optional_update_provider_fields(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class Nl2SqlAddApiKeyRequest(BaseModel):
+    key_label: StrictStr
+    api_key: StrictStr
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("key_label", "api_key")
+    @classmethod
+    def strip_required_key_fields(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("field must not be blank")
+        return normalized
+
+
+class Nl2SqlRegisterModelRequest(BaseModel):
+    provider_id: UUID
+    api_key_id: UUID | None = None
+    model_name: StrictStr
+    display_name: StrictStr | None = None
+    role: StrictStr = "general"
+    context_window: StrictInt | None = None
+    supports_tools: StrictBool = False
+    supports_stream: StrictBool = True
+    is_default: StrictBool = False
+    extra_config: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("model_name", "role")
+    @classmethod
+    def strip_required_model_fields(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("field must not be blank")
+        return normalized
+
+    @field_validator("display_name")
+    @classmethod
+    def strip_optional_model_display_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class Nl2SqlUpdateModelRequest(BaseModel):
+    display_name: StrictStr | None = None
+    api_key_id: UUID | None = None
+    context_window: StrictInt | None = None
+    supports_tools: StrictBool | None = None
+    supports_stream: StrictBool | None = None
+    is_default: StrictBool | None = None
+    is_active: StrictBool | None = None
+    extra_config: dict[str, Any] | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+    @field_validator("display_name")
+    @classmethod
+    def strip_optional_update_model_display_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
 
 class Nl2SqlEnrichmentSummary(BaseModel):

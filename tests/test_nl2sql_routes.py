@@ -234,10 +234,39 @@ class TestNl2SqlRoutes(unittest.TestCase):
         self.assertEqual(body["data"]["sql"]["provider"], "ollama")
         self.assertEqual(mock_call.await_count, 1)
 
+    def test_get_ask_model_route_returns_payload(self) -> None:
+        payload = {
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "base_url": None,
+            "api_key_configured": True,
+            "fallback_provider": "ollama",
+            "fallback_model": "deepseek-coder:6.7b",
+            "fallback_base_url": "http://localhost:11434",
+            "fallback_api_key_configured": False,
+        }
+
+        with patch.object(nl2sql_client, "get_ask_model", AsyncMock(return_value=payload)) as mock_call:
+            response = self.client.get("/api/nl2sql/v1/config/ask-model")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["data"]["provider"], "openai")
+        self.assertEqual(body["data"]["fallback_model"], "deepseek-coder:6.7b")
+        self.assertEqual(mock_call.await_count, 1)
+
     def test_patch_model_routing_requires_super_access(self) -> None:
         response = self.client.patch(
             "/api/nl2sql/v1/config/model-routing",
             json={"sql_model_provider": "ollama", "sql_model": "sqlcoder"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_patch_ask_model_requires_super_access(self) -> None:
+        response = self.client.patch(
+            "/api/nl2sql/v1/config/ask-model",
+            json={"provider": "openai", "model": "gpt-4.1-mini"},
         )
 
         self.assertEqual(response.status_code, 403)
@@ -264,6 +293,534 @@ class TestNl2SqlRoutes(unittest.TestCase):
         self.assertTrue(body["success"])
         self.assertEqual(body["data"]["model_routing"]["sql"]["provider"], "ollama")
         self.assertEqual(mock_call.await_args.kwargs["request_data"].sql_model_provider, "ollama")
+
+    def test_patch_ask_model_route_updates_runtime_config(self) -> None:
+        payload = {
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+            "base_url": None,
+            "api_key_configured": True,
+            "fallback_provider": "ollama",
+            "fallback_model": "deepseek-coder:6.7b",
+            "fallback_base_url": "http://localhost:11434",
+            "fallback_api_key_configured": False,
+        }
+        super_client = self._make_client(is_super=True)
+
+        with patch.object(nl2sql_client, "patch_ask_model", AsyncMock(return_value=payload)) as mock_call:
+            response = super_client.patch(
+                "/api/nl2sql/v1/config/ask-model",
+                json={
+                    "provider": "openai",
+                    "model": "gpt-4.1-mini",
+                    "fallback_provider": "ollama",
+                    "fallback_model": "deepseek-coder:6.7b",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["data"]["provider"], "openai")
+        self.assertEqual(body["data"]["fallback_model"], "deepseek-coder:6.7b")
+        self.assertEqual(mock_call.await_args.kwargs["request_data"].provider, "openai")
+
+    def test_patch_active_model_requires_super_access(self) -> None:
+        response = self.client.patch(
+            "/api/nl2sql/v1/config/active-model/sql",
+            json={"model_id": "1b4ee59f-8de6-43e2-8703-a1824bd5f6f3"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_patch_active_model_route_updates_persistent_default(self) -> None:
+        payload = {
+            "ok": True,
+            "role": "sql",
+            "model_id": "1b4ee59f-8de6-43e2-8703-a1824bd5f6f3",
+            "provider": "openai",
+            "model": "gpt-4.1-mini",
+        }
+        super_client = self._make_client(is_super=True)
+
+        with patch.object(nl2sql_client, "patch_active_model", AsyncMock(return_value=payload)) as mock_call:
+            response = super_client.patch(
+                "/api/nl2sql/v1/config/active-model/sql",
+                json={"model_id": "1b4ee59f-8de6-43e2-8703-a1824bd5f6f3"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["data"]["role"], "sql")
+        self.assertEqual(body["data"]["model"], "gpt-4.1-mini")
+        self.assertEqual(mock_call.await_args.kwargs["role"], "sql")
+        self.assertEqual(
+            str(mock_call.await_args.kwargs["request_data"].model_id),
+            "1b4ee59f-8de6-43e2-8703-a1824bd5f6f3",
+        )
+
+    def test_list_providers_route_returns_payload(self) -> None:
+        payload = [
+            {
+                "id": "11111111-1111-1111-1111-111111111111",
+                "provider_name": "openai",
+                "display_name": "OpenAI",
+                "is_active": True,
+                "is_local": False,
+                "extra_config": {},
+                "key_count": 1,
+                "model_count": 2,
+            }
+        ]
+
+        with patch.object(nl2sql_client, "list_providers", AsyncMock(return_value=payload)) as mock_call:
+            response = self.client.get("/api/nl2sql/v1/providers")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["data"][0]["provider_name"], "openai")
+        self.assertEqual(mock_call.await_count, 1)
+
+    def test_get_provider_route_returns_payload(self) -> None:
+        payload = {
+            "id": "11111111-1111-1111-1111-111111111111",
+            "provider_name": "openai",
+            "display_name": "OpenAI",
+            "is_active": True,
+            "is_local": False,
+            "extra_config": {},
+            "key_count": 1,
+            "model_count": 2,
+        }
+
+        with patch.object(nl2sql_client, "get_provider", AsyncMock(return_value=payload)) as mock_call:
+            response = self.client.get("/api/nl2sql/v1/providers/11111111-1111-1111-1111-111111111111")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["data"]["display_name"], "OpenAI")
+        self.assertEqual(
+            mock_call.await_args.kwargs["provider_id"],
+            "11111111-1111-1111-1111-111111111111",
+        )
+
+    def test_create_provider_requires_super_access(self) -> None:
+        response = self.client.post(
+            "/api/nl2sql/v1/providers",
+            json={"provider_name": "openai", "display_name": "OpenAI"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_create_provider_route_forwards_payload(self) -> None:
+        payload = {
+            "id": "11111111-1111-1111-1111-111111111111",
+            "provider_name": "openai",
+            "display_name": "OpenAI",
+            "is_active": True,
+            "is_local": False,
+            "extra_config": {},
+            "key_count": 0,
+            "model_count": 0,
+        }
+        super_client = self._make_client(is_super=True)
+
+        with patch.object(nl2sql_client, "create_provider", AsyncMock(return_value=payload)) as mock_call:
+            response = super_client.post(
+                "/api/nl2sql/v1/providers",
+                json={"provider_name": "openai", "display_name": "OpenAI", "is_local": False},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["data"]["provider_name"], "openai")
+        self.assertEqual(mock_call.await_args.kwargs["request_data"].provider_name, "openai")
+
+    def test_patch_provider_requires_super_access(self) -> None:
+        response = self.client.patch(
+            "/api/nl2sql/v1/providers/11111111-1111-1111-1111-111111111111",
+            json={"display_name": "Updated OpenAI"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_patch_provider_route_forwards_payload(self) -> None:
+        payload = {
+            "id": "11111111-1111-1111-1111-111111111111",
+            "provider_name": "openai",
+            "display_name": "Updated OpenAI",
+            "is_active": True,
+            "is_local": False,
+            "extra_config": {},
+            "key_count": 1,
+            "model_count": 2,
+        }
+        super_client = self._make_client(is_super=True)
+
+        with patch.object(nl2sql_client, "patch_provider", AsyncMock(return_value=payload)) as mock_call:
+            response = super_client.patch(
+                "/api/nl2sql/v1/providers/11111111-1111-1111-1111-111111111111",
+                json={"display_name": "Updated OpenAI"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["data"]["display_name"], "Updated OpenAI")
+        self.assertEqual(
+            mock_call.await_args.kwargs["provider_id"],
+            "11111111-1111-1111-1111-111111111111",
+        )
+        self.assertEqual(mock_call.await_args.kwargs["request_data"].display_name, "Updated OpenAI")
+
+    def test_delete_provider_requires_super_access(self) -> None:
+        response = self.client.delete("/api/nl2sql/v1/providers/11111111-1111-1111-1111-111111111111")
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_delete_provider_route_returns_payload(self) -> None:
+        payload = {"ok": True, "provider_id": "11111111-1111-1111-1111-111111111111"}
+        super_client = self._make_client(is_super=True)
+
+        with patch.object(nl2sql_client, "delete_provider", AsyncMock(return_value=payload)) as mock_call:
+            response = super_client.delete("/api/nl2sql/v1/providers/11111111-1111-1111-1111-111111111111")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["data"]["ok"])
+        self.assertEqual(
+            mock_call.await_args.kwargs["provider_id"],
+            "11111111-1111-1111-1111-111111111111",
+        )
+
+    def test_provider_test_route_returns_payload(self) -> None:
+        payload = {"status": "ok", "latency_ms": 120, "available_models": ["gpt-4.1-mini"]}
+
+        with patch.object(nl2sql_client, "test_provider", AsyncMock(return_value=payload)) as mock_call:
+            response = self.client.post("/api/nl2sql/v1/providers/11111111-1111-1111-1111-111111111111/test", json={})
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["data"]["status"], "ok")
+        self.assertEqual(
+            mock_call.await_args.kwargs["provider_id"],
+            "11111111-1111-1111-1111-111111111111",
+        )
+
+    def test_provider_models_route_returns_payload(self) -> None:
+        payload = {"status": "ok", "models": ["gpt-4.1-mini", "gpt-4.1"]}
+
+        with patch.object(nl2sql_client, "get_provider_models", AsyncMock(return_value=payload)) as mock_call:
+            response = self.client.get("/api/nl2sql/v1/providers/11111111-1111-1111-1111-111111111111/models")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["data"]["models"][0], "gpt-4.1-mini")
+        self.assertEqual(
+            mock_call.await_args.kwargs["provider_id"],
+            "11111111-1111-1111-1111-111111111111",
+        )
+
+    def test_add_provider_key_requires_super_access(self) -> None:
+        response = self.client.post(
+            "/api/nl2sql/v1/providers/11111111-1111-1111-1111-111111111111/keys",
+            json={"key_label": "primary", "api_key": "secret-key"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_add_provider_key_route_forwards_payload(self) -> None:
+        payload = {
+            "id": "22222222-2222-2222-2222-222222222222",
+            "provider_id": "11111111-1111-1111-1111-111111111111",
+            "key_label": "primary",
+            "key_prefix": "sk-pr",
+            "is_active": True,
+            "created_at": "2026-06-07T12:00:00Z",
+        }
+        super_client = self._make_client(is_super=True)
+
+        with patch.object(nl2sql_client, "add_provider_key", AsyncMock(return_value=payload)) as mock_call:
+            response = super_client.post(
+                "/api/nl2sql/v1/providers/11111111-1111-1111-1111-111111111111/keys",
+                json={"key_label": "primary", "api_key": "secret-key"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["data"]["key_label"], "primary")
+        self.assertEqual(
+            mock_call.await_args.kwargs["provider_id"],
+            "11111111-1111-1111-1111-111111111111",
+        )
+        self.assertEqual(mock_call.await_args.kwargs["request_data"].key_label, "primary")
+
+    def test_list_provider_keys_requires_super_access(self) -> None:
+        response = self.client.get("/api/nl2sql/v1/providers/11111111-1111-1111-1111-111111111111/keys")
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_list_provider_keys_route_returns_payload(self) -> None:
+        payload = [
+            {
+                "id": "22222222-2222-2222-2222-222222222222",
+                "provider_id": "11111111-1111-1111-1111-111111111111",
+                "key_label": "primary",
+                "key_prefix": "sk-pr",
+                "is_active": True,
+                "created_at": "2026-06-07T12:00:00Z",
+            }
+        ]
+        super_client = self._make_client(is_super=True)
+
+        with patch.object(nl2sql_client, "list_provider_keys", AsyncMock(return_value=payload)) as mock_call:
+            response = super_client.get("/api/nl2sql/v1/providers/11111111-1111-1111-1111-111111111111/keys")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["data"][0]["key_prefix"], "sk-pr")
+        self.assertEqual(
+            mock_call.await_args.kwargs["provider_id"],
+            "11111111-1111-1111-1111-111111111111",
+        )
+
+    def test_delete_provider_key_requires_super_access(self) -> None:
+        response = self.client.delete(
+            "/api/nl2sql/v1/providers/11111111-1111-1111-1111-111111111111/keys/22222222-2222-2222-2222-222222222222"
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_delete_provider_key_route_returns_payload(self) -> None:
+        payload = {"ok": True, "key_id": "22222222-2222-2222-2222-222222222222"}
+        super_client = self._make_client(is_super=True)
+
+        with patch.object(nl2sql_client, "delete_provider_key", AsyncMock(return_value=payload)) as mock_call:
+            response = super_client.delete(
+                "/api/nl2sql/v1/providers/11111111-1111-1111-1111-111111111111/keys/22222222-2222-2222-2222-222222222222"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["data"]["ok"])
+        self.assertEqual(
+            mock_call.await_args.kwargs["provider_id"],
+            "11111111-1111-1111-1111-111111111111",
+        )
+        self.assertEqual(
+            mock_call.await_args.kwargs["key_id"],
+            "22222222-2222-2222-2222-222222222222",
+        )
+
+    def test_list_model_registry_route_returns_payload(self) -> None:
+        payload = [
+            {
+                "id": "33333333-3333-3333-3333-333333333333",
+                "provider_id": "11111111-1111-1111-1111-111111111111",
+                "provider_name": "openai",
+                "model_name": "gpt-4.1-mini",
+                "display_name": "GPT 4.1 Mini",
+                "role": "answer",
+                "is_default": True,
+                "is_active": True,
+                "supports_tools": False,
+                "supports_stream": True,
+                "context_window": 128000,
+                "api_key_id": None,
+                "extra_config": {},
+            }
+        ]
+
+        with patch.object(nl2sql_client, "list_model_registry", AsyncMock(return_value=payload)) as mock_call:
+            response = self.client.get("/api/nl2sql/v1/model-registry?role=answer&active_only=true")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["data"][0]["role"], "answer")
+        self.assertEqual(mock_call.await_args.kwargs["role"], "answer")
+        self.assertEqual(mock_call.await_args.kwargs["active_only"], True)
+
+    def test_create_model_registry_requires_super_access(self) -> None:
+        response = self.client.post(
+            "/api/nl2sql/v1/model-registry",
+            json={
+                "provider_id": "11111111-1111-1111-1111-111111111111",
+                "model_name": "gpt-4.1-mini",
+                "role": "answer",
+            },
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_create_model_registry_route_forwards_payload(self) -> None:
+        payload = {
+            "id": "33333333-3333-3333-3333-333333333333",
+            "provider_id": "11111111-1111-1111-1111-111111111111",
+            "provider_name": "openai",
+            "model_name": "gpt-4.1-mini",
+            "display_name": "GPT 4.1 Mini",
+            "role": "answer",
+            "is_default": True,
+            "is_active": True,
+            "supports_tools": False,
+            "supports_stream": True,
+            "context_window": 128000,
+            "api_key_id": None,
+            "extra_config": {},
+        }
+        super_client = self._make_client(is_super=True)
+
+        with patch.object(nl2sql_client, "create_model_registry", AsyncMock(return_value=payload)) as mock_call:
+            response = super_client.post(
+                "/api/nl2sql/v1/model-registry",
+                json={
+                    "provider_id": "11111111-1111-1111-1111-111111111111",
+                    "model_name": "gpt-4.1-mini",
+                    "role": "answer",
+                    "display_name": "GPT 4.1 Mini",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["data"]["model_name"], "gpt-4.1-mini")
+        self.assertEqual(mock_call.await_args.kwargs["request_data"].role, "answer")
+
+    def test_patch_model_registry_requires_super_access(self) -> None:
+        response = self.client.patch(
+            "/api/nl2sql/v1/model-registry/33333333-3333-3333-3333-333333333333",
+            json={"display_name": "Updated Model"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_patch_model_registry_route_forwards_payload(self) -> None:
+        payload = {
+            "id": "33333333-3333-3333-3333-333333333333",
+            "provider_id": "11111111-1111-1111-1111-111111111111",
+            "provider_name": "openai",
+            "model_name": "gpt-4.1-mini",
+            "display_name": "Updated Model",
+            "role": "answer",
+            "is_default": True,
+            "is_active": True,
+            "supports_tools": False,
+            "supports_stream": True,
+            "context_window": 128000,
+            "api_key_id": None,
+            "extra_config": {},
+        }
+        super_client = self._make_client(is_super=True)
+
+        with patch.object(nl2sql_client, "patch_model_registry", AsyncMock(return_value=payload)) as mock_call:
+            response = super_client.patch(
+                "/api/nl2sql/v1/model-registry/33333333-3333-3333-3333-333333333333",
+                json={"display_name": "Updated Model"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["data"]["display_name"], "Updated Model")
+        self.assertEqual(
+            mock_call.await_args.kwargs["model_id"],
+            "33333333-3333-3333-3333-333333333333",
+        )
+
+    def test_delete_model_registry_requires_super_access(self) -> None:
+        response = self.client.delete("/api/nl2sql/v1/model-registry/33333333-3333-3333-3333-333333333333")
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_delete_model_registry_route_returns_payload(self) -> None:
+        payload = {"ok": True, "model_id": "33333333-3333-3333-3333-333333333333"}
+        super_client = self._make_client(is_super=True)
+
+        with patch.object(nl2sql_client, "delete_model_registry", AsyncMock(return_value=payload)) as mock_call:
+            response = super_client.delete("/api/nl2sql/v1/model-registry/33333333-3333-3333-3333-333333333333")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["data"]["ok"])
+        self.assertEqual(
+            mock_call.await_args.kwargs["model_id"],
+            "33333333-3333-3333-3333-333333333333",
+        )
+
+    def test_set_default_model_registry_requires_super_access(self) -> None:
+        response = self.client.post(
+            "/api/nl2sql/v1/model-registry/33333333-3333-3333-3333-333333333333/set-default",
+            json={},
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_set_default_model_registry_route_returns_payload(self) -> None:
+        payload = {
+            "id": "33333333-3333-3333-3333-333333333333",
+            "provider_id": "11111111-1111-1111-1111-111111111111",
+            "provider_name": "openai",
+            "model_name": "gpt-4.1-mini",
+            "display_name": "GPT 4.1 Mini",
+            "role": "answer",
+            "is_default": True,
+            "is_active": True,
+            "supports_tools": False,
+            "supports_stream": True,
+            "context_window": 128000,
+            "api_key_id": None,
+            "extra_config": {},
+        }
+        super_client = self._make_client(is_super=True)
+
+        with patch.object(nl2sql_client, "set_default_model_registry", AsyncMock(return_value=payload)) as mock_call:
+            response = super_client.post(
+                "/api/nl2sql/v1/model-registry/33333333-3333-3333-3333-333333333333/set-default",
+                json={},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["data"]["is_default"])
+        self.assertEqual(
+            mock_call.await_args.kwargs["model_id"],
+            "33333333-3333-3333-3333-333333333333",
+        )
+
+    def test_get_model_registry_defaults_route_returns_payload(self) -> None:
+        payload = {
+            "answer": {
+                "id": "33333333-3333-3333-3333-333333333333",
+                "provider_name": "openai",
+                "model_name": "gpt-4.1-mini",
+            }
+        }
+
+        with patch.object(nl2sql_client, "get_model_registry_defaults", AsyncMock(return_value=payload)) as mock_call:
+            response = self.client.get("/api/nl2sql/v1/model-registry/default")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["data"]["answer"]["model_name"], "gpt-4.1-mini")
+        self.assertEqual(mock_call.await_count, 1)
+
+    def test_get_model_registry_active_summary_route_returns_payload(self) -> None:
+        payload = {
+            "answer": {
+                "provider": "openai",
+                "model": "gpt-4.1-mini",
+                "source": "db_registry",
+                "model_id": "33333333-3333-3333-3333-333333333333",
+            }
+        }
+
+        with patch.object(nl2sql_client, "get_model_registry_active_summary", AsyncMock(return_value=payload)) as mock_call:
+            response = self.client.get("/api/nl2sql/v1/model-registry/active-summary")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["data"]["answer"]["source"], "db_registry")
+        self.assertEqual(mock_call.await_count, 1)
 
     def test_query_groups_route_forwards_payload(self) -> None:
         payload = {
