@@ -1,4 +1,7 @@
-"""Handler: GET /api/google-reviews/v1/locations — list tracked GMB locations."""
+"""Handlers: 
+  GET  /api/google-reviews/v1/discover  — list GMB accounts + locations from the API
+  POST /api/google-reviews/v1/locations — register a GMB location into the DB
+"""
 
 from __future__ import annotations
 
@@ -6,14 +9,20 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
 
 from app.core.database import get_main_db_session
 from app.core.response import error_response, success_response
 from app.modules.google_reviews.dependencies import GoogleReviewsError, require_auth
 from app.modules.google_reviews.models.db import GoogleReviewLocation
 from app.modules.google_reviews.schemas.models import LocationOut
+from app.modules.google_reviews.services.gmb_client import GmbApiClient
+from app.modules.google_reviews.services.gmb_token_manager import GmbTokenManager
 
 router = APIRouter()
+
+_token_manager = GmbTokenManager()
+_gmb_client = GmbApiClient()
 
 
 def _err(exc: GoogleReviewsError) -> JSONResponse:
@@ -23,6 +32,10 @@ def _err(exc: GoogleReviewsError) -> JSONResponse:
     )
 
 
+# ---------------------------------------------------------------------------
+# GET /locations — list registered locations from the DB
+# ---------------------------------------------------------------------------
+
 @router.get("/locations")
 async def list_locations(
     request: Request,
@@ -30,7 +43,11 @@ async def list_locations(
 ):
     try:
         require_auth(request.headers.get("Authorization"))
-        stmt = select(GoogleReviewLocation).where(GoogleReviewLocation.is_active.is_(True)).order_by(GoogleReviewLocation.display_name)
+        stmt = (
+            select(GoogleReviewLocation)
+            .where(GoogleReviewLocation.is_active.is_(True))
+            .order_by(GoogleReviewLocation.display_name)
+        )
         result = await db.execute(stmt)
         locations = result.scalars().all()
         return success_response(
@@ -39,3 +56,144 @@ async def list_locations(
         ).model_dump(mode="json")
     except GoogleReviewsError as exc:
         return _err(exc)
+
+
+# ---------------------------------------------------------------------------
+# GET /discover — query GMB API and return all accessible accounts + locations
+# ---------------------------------------------------------------------------
+
+@router.get("/discover")
+async def discover_gmb_locations(request: Request):
+    """Call the GMB API and return all accounts and locations the OAuth token can see.
+
+    This is a diagnostic / setup endpoint — use it to find the correct
+    account_name and location_name values to register via POST /locations.
+    """
+    try:
+        require_auth(request.headers.get("Authorization"))
+        access_token = await _token_manager.get_valid_access_token()
+
+        accounts = await _gmb_client.list_accounts(access_token)
+        result = []
+        for account in accounts:
+            account_name = account.get("name", "")
+            locations = await _gmb_client.list_locations(account_name, access_token)
+            result.append({
+                "account_name": account_name,
+                "account_type": account.get("type"),
+                "account_display_name": account.get("accountName") or account.get("name"),
+                "locations": [
+                    {
+                        "location_name": loc.get("name", ""),
+                        "display_name": loc.get("title") or loc.get("name", ""),
+                        "address": _format_address(loc.get("storefrontAddress")),
+                        "place_id": (loc.get("metadata") or {}).get("placeId"),
+                    }
+                    for loc in locations
+                ],
+            })
+
+        return success_response(
+            data={"accounts": result, "total_locations": sum(len(a["locations"]) for a in result)},
+            message=f"Discovered {len(accounts)} account(s) from Google My Business API",
+        ).model_dump(mode="json")
+
+    except GoogleReviewsError as exc:
+        return _err(exc)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=error_response(
+                error="GMB_DISCOVER_ERROR",
+                message=f"Discovery failed: {exc}",
+            ).model_dump(mode="json"),
+        )
+
+
+def _format_address(addr: dict | None) -> str | None:
+    if not addr:
+        return None
+    parts = []
+    for line in addr.get("addressLines") or []:
+        if line:
+            parts.append(line)
+    if addr.get("locality"):
+        parts.append(addr["locality"])
+    if addr.get("administrativeArea"):
+        parts.append(addr["administrativeArea"])
+    return ", ".join(parts) or None
+
+
+# ---------------------------------------------------------------------------
+# POST /locations — register a GMB location into google_review_locations
+# ---------------------------------------------------------------------------
+
+class RegisterLocationRequest(BaseModel):
+    account_name: str
+    location_name: str
+    display_name: str
+    address: str | None = None
+    place_id: str | None = None
+
+
+@router.post("/locations")
+async def register_location(
+    payload: RegisterLocationRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_main_db_session),
+):
+    """Register a GMB location into the DB so it can be synced."""
+    try:
+        require_auth(request.headers.get("Authorization"))
+
+        # Check for duplicate
+        stmt = select(GoogleReviewLocation).where(
+            GoogleReviewLocation.location_name == payload.location_name
+        )
+        existing_result = await db.execute(stmt)
+        existing = existing_result.scalar_one_or_none()
+
+        if existing:
+            # Re-activate if it was soft-deleted
+            if not existing.is_active:
+                existing.is_active = True
+                existing.display_name = payload.display_name
+                await db.commit()
+                await db.refresh(existing)
+                return success_response(
+                    data=LocationOut.model_validate(existing).model_dump(mode="json"),
+                    message="Location re-activated",
+                ).model_dump(mode="json")
+
+            return success_response(
+                data=LocationOut.model_validate(existing).model_dump(mode="json"),
+                message="Location already registered",
+            ).model_dump(mode="json")
+
+        loc = GoogleReviewLocation(
+            account_name=payload.account_name,
+            location_name=payload.location_name,
+            display_name=payload.display_name,
+            address=payload.address,
+            place_id=payload.place_id,
+            is_active=True,
+        )
+        db.add(loc)
+        await db.commit()
+        await db.refresh(loc)
+
+        return success_response(
+            data=LocationOut.model_validate(loc).model_dump(mode="json"),
+            message=f"Location '{payload.display_name}' registered successfully",
+        ).model_dump(mode="json")
+
+    except GoogleReviewsError as exc:
+        return _err(exc)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=error_response(
+                error="REVIEWS_REGISTER_ERROR",
+                message=f"Failed to register location: {exc}",
+            ).model_dump(mode="json"),
+        )
