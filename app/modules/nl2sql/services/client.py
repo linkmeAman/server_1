@@ -9,7 +9,7 @@ from typing import Any, AsyncIterator
 
 import httpx
 from fastapi import HTTPException
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from app.core.settings import get_settings
 from app.modules.nl2sql.schemas.models import (
@@ -23,12 +23,19 @@ from app.modules.nl2sql.schemas.models import (
     INSTRUCTIONS_RESPONSE_ADAPTER,
     TEACH_RESPONSE_ADAPTER,
     TRACE_EVENTS_RESPONSE_ADAPTER,
+    Nl2SqlActiveModelPatchRequest,
+    Nl2SqlAddApiKeyRequest,
+    Nl2SqlAskModelPatchRequest,
     Nl2SqlConfirmTeachRequest,
+    Nl2SqlCreateProviderRequest,
     Nl2SqlIngestGroupsRequest,
     Nl2SqlIngestKnowledgeRequest,
     Nl2SqlModelRoutingPatchRequest,
+    Nl2SqlRegisterModelRequest,
     Nl2SqlRequest,
     Nl2SqlTeachRequest,
+    Nl2SqlUpdateModelRequest,
+    Nl2SqlUpdateProviderRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -244,6 +251,313 @@ class Nl2SqlClient:
     ) -> dict[str, Any]:
         return await self._get(
             upstream_path="/config/model-routing",
+            query_params={},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def get_ask_model(
+        self,
+        *,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._get(
+            upstream_path="/config/ask-model",
+            query_params={},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def list_providers(
+        self,
+        *,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> list[dict[str, Any]]:
+        return await self._get(
+            upstream_path="/providers",
+            query_params={},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=TypeAdapter(list[dict[str, Any]]),
+        )
+
+    async def create_provider(
+        self,
+        *,
+        request_data: Nl2SqlCreateProviderRequest,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._post(
+            upstream_path="/providers",
+            request_data=request_data,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def get_provider(
+        self,
+        *,
+        provider_id: str,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._get(
+            upstream_path=f"/providers/{provider_id}",
+            query_params={},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def patch_provider(
+        self,
+        *,
+        provider_id: str,
+        request_data: Nl2SqlUpdateProviderRequest,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._patch(
+            upstream_path=f"/providers/{provider_id}",
+            request_data=request_data,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def delete_provider(
+        self,
+        *,
+        provider_id: str,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._delete(
+            upstream_path=f"/providers/{provider_id}",
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def test_provider(
+        self,
+        *,
+        provider_id: str,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._post(
+            upstream_path=f"/providers/{provider_id}/test",
+            request_data=None,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def get_provider_models(
+        self,
+        *,
+        provider_id: str,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._get(
+            upstream_path=f"/providers/{provider_id}/models",
+            query_params={},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def add_provider_key(
+        self,
+        *,
+        provider_id: str,
+        request_data: Nl2SqlAddApiKeyRequest,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._post(
+            upstream_path=f"/providers/{provider_id}/keys",
+            request_data=request_data,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def list_provider_keys(
+        self,
+        *,
+        provider_id: str,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> list[dict[str, Any]]:
+        return await self._get(
+            upstream_path=f"/providers/{provider_id}/keys",
+            query_params={},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=TypeAdapter(list[dict[str, Any]]),
+        )
+
+    async def delete_provider_key(
+        self,
+        *,
+        provider_id: str,
+        key_id: str,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._delete(
+            upstream_path=f"/providers/{provider_id}/keys/{key_id}",
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def list_model_registry(
+        self,
+        *,
+        role: str | None,
+        active_only: bool,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> list[dict[str, Any]]:
+        query_params: dict[str, str] = {"active_only": str(active_only).lower()}
+        if role:
+            query_params["role"] = role
+        return await self._get(
+            upstream_path="/model-registry",
+            query_params=query_params,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=TypeAdapter(list[dict[str, Any]]),
+        )
+
+    async def create_model_registry(
+        self,
+        *,
+        request_data: Nl2SqlRegisterModelRequest,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._post(
+            upstream_path="/model-registry",
+            request_data=request_data,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def patch_model_registry(
+        self,
+        *,
+        model_id: str,
+        request_data: Nl2SqlUpdateModelRequest,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._patch(
+            upstream_path=f"/model-registry/{model_id}",
+            request_data=request_data,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def delete_model_registry(
+        self,
+        *,
+        model_id: str,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._delete(
+            upstream_path=f"/model-registry/{model_id}",
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def set_default_model_registry(
+        self,
+        *,
+        model_id: str,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._post(
+            upstream_path=f"/model-registry/{model_id}/set-default",
+            request_data=None,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def get_model_registry_defaults(
+        self,
+        *,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._get(
+            upstream_path="/model-registry/default",
+            query_params={},
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def get_model_registry_active_summary(
+        self,
+        *,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._get(
+            upstream_path="/model-registry/active-summary",
             query_params={},
             actor_user_id=actor_user_id,
             request_id=request_id,
@@ -757,6 +1071,41 @@ class Nl2SqlClient:
     ) -> dict[str, Any]:
         return await self._patch(
             upstream_path="/config/model-routing",
+            request_data=request_data,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def patch_ask_model(
+        self,
+        *,
+        request_data: Nl2SqlAskModelPatchRequest,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._patch(
+            upstream_path="/config/ask-model",
+            request_data=request_data,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            route_path=route_path,
+            response_adapter=GENERIC_OBJECT_RESPONSE_ADAPTER,
+        )
+
+    async def patch_active_model(
+        self,
+        *,
+        role: str,
+        request_data: Nl2SqlActiveModelPatchRequest,
+        actor_user_id: int | str,
+        request_id: str,
+        route_path: str,
+    ) -> dict[str, Any]:
+        return await self._patch(
+            upstream_path=f"/config/active-model/{role}",
             request_data=request_data,
             actor_user_id=actor_user_id,
             request_id=request_id,

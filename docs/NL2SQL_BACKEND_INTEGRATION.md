@@ -43,6 +43,26 @@ Current app-facing wrapper routes in `server_1`:
 | `GET` | `/api/nl2sql/v1/health/vector` | `/health/vector` |
 | `GET` | `/api/nl2sql/v1/config/model-routing` | `/config/model-routing` |
 | `PATCH` | `/api/nl2sql/v1/config/model-routing` | `/config/model-routing` |
+| `GET` | `/api/nl2sql/v1/config/ask-model` | `/config/ask-model` |
+| `PATCH` | `/api/nl2sql/v1/config/ask-model` | `/config/ask-model` |
+| `PATCH` | `/api/nl2sql/v1/config/active-model/{role}` | `/config/active-model/{role}` |
+| `GET` | `/api/nl2sql/v1/providers` | `/providers` |
+| `POST` | `/api/nl2sql/v1/providers` | `/providers` |
+| `GET` | `/api/nl2sql/v1/providers/{id}` | `/providers/{id}` |
+| `PATCH` | `/api/nl2sql/v1/providers/{id}` | `/providers/{id}` |
+| `DELETE` | `/api/nl2sql/v1/providers/{id}` | `/providers/{id}` |
+| `POST` | `/api/nl2sql/v1/providers/{id}/test` | `/providers/{id}/test` |
+| `GET` | `/api/nl2sql/v1/providers/{id}/models` | `/providers/{id}/models` |
+| `POST` | `/api/nl2sql/v1/providers/{id}/keys` | `/providers/{id}/keys` |
+| `GET` | `/api/nl2sql/v1/providers/{id}/keys` | `/providers/{id}/keys` |
+| `DELETE` | `/api/nl2sql/v1/providers/{id}/keys/{key_id}` | `/providers/{id}/keys/{key_id}` |
+| `GET` | `/api/nl2sql/v1/model-registry` | `/model-registry` |
+| `POST` | `/api/nl2sql/v1/model-registry` | `/model-registry` |
+| `PATCH` | `/api/nl2sql/v1/model-registry/{id}` | `/model-registry/{id}` |
+| `DELETE` | `/api/nl2sql/v1/model-registry/{id}` | `/model-registry/{id}` |
+| `POST` | `/api/nl2sql/v1/model-registry/{id}/set-default` | `/model-registry/{id}/set-default` |
+| `GET` | `/api/nl2sql/v1/model-registry/default` | `/model-registry/default` |
+| `GET` | `/api/nl2sql/v1/model-registry/active-summary` | `/model-registry/active-summary` |
 | `GET` | `/api/nl2sql/v1/metrics/llm` | `/metrics/llm` |
 | `GET` | `/api/nl2sql/v1/metrics/teach` | `/metrics/teach` |
 | `GET` | `/api/nl2sql/v1/metrics/prometheus` | `/metrics/prometheus` |
@@ -113,6 +133,11 @@ Canonical upstream route details live in the standalone docs:
 The wrapper remains gated by `require_nl2sql_access`.
 
 - `PATCH /config/model-routing` additionally requires `caller.is_super`
+- `PATCH /config/ask-model` additionally requires `caller.is_super`
+- `PATCH /config/active-model/{role}` additionally requires `caller.is_super`
+- `POST /providers`, `PATCH /providers/{id}`, and `DELETE /providers/{id}` additionally require `caller.is_super`
+- `POST /providers/{id}/keys`, `GET /providers/{id}/keys`, and `DELETE /providers/{id}/keys/{key_id}` additionally require `caller.is_super`
+- `POST /model-registry`, `PATCH /model-registry/{id}`, `DELETE /model-registry/{id}`, and `POST /model-registry/{id}/set-default` additionally require `caller.is_super`
 
 - action: `ai-chat:read`
 - resource type: `ai-chat`
@@ -319,8 +344,23 @@ The wrapper exposes the live model routing surface from the standalone service:
 
 - `GET /api/nl2sql/v1/config/model-routing` returns the current task-to-model mapping for `llm`, `sql`, `reasoning`, `query_rewrite`, `answer`, and `embedding`
 - `PATCH /api/nl2sql/v1/config/model-routing` updates the running standalone process immediately
+- `GET /api/nl2sql/v1/config/ask-model` returns the live answer-model assignment used by `/ask` and `/ask/stream`
+- `PATCH /api/nl2sql/v1/config/ask-model` updates only the live answer-model assignment used by `/ask` and `/ask/stream`
+- `PATCH /api/nl2sql/v1/config/active-model/{role}` persists the default model for a role through the standalone model registry and also patches the live process immediately
+- `GET /api/nl2sql/v1/providers` and `GET /api/nl2sql/v1/providers/{id}` expose the current DB-backed provider registry through the authenticated wrapper
+- `POST /api/nl2sql/v1/providers`, `PATCH /api/nl2sql/v1/providers/{id}`, and `DELETE /api/nl2sql/v1/providers/{id}` expose provider CRUD through the wrapper for super callers
+- `POST /api/nl2sql/v1/providers/{id}/test` and `GET /api/nl2sql/v1/providers/{id}/models` expose provider connectivity and model discovery through the wrapper
+- `POST /api/nl2sql/v1/providers/{id}/keys`, `GET /api/nl2sql/v1/providers/{id}/keys`, and `DELETE /api/nl2sql/v1/providers/{id}/keys/{key_id}` expose encrypted provider key management through the wrapper for super callers
+- `GET /api/nl2sql/v1/model-registry`, `GET /api/nl2sql/v1/model-registry/default`, and `GET /api/nl2sql/v1/model-registry/active-summary` expose the current model registry state through the authenticated wrapper
+- `POST /api/nl2sql/v1/model-registry`, `PATCH /api/nl2sql/v1/model-registry/{id}`, `DELETE /api/nl2sql/v1/model-registry/{id}`, and `POST /api/nl2sql/v1/model-registry/{id}/set-default` expose model registry mutation through the wrapper for super callers
 - patch requests require a super caller through `server_1`
 - these changes are runtime-only and are not persisted to the env file or across restarts
+
+Exception:
+
+- `PATCH /config/active-model/{role}` is persisted through the standalone
+  model registry and therefore survives restart when the DB-backed registry is
+  active
 
 ## Teach Semantics
 
