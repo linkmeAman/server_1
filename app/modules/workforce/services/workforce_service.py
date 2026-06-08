@@ -968,6 +968,11 @@ class WorkforceService:
         employee_id: int | None,
         from_date: str | None,
         to_date: str | None,
+        search: str | None,
+        salary_status: str | None,
+        year_month: str | None,
+        sort_by: str | None,
+        sort_dir: str | None,
         limit: int,
         offset: int,
     ) -> dict[str, Any]:
@@ -978,6 +983,11 @@ class WorkforceService:
             employee_id=employee_id,
             from_date=from_date,
             to_date=to_date,
+            search=search,
+            salary_status=salary_status,
+            year_month=year_month,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
             limit=limit,
             offset=offset,
             position_map=position_map,
@@ -985,6 +995,11 @@ class WorkforceService:
         total = await self.repo.count_salary_track(
             main_db,
             employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+            search=search,
+            salary_status=salary_status,
+            year_month=year_month,
         )
         return {
             "rows": rows,

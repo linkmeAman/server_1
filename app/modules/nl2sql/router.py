@@ -14,9 +14,13 @@ from app.core.prism_guard import CallerContext
 from app.core.response import error_response, success_response
 from app.modules.nl2sql.dependencies import require_nl2sql_access
 from app.modules.nl2sql.schemas.models import (
+    Nl2SqlActiveModelPatchRequest,
+    Nl2SqlAddApiKeyRequest,
+    Nl2SqlAskModelPatchRequest,
     Nl2SqlBenchmarkCaseCreateRequest,
     Nl2SqlBenchmarkCasesQuery,
     Nl2SqlConfirmTeachRequest,
+    Nl2SqlCreateProviderRequest,
     Nl2SqlGovernanceValidateRequest,
     Nl2SqlHealthLlmQuery,
     Nl2SqlIngestGroupsRequest,
@@ -26,11 +30,14 @@ from app.modules.nl2sql.schemas.models import (
     Nl2SqlLogsStreamQuery,
     Nl2SqlModelRoutingPatchRequest,
     Nl2SqlPatternFeedbackRequest,
+    Nl2SqlRegisterModelRequest,
     Nl2SqlRequest,
     Nl2SqlTeachRequest,
     Nl2SqlTeachPendingQuery,
     Nl2SqlTelemetryRecentQuery,
     Nl2SqlTelemetrySummaryQuery,
+    Nl2SqlUpdateModelRequest,
+    Nl2SqlUpdateProviderRequest,
 )
 from app.modules.nl2sql.services.client import Nl2SqlClient
 from app.modules.notifications.services.publisher import publish_notification
@@ -513,6 +520,20 @@ async def get_model_routing(
     return _success_response(result, "NL2SQL model routing retrieved", request_id)
 
 
+@router.get("/config/ask-model")
+async def get_ask_model(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.get_ask_model(
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL ask model retrieved", request_id)
+
+
 @router.patch("/config/model-routing")
 async def patch_model_routing(
     request: Request,
@@ -533,6 +554,373 @@ async def patch_model_routing(
         route_path=request.url.path,
     )
     return _success_response(result, "NL2SQL model routing updated", request_id)
+
+
+@router.patch("/config/ask-model")
+async def patch_ask_model(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    if not caller.is_super:
+        raise HTTPException(status_code=403, detail="NL2SQL ask model changes require super access")
+
+    payload, error = await _parse_request_body(request, Nl2SqlAskModelPatchRequest)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request, payload)
+    result = await nl2sql_client.patch_ask_model(
+        request_data=payload,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL ask model updated", request_id)
+
+
+@router.patch("/config/active-model/{role}")
+async def patch_active_model(
+    role: str,
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    if not caller.is_super:
+        raise HTTPException(status_code=403, detail="NL2SQL active model changes require super access")
+
+    payload, error = await _parse_request_body(request, Nl2SqlActiveModelPatchRequest)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request, payload)
+    result = await nl2sql_client.patch_active_model(
+        role=role,
+        request_data=payload,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL active model updated", request_id)
+
+
+@router.get("/providers")
+async def list_providers(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.list_providers(
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL providers retrieved", request_id)
+
+
+@router.post("/providers")
+async def create_provider(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    if not caller.is_super:
+        raise HTTPException(status_code=403, detail="NL2SQL provider changes require super access")
+
+    payload, error = await _parse_request_body(request, Nl2SqlCreateProviderRequest)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request, payload)
+    result = await nl2sql_client.create_provider(
+        request_data=payload,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL provider created", request_id)
+
+
+@router.get("/providers/{provider_id}")
+async def get_provider(
+    provider_id: str,
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.get_provider(
+        provider_id=provider_id,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL provider retrieved", request_id)
+
+
+@router.patch("/providers/{provider_id}")
+async def patch_provider(
+    provider_id: str,
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    if not caller.is_super:
+        raise HTTPException(status_code=403, detail="NL2SQL provider changes require super access")
+
+    payload, error = await _parse_request_body(request, Nl2SqlUpdateProviderRequest)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request, payload)
+    result = await nl2sql_client.patch_provider(
+        provider_id=provider_id,
+        request_data=payload,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL provider updated", request_id)
+
+
+@router.delete("/providers/{provider_id}")
+async def delete_provider(
+    provider_id: str,
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    if not caller.is_super:
+        raise HTTPException(status_code=403, detail="NL2SQL provider changes require super access")
+
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.delete_provider(
+        provider_id=provider_id,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL provider deleted", request_id)
+
+
+@router.post("/providers/{provider_id}/test")
+async def test_provider(
+    provider_id: str,
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.test_provider(
+        provider_id=provider_id,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL provider connectivity checked", request_id)
+
+
+@router.get("/providers/{provider_id}/models")
+async def get_provider_models(
+    provider_id: str,
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.get_provider_models(
+        provider_id=provider_id,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL provider models retrieved", request_id)
+
+
+@router.post("/providers/{provider_id}/keys")
+async def add_provider_key(
+    provider_id: str,
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    if not caller.is_super:
+        raise HTTPException(status_code=403, detail="NL2SQL provider key changes require super access")
+
+    payload, error = await _parse_request_body(request, Nl2SqlAddApiKeyRequest)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request, payload)
+    result = await nl2sql_client.add_provider_key(
+        provider_id=provider_id,
+        request_data=payload,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL provider key added", request_id)
+
+
+@router.get("/providers/{provider_id}/keys")
+async def list_provider_keys(
+    provider_id: str,
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    if not caller.is_super:
+        raise HTTPException(status_code=403, detail="NL2SQL provider key access requires super access")
+
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.list_provider_keys(
+        provider_id=provider_id,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL provider keys retrieved", request_id)
+
+
+@router.delete("/providers/{provider_id}/keys/{key_id}")
+async def delete_provider_key(
+    provider_id: str,
+    key_id: str,
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    if not caller.is_super:
+        raise HTTPException(status_code=403, detail="NL2SQL provider key changes require super access")
+
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.delete_provider_key(
+        provider_id=provider_id,
+        key_id=key_id,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL provider key deleted", request_id)
+
+
+@router.get("/model-registry")
+async def list_model_registry(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    role = request.query_params.get("role")
+    active_only = request.query_params.get("active_only", "true").strip().lower() != "false"
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.list_model_registry(
+        role=role.strip() or None if role else None,
+        active_only=active_only,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL model registry retrieved", request_id)
+
+
+@router.post("/model-registry")
+async def create_model_registry(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    if not caller.is_super:
+        raise HTTPException(status_code=403, detail="NL2SQL model registry changes require super access")
+
+    payload, error = await _parse_request_body(request, Nl2SqlRegisterModelRequest)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request, payload)
+    result = await nl2sql_client.create_model_registry(
+        request_data=payload,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL model registered", request_id)
+
+
+@router.patch("/model-registry/{model_id}")
+async def patch_model_registry(
+    model_id: str,
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    if not caller.is_super:
+        raise HTTPException(status_code=403, detail="NL2SQL model registry changes require super access")
+
+    payload, error = await _parse_request_body(request, Nl2SqlUpdateModelRequest)
+    if error is not None or payload is None:
+        return error
+
+    request_id = _resolve_request_id(request, payload)
+    result = await nl2sql_client.patch_model_registry(
+        model_id=model_id,
+        request_data=payload,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL model registry entry updated", request_id)
+
+
+@router.delete("/model-registry/{model_id}")
+async def delete_model_registry(
+    model_id: str,
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    if not caller.is_super:
+        raise HTTPException(status_code=403, detail="NL2SQL model registry changes require super access")
+
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.delete_model_registry(
+        model_id=model_id,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL model registry entry deleted", request_id)
+
+
+@router.post("/model-registry/{model_id}/set-default")
+async def set_default_model_registry(
+    model_id: str,
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    if not caller.is_super:
+        raise HTTPException(status_code=403, detail="NL2SQL model registry changes require super access")
+
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.set_default_model_registry(
+        model_id=model_id,
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL model registry default updated", request_id)
+
+
+@router.get("/model-registry/default")
+async def get_model_registry_defaults(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.get_model_registry_defaults(
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL model registry defaults retrieved", request_id)
+
+
+@router.get("/model-registry/active-summary")
+async def get_model_registry_active_summary(
+    request: Request,
+    caller: CallerContext = Depends(require_nl2sql_access),
+):
+    request_id = _resolve_request_id(request)
+    result = await nl2sql_client.get_model_registry_active_summary(
+        actor_user_id=caller.user_id,
+        request_id=request_id,
+        route_path=request.url.path,
+    )
+    return _success_response(result, "NL2SQL model registry active summary retrieved", request_id)
 
 
 @router.get("/metrics/llm")
