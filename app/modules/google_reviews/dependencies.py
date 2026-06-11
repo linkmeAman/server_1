@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from app.core.database import central_session_context
+from app.core.prism_pdp import PDPRequest, evaluate
 from app.modules.auth.services.token_service import verify_access_token
 from app.modules.auth.services.common import AuthError
 
@@ -56,3 +58,30 @@ def require_auth(authorization_header: Optional[str]) -> Dict[str, Any]:
             message="Invalid or expired access token",
             status_code=401,
         ) from exc
+
+
+async def has_google_reviews_permission(claims: Dict[str, Any], action: str) -> bool:
+    """Return True when the caller is supreme or PRISM allows the action."""
+    if bool(claims.get("is_super")):
+        return True
+
+    user_id = claims.get("user_id") or claims.get("sub")
+    if user_id is None:
+        return False
+
+    try:
+        user_id_int = int(user_id)
+    except (TypeError, ValueError):
+        return False
+
+    async with central_session_context() as central_db:
+        result = await evaluate(
+            PDPRequest(
+                user_id=user_id_int,
+                action=action,
+                resource_type="google_reviews",
+                resource_id="*",
+            ),
+            central_db,
+        )
+    return result.decision == "Allow"
