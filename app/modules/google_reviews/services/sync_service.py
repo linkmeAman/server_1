@@ -152,3 +152,41 @@ class SyncService:
                 f"{analyzed_count} analyzed."
             ),
         )
+
+    async def sync_all_locations(self, db: AsyncSession) -> SyncResult:
+        """Sync every active registered location and aggregate the counters."""
+        stmt = (
+            select(GoogleReviewLocation.id)
+            .where(GoogleReviewLocation.is_active.is_(True))
+            .order_by(GoogleReviewLocation.display_name)
+        )
+        result = await db.execute(stmt)
+        location_ids = [int(row[0]) for row in result.fetchall()]
+
+        if not location_ids:
+            from app.modules.google_reviews.dependencies import GoogleReviewsError
+            raise GoogleReviewsError(
+                code="REVIEWS_LOCATION_NOT_FOUND",
+                message="No active locations found to sync",
+                status_code=404,
+            )
+
+        total_new = 0
+        total_updated = 0
+        total_analyzed = 0
+        for location_id in location_ids:
+            sync_result = await self.sync_location(location_id=location_id, db=db)
+            total_new += sync_result.new_count
+            total_updated += sync_result.updated_count
+            total_analyzed += sync_result.analyzed_count
+
+        return SyncResult(
+            location_id=0,
+            new_count=total_new,
+            updated_count=total_updated,
+            analyzed_count=total_analyzed,
+            message=(
+                f"All-location sync complete: {len(location_ids)} locations, "
+                f"{total_new} new, {total_updated} updated, {total_analyzed} analyzed."
+            ),
+        )

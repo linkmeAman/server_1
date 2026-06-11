@@ -51,7 +51,11 @@ class LocationOut(BaseModel):
 # ---------------------------------------------------------------------------
 
 class SyncRequest(BaseModel):
-    location_id: int = Field(..., ge=1, description="ID of the GoogleReviewLocation to sync")
+    location_id: Optional[int] = Field(
+        None,
+        ge=1,
+        description="ID of the GoogleReviewLocation to sync. Omit to sync all active locations.",
+    )
 
 
 class SyncResult(BaseModel):

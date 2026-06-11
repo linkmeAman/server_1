@@ -83,6 +83,12 @@ async def assign_review(
                 message="Review not found",
                 status_code=404,
             )
+        if review.reply_text:
+            raise GoogleReviewsError(
+                code="REVIEWS_REPLY_LOCKED",
+                message="This review is locked because a Google reply already exists",
+                status_code=409,
+            )
 
         stmt = select(GoogleReviewAssignment).where(GoogleReviewAssignment.review_id == review_db_id)
         result = await db.execute(stmt)
@@ -158,6 +164,12 @@ async def reply_to_review(
                 code="REVIEWS_NOT_ASSIGNED",
                 message="Review must be assigned before replying",
                 status_code=400,
+            )
+        if review.reply_text or assignment.status == GoogleReviewAssignmentStatus.replied:
+            raise GoogleReviewsError(
+                code="REVIEWS_REPLY_LOCKED",
+                message="This review is locked because a Google reply already exists",
+                status_code=409,
             )
         if int(assignment.counselor_employee_id) != int(caller_employee_id):
             raise GoogleReviewsError(
