@@ -25,6 +25,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    Index,
     func,
 )
 from sqlalchemy.orm import relationship
@@ -98,6 +99,8 @@ class GoogleReview(Base):
 
     location = relationship("GoogleReviewLocation", back_populates="reviews")
     analysis = relationship("ReviewAnalysis", back_populates="review", uselist=False)
+    assignment = relationship("GoogleReviewAssignment", back_populates="review", uselist=False)
+    reply_logs = relationship("GoogleReviewReplyLog", back_populates="review")
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<GoogleReview id={self.id} rating={self.rating} review_id={self.review_id!r}>"
@@ -140,3 +143,88 @@ class ReviewAnalysis(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<ReviewAnalysis review_id={self.review_id} sentiment={self.sentiment}>"
+
+
+class GoogleReviewAssignmentStatus(str, enum.Enum):
+    assigned = "assigned"
+    draft_saved = "draft_saved"
+    reply_pending = "reply_pending"
+    replied = "replied"
+    reply_failed = "reply_failed"
+
+
+class GoogleReviewAssignment(Base):
+    """Tracks the single counselor currently responsible for a review."""
+
+    __tablename__ = "google_review_assignments"
+    __table_args__ = (
+        UniqueConstraint("review_id", name="uq_google_review_assignments_review_id"),
+        Index("ix_google_review_assignments_counselor_employee_id", "counselor_employee_id"),
+        Index("ix_google_review_assignments_location_id", "location_id"),
+        Index("ix_google_review_assignments_status", "status"),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    review_id = Column(
+        BigInteger,
+        ForeignKey("google_reviews.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    location_id = Column(
+        BigInteger,
+        ForeignKey("google_review_locations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    counselor_employee_id = Column(BigInteger, nullable=False)
+    counselor_name = Column(String(255), nullable=True)
+    assigned_by_employee_id = Column(BigInteger, nullable=True)
+    assigned_by_name = Column(String(255), nullable=True)
+    assigned_at = Column(DateTime, nullable=False, server_default=func.now())
+    status = Column(
+        Enum(GoogleReviewAssignmentStatus, name="google_review_assignment_status"),
+        nullable=False,
+        default=GoogleReviewAssignmentStatus.assigned,
+        server_default=GoogleReviewAssignmentStatus.assigned.value,
+    )
+    last_action_at = Column(DateTime, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    review = relationship("GoogleReview", back_populates="assignment")
+    location = relationship("GoogleReviewLocation")
+    reply_logs = relationship("GoogleReviewReplyLog", back_populates="assignment")
+
+
+class GoogleReviewReplyLog(Base):
+    """Auditable log of every attempted reply submission to Google."""
+
+    __tablename__ = "google_review_reply_logs"
+    __table_args__ = (
+        Index("ix_google_review_reply_logs_review_id", "review_id"),
+        Index("ix_google_review_reply_logs_assignment_id", "assignment_id"),
+        Index("ix_google_review_reply_logs_counselor_employee_id", "counselor_employee_id"),
+        Index("ix_google_review_reply_logs_created_at", "created_at"),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    review_id = Column(
+        BigInteger,
+        ForeignKey("google_reviews.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    assignment_id = Column(
+        BigInteger,
+        ForeignKey("google_review_assignments.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    counselor_employee_id = Column(BigInteger, nullable=False)
+    counselor_name = Column(String(255), nullable=True)
+    reply_text = Column(Text, nullable=False)
+    google_api_status = Column(String(50), nullable=False)
+    google_api_response = Column(JSON, nullable=True)
+    is_success = Column(Boolean, nullable=False, default=False, server_default="0")
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    review = relationship("GoogleReview", back_populates="reply_logs")
+    assignment = relationship("GoogleReviewAssignment", back_populates="reply_logs")
