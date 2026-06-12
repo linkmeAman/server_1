@@ -12,7 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_main_db_session
 from app.core.response import error_response, success_response
-from app.modules.google_reviews.dependencies import GoogleReviewsError, require_auth
+from app.modules.google_reviews.dependencies import (
+    GoogleReviewsError,
+    has_google_reviews_permission,
+    require_auth,
+)
 from app.modules.google_reviews.models.db import (
     GoogleReview,
     GoogleReviewAssignment,
@@ -78,6 +82,12 @@ async def assign_review(
                 code="REVIEWS_NOT_FOUND",
                 message="Review not found",
                 status_code=404,
+            )
+        if review.reply_text:
+            raise GoogleReviewsError(
+                code="REVIEWS_REPLY_LOCKED",
+                message="This review is locked because a Google reply already exists",
+                status_code=409,
             )
 
         stmt = select(GoogleReviewAssignment).where(GoogleReviewAssignment.review_id == review_db_id)
@@ -154,6 +164,12 @@ async def reply_to_review(
                 code="REVIEWS_NOT_ASSIGNED",
                 message="Review must be assigned before replying",
                 status_code=400,
+            )
+        if review.reply_text or assignment.status == GoogleReviewAssignmentStatus.replied:
+            raise GoogleReviewsError(
+                code="REVIEWS_REPLY_LOCKED",
+                message="This review is locked because a Google reply already exists",
+                status_code=409,
             )
         if int(assignment.counselor_employee_id) != int(caller_employee_id):
             raise GoogleReviewsError(
@@ -239,7 +255,17 @@ async def get_leaderboard(
     db: AsyncSession = Depends(get_main_db_session),
 ):
     try:
-        require_auth(request.headers.get("Authorization"))
+        claims = require_auth(request.headers.get("Authorization"))
+        can_view_leaderboard = await has_google_reviews_permission(
+            claims,
+            "reviews:leaderboard:read",
+        )
+        if not can_view_leaderboard:
+            raise GoogleReviewsError(
+                code="REVIEWS_LEADERBOARD_FORBIDDEN",
+                message="You are not authorized to view the counselor leaderboard",
+                status_code=403,
+            )
 
         filters = []
         if location_id:

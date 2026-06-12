@@ -13,7 +13,11 @@ from pydantic import BaseModel
 
 from app.core.database import get_main_db_session
 from app.core.response import error_response, success_response
-from app.modules.google_reviews.dependencies import GoogleReviewsError, require_auth
+from app.modules.google_reviews.dependencies import (
+    GoogleReviewsError,
+    has_google_reviews_permission,
+    require_auth,
+)
 from app.modules.google_reviews.models.db import GoogleReviewLocation
 from app.modules.google_reviews.schemas.models import LocationOut
 from app.modules.google_reviews.services.gmb_client import GmbApiClient
@@ -42,7 +46,14 @@ async def list_locations(
     db: AsyncSession = Depends(get_main_db_session),
 ):
     try:
-        require_auth(request.headers.get("Authorization"))
+        claims = require_auth(request.headers.get("Authorization"))
+        can_read_all_reviews = await has_google_reviews_permission(claims, "reviews:read_all")
+        if not can_read_all_reviews:
+            raise GoogleReviewsError(
+                code="REVIEWS_LOCATIONS_FORBIDDEN",
+                message="You are not authorized to view all locations",
+                status_code=403,
+            )
         stmt = (
             select(GoogleReviewLocation)
             .where(GoogleReviewLocation.is_active.is_(True))
@@ -70,7 +81,17 @@ async def discover_gmb_locations(request: Request):
     account_name and location_name values to register via POST /locations.
     """
     try:
-        require_auth(request.headers.get("Authorization"))
+        claims = require_auth(request.headers.get("Authorization"))
+        can_setup_locations = await has_google_reviews_permission(
+            claims,
+            "reviews:setup_locations",
+        )
+        if not can_setup_locations:
+            raise GoogleReviewsError(
+                code="REVIEWS_DISCOVER_FORBIDDEN",
+                message="You are not authorized to discover Google review locations",
+                status_code=403,
+            )
         access_token = await _token_manager.get_valid_access_token()
 
         accounts = await _gmb_client.list_accounts(access_token)
@@ -144,7 +165,17 @@ async def register_location(
 ):
     """Register a GMB location into the DB so it can be synced."""
     try:
-        require_auth(request.headers.get("Authorization"))
+        claims = require_auth(request.headers.get("Authorization"))
+        can_setup_locations = await has_google_reviews_permission(
+            claims,
+            "reviews:setup_locations",
+        )
+        if not can_setup_locations:
+            raise GoogleReviewsError(
+                code="REVIEWS_REGISTER_FORBIDDEN",
+                message="You are not authorized to register Google review locations",
+                status_code=403,
+            )
 
         # Check for duplicate
         stmt = select(GoogleReviewLocation).where(

@@ -8,7 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_main_db_session
 from app.core.response import error_response, success_response
-from app.modules.google_reviews.dependencies import GoogleReviewsError, require_auth
+from app.modules.google_reviews.dependencies import (
+    GoogleReviewsError,
+    has_google_reviews_permission,
+    require_auth,
+)
 from app.modules.google_reviews.schemas.models import SyncRequest
 from app.modules.google_reviews.services.sync_service import SyncService
 
@@ -32,8 +36,26 @@ async def trigger_sync(
     db: AsyncSession = Depends(get_main_db_session),
 ):
     try:
-        require_auth(request.headers.get("Authorization"))
-        result = await _sync_service.sync_location(location_id=payload.location_id, db=db)
+        claims = require_auth(request.headers.get("Authorization"))
+        can_sync_reviews = await has_google_reviews_permission(claims, "reviews:sync")
+        if not can_sync_reviews:
+            raise GoogleReviewsError(
+                code="REVIEWS_SYNC_FORBIDDEN",
+                message="You are not authorized to sync Google reviews",
+                status_code=403,
+            )
+
+        if payload.location_id is None:
+            can_read_all_reviews = await has_google_reviews_permission(claims, "reviews:read_all")
+            if not can_read_all_reviews:
+                raise GoogleReviewsError(
+                    code="REVIEWS_SYNC_ALL_FORBIDDEN",
+                    message="You are not authorized to sync all locations",
+                    status_code=403,
+                )
+            result = await _sync_service.sync_all_locations(db=db)
+        else:
+            result = await _sync_service.sync_location(location_id=payload.location_id, db=db)
         return success_response(
             data=result.model_dump(),
             message=result.message,

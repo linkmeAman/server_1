@@ -2,24 +2,25 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.database import get_main_db_session
 from app.core.response import error_response, success_response
-from app.modules.google_reviews.dependencies import GoogleReviewsError, require_auth
-from app.modules.google_reviews.models.db import GoogleReview, ReviewAnalysis
+from app.modules.google_reviews.dependencies import (
+    GoogleReviewsError,
+    has_google_reviews_permission,
+    require_auth,
+)
+from app.modules.google_reviews.models.db import GoogleReview, GoogleReviewAssignment, ReviewAnalysis
 from app.modules.google_reviews.schemas.models import (
     AnalyticsOut,
     SentimentDistribution,
-    TopTopic,
 )
 
 router = APIRouter()
@@ -41,7 +42,9 @@ async def get_analytics(
     db: AsyncSession = Depends(get_main_db_session),
 ):
     try:
-        require_auth(request.headers.get("Authorization"))
+        claims = require_auth(request.headers.get("Authorization"))
+        caller_employee_id = claims.get("employee_id")
+        can_read_all_reviews = await has_google_reviews_permission(claims, "reviews:read_all")
 
         filters = []
         if location_id:
@@ -50,8 +53,17 @@ async def get_analytics(
             filters.append(GoogleReview.review_time >= date_from)
         if date_to:
             filters.append(GoogleReview.review_time <= date_to)
+        if not can_read_all_reviews:
+            if caller_employee_id is None:
+                raise GoogleReviewsError(
+                    code="REVIEWS_EMPLOYEE_CONTEXT_MISSING",
+                    message="Logged-in user is missing employee context",
+                    status_code=403,
+                )
+            filters.append(GoogleReviewAssignment.counselor_employee_id == int(caller_employee_id))
 
         where_clause = and_(*filters) if filters else None
+        needs_assignment_join = not can_read_all_reviews
 
         # --- Core aggregates ---
         base_stmt = select(
@@ -61,6 +73,11 @@ async def get_analytics(
                 func.cast(GoogleReview.reply_text.isnot(None), type_=func.count(GoogleReview.id).type)
             ).label("with_reply"),
         )
+        if needs_assignment_join:
+            base_stmt = base_stmt.join(
+                GoogleReviewAssignment,
+                GoogleReviewAssignment.review_id == GoogleReview.id,
+            )
         if where_clause is not None:
             base_stmt = base_stmt.where(where_clause)
         agg_result = await db.execute(base_stmt)
@@ -73,6 +90,11 @@ async def get_analytics(
         with_reply_stmt = select(func.count(GoogleReview.id)).where(
             GoogleReview.reply_text.isnot(None)
         )
+        if needs_assignment_join:
+            with_reply_stmt = with_reply_stmt.join(
+                GoogleReviewAssignment,
+                GoogleReviewAssignment.review_id == GoogleReview.id,
+            )
         if where_clause is not None:
             with_reply_stmt = with_reply_stmt.where(where_clause)
         with_reply_result = await db.execute(with_reply_stmt)
@@ -81,6 +103,11 @@ async def get_analytics(
 
         # --- Rating breakdown ---
         rating_stmt = select(GoogleReview.rating, func.count(GoogleReview.id).label("cnt"))
+        if needs_assignment_join:
+            rating_stmt = rating_stmt.join(
+                GoogleReviewAssignment,
+                GoogleReviewAssignment.review_id == GoogleReview.id,
+            )
         if where_clause is not None:
             rating_stmt = rating_stmt.where(where_clause)
         rating_stmt = rating_stmt.group_by(GoogleReview.rating)
@@ -96,6 +123,11 @@ async def get_analytics(
             select(ReviewAnalysis.sentiment, func.count(ReviewAnalysis.id).label("cnt"))
             .join(GoogleReview, GoogleReview.id == ReviewAnalysis.review_id)
         )
+        if needs_assignment_join:
+            sent_stmt = sent_stmt.join(
+                GoogleReviewAssignment,
+                GoogleReviewAssignment.review_id == GoogleReview.id,
+            )
         if where_clause is not None:
             sent_stmt = sent_stmt.where(where_clause)
         sent_stmt = sent_stmt.group_by(ReviewAnalysis.sentiment)
@@ -108,25 +140,6 @@ async def get_analytics(
             mixed=sentiment_counts.get("mixed", 0),
         )
 
-        # --- Top topics (aggregate across all analyses for this filter) ---
-        topics_stmt = (
-            select(ReviewAnalysis.topics)
-            .join(GoogleReview, GoogleReview.id == ReviewAnalysis.review_id)
-        )
-        if where_clause is not None:
-            topics_stmt = topics_stmt.where(where_clause)
-        topics_result = await db.execute(topics_stmt)
-        topic_counter: Counter = Counter()
-        for topics_row in topics_result.scalars().all():
-            if isinstance(topics_row, list):
-                for t in topics_row:
-                    if t:
-                        topic_counter[str(t)] += 1
-
-        top_topics: List[TopTopic] = [
-            TopTopic(topic=t, count=c) for t, c in topic_counter.most_common(15)
-        ]
-
         analytics = AnalyticsOut(
             location_id=location_id,
             total_reviews=total,
@@ -134,7 +147,7 @@ async def get_analytics(
             response_rate=response_rate,
             sentiment_distribution=sentiment_dist,
             rating_breakdown=rating_breakdown,
-            top_topics=top_topics,
+            top_topics=[],
             date_from=date_from,
             date_to=date_to,
         )

@@ -14,7 +14,11 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_main_db_session
 from app.core.response import error_response, success_response
-from app.modules.google_reviews.dependencies import GoogleReviewsError, require_auth
+from app.modules.google_reviews.dependencies import (
+    GoogleReviewsError,
+    has_google_reviews_permission,
+    require_auth,
+)
 from app.modules.google_reviews.models.db import GoogleReview, GoogleReviewAssignment, ReviewAnalysis
 from app.modules.google_reviews.schemas.models import ReviewOut, ReviewsListResponse
 
@@ -42,7 +46,6 @@ async def list_reviews(
     date_to: Optional[datetime] = Query(None),
     assignment_status: Optional[str] = Query(None),
     counselor_employee_id: Optional[int] = Query(None, ge=1),
-    assigned_to_me: bool = Query(False),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_main_db_session),
@@ -50,7 +53,7 @@ async def list_reviews(
     try:
         claims = require_auth(request.headers.get("Authorization"))
         caller_employee_id = claims.get("employee_id")
-        caller_is_super = bool(claims.get("is_super"))
+        can_read_all_reviews = await has_google_reviews_permission(claims, "reviews:read_all")
 
         filters = []
         if location_id:
@@ -67,15 +70,7 @@ async def list_reviews(
             filters.append(GoogleReviewAssignment.status == assignment_status)
         if counselor_employee_id:
             filters.append(GoogleReviewAssignment.counselor_employee_id == counselor_employee_id)
-        if not caller_is_super:
-            if caller_employee_id is None:
-                raise GoogleReviewsError(
-                    code="REVIEWS_EMPLOYEE_CONTEXT_MISSING",
-                    message="Logged-in user is missing employee context",
-                    status_code=403,
-                )
-            filters.append(GoogleReviewAssignment.counselor_employee_id == int(caller_employee_id))
-        elif assigned_to_me:
+        if not can_read_all_reviews:
             if caller_employee_id is None:
                 raise GoogleReviewsError(
                     code="REVIEWS_EMPLOYEE_CONTEXT_MISSING",
@@ -85,7 +80,7 @@ async def list_reviews(
             filters.append(GoogleReviewAssignment.counselor_employee_id == int(caller_employee_id))
 
         needs_assignment_join = bool(
-            assignment_status or counselor_employee_id or assigned_to_me or not caller_is_super
+            assignment_status or counselor_employee_id or not can_read_all_reviews
         )
 
         count_stmt = select(func.count(GoogleReview.id))
