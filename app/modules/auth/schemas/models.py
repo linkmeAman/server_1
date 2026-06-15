@@ -61,6 +61,11 @@ class SupremeLoginRequest(BaseModel):
     country_code: str = Field(..., min_length=1, max_length=8)
     mobile: str = Field(..., min_length=6, max_length=20)
     password: str = Field(..., min_length=1, max_length=128)
+    # TOTP fields — only present on the second call after the server signals totp_required.
+    # totp_code: the 6-digit one-time code from the authenticator app.
+    # totp_secret: echoed back from the client during first-time enrollment so the server can persist it.
+    totp_code: Optional[str] = Field(default=None, min_length=6, max_length=8)
+    totp_secret: Optional[str] = Field(default=None, min_length=16, max_length=64)
 
 
 class RefreshRequest(BaseModel):

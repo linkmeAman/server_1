@@ -184,6 +184,9 @@ class Settings(BaseSettings):
     AUTH_V2_LOGIN_COOLDOWN_MINUTES: int = int(os.getenv("AUTH_V2_LOGIN_COOLDOWN_MINUTES", 2))
     AUTH_V2_BOOTSTRAP_ONLY: bool = os.getenv("AUTH_V2_BOOTSTRAP_ONLY", "True").lower() == "true"
     AUTH_SUPREME_CREATE_ENABLED: bool = os.getenv("AUTH_SUPREME_CREATE_ENABLED", "False").lower() == "true"
+    # Supreme users get their own session lifetime (7 days by default).
+    # Employees use AUTH_V2_REFRESH_TOKEN_DAYS instead.
+    AUTH_SUPREME_REFRESH_TOKEN_DAYS: int = int(os.getenv("AUTH_SUPREME_REFRESH_TOKEN_DAYS", 7))
 
     # File storage — contact / employee documents
     # Absolute path to the directory that holds contact_document files.
