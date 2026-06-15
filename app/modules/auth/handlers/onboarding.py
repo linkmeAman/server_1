@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import secrets
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+try:
+    import pyotp  # type: ignore
+except ImportError:  # pragma: no cover
+    pyotp = None  # type: ignore
 
 from app.modules.auth.constants import (
     AUTH_SUPREME_CREATE_DISABLED,
@@ -31,6 +38,8 @@ from app.core.database import get_central_db_session
 from app.core.security import hash_password, verify_password
 from app.core.settings import get_settings
 
+_TOTP_ISSUER = "TickleRight Supreme"
+
 router = APIRouter(prefix="/auth/onboarding", tags=["auth-onboarding"])
 
 
@@ -44,6 +53,7 @@ async def _ensure_supreme_tables(central_db: AsyncSession) -> None:
                 mobile VARCHAR(20) NOT NULL,
                 password_hash VARCHAR(255) NOT NULL,
                 display_name VARCHAR(120) NULL,
+                totp_secret VARCHAR(64) NULL,
                 is_super TINYINT(1) NOT NULL DEFAULT 1,
                 is_active TINYINT(1) NOT NULL DEFAULT 1,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -53,6 +63,22 @@ async def _ensure_supreme_tables(central_db: AsyncSession) -> None:
             """
         )
     )
+
+    # Idempotently add totp_secret column if it doesn't already exist
+    # (handles databases created before this migration was applied).
+    try:
+        await central_db.execute(
+            text(
+                """
+                ALTER TABLE auth_supreme_user
+                ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(64) NULL
+                """
+            )
+        )
+    except Exception:
+        # Some MySQL versions don't support ADD COLUMN IF NOT EXISTS.
+        # Swallow the error — column either already exists or we'll catch it later.
+        pass
 
     await central_db.execute(
         text(
@@ -146,7 +172,8 @@ async def _issue_supreme_tokens(
     )
 
     now_utc = utcnow()
-    refresh_expiry = now_utc + timedelta(days=int(get_settings().AUTH_V2_REFRESH_TOKEN_DAYS))
+    # Supreme users always get their dedicated session lifetime (AUTH_SUPREME_REFRESH_TOKEN_DAYS).
+    refresh_expiry = now_utc + timedelta(days=int(get_settings().AUTH_SUPREME_REFRESH_TOKEN_DAYS))
 
     await central_db.execute(
         text(
@@ -362,9 +389,31 @@ async def login_supreme_user(
     request: Request,
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
+    """
+    Supreme user login — two-call TOTP flow.
+
+    Call 1 — password only (totp_code absent):
+      • Validates credentials.
+      • If TOTP not yet enrolled → HTTP 202 with {totp_required: "setup", totp_uri: "...", totp_secret: "..."}.
+      • If TOTP already enrolled  → HTTP 202 with {totp_required: "verify"}.
+
+    Call 2 — password + totp_code (+ totp_secret on first setup):
+      • Verifies the 6-digit TOTP code.
+      • On enrollment: persists totp_secret to the DB before issuing tokens.
+      • Issues tokens with a 7-day refresh expiry on success.
+    """
     rid = request_id(request)
     country_code = _normalize_country_code(payload.country_code)
     mobile = _normalize_mobile(payload.mobile)
+
+    if pyotp is None:
+        return error_json_response(
+            AUTH_SERVICE_UNAVAILABLE,
+            "TOTP library (pyotp) is not installed on the server.",
+            503,
+            rid,
+            details={},
+        )
 
     try:
         async with central_db.begin():
@@ -373,7 +422,7 @@ async def login_supreme_user(
             row_result = await central_db.execute(
                 text(
                     """
-                    SELECT id, password_hash, display_name
+                    SELECT id, password_hash, display_name, totp_secret
                     FROM auth_supreme_user
                     WHERE country_code = :country_code
                       AND mobile = :mobile
@@ -398,6 +447,12 @@ async def login_supreme_user(
 
             user_id = int(user_row._mapping["id"])
             password_hash = str(user_row._mapping.get("password_hash") or "")
+            display_name = str(user_row._mapping.get("display_name") or "Supreme User")
+            stored_totp_secret = user_row._mapping.get("totp_secret") or None
+            if stored_totp_secret:
+                stored_totp_secret = str(stored_totp_secret).strip() or None
+
+            # ── Step 1: Verify password ───────────────────────────────────────
             if not verify_password(payload.password, password_hash):
                 return error_json_response(
                     AUTH_INVALID_CREDENTIALS,
@@ -407,6 +462,88 @@ async def login_supreme_user(
                     details={},
                 )
 
+            # ── Step 2a: No TOTP code supplied yet — challenge the client ─────
+            if not payload.totp_code:
+                if not stored_totp_secret:
+                    # First-time TOTP enrollment: generate a new secret and return
+                    # the provisioning URI so the frontend can render a QR code.
+                    new_secret = pyotp.random_base32()
+                    totp_uri = pyotp.totp.TOTP(new_secret).provisioning_uri(
+                        name=f"{country_code}{mobile}",
+                        issuer_name=_TOTP_ISSUER,
+                    )
+                    # Return 202 Accepted — not an error, just a continuation signal.
+                    return JSONResponse(
+                        status_code=202,
+                        content={
+                            "success": True,
+                            "totp_required": "setup",
+                            "totp_uri": totp_uri,
+                            "totp_secret": new_secret,
+                            "message": "Scan the QR code with Google Authenticator then submit the 6-digit code.",
+                            "request_id": rid,
+                        },
+                    )
+                else:
+                    # TOTP already enrolled — ask for the verification code.
+                    return JSONResponse(
+                        status_code=202,
+                        content={
+                            "success": True,
+                            "totp_required": "verify",
+                            "message": "Enter the 6-digit code from your authenticator app.",
+                            "request_id": rid,
+                        },
+                    )
+
+            # ── Step 2b: TOTP code supplied — verify it ───────────────────────
+            totp_code = str(payload.totp_code).strip()
+
+            if not stored_totp_secret:
+                # First enrollment: the client echoes back the totp_secret that
+                # the server generated in step 2a so we can persist it.
+                if not payload.totp_secret:
+                    return error_json_response(
+                        AUTH_INVALID_CREDENTIALS,
+                        "TOTP secret is required for first-time enrollment.",
+                        400,
+                        rid,
+                        details={},
+                    )
+                secret_to_verify = str(payload.totp_secret).strip()
+            else:
+                secret_to_verify = stored_totp_secret
+
+            totp_obj = pyotp.TOTP(secret_to_verify)
+            # Allow ±1 window (30 s) to tolerate small clock drift.
+            if not totp_obj.verify(totp_code, valid_window=1):
+                return error_json_response(
+                    AUTH_INVALID_CREDENTIALS,
+                    "Invalid or expired authenticator code. Please try again.",
+                    401,
+                    rid,
+                    details={},
+                )
+
+            # ── Persist TOTP secret on first enrollment ───────────────────────
+            if not stored_totp_secret:
+                await central_db.execute(
+                    text(
+                        """
+                        UPDATE auth_supreme_user
+                        SET totp_secret = :totp_secret,
+                            modified_at = :modified_at
+                        WHERE id = :user_id
+                        """
+                    ),
+                    {
+                        "totp_secret": secret_to_verify,
+                        "modified_at": utcnow().replace(tzinfo=None),
+                        "user_id": user_id,
+                    },
+                )
+
+            # ── Issue tokens (7-day refresh for supreme users) ────────────────
             token_pair = await _issue_supreme_tokens(
                 central_db=central_db,
                 request=request,
@@ -428,7 +565,7 @@ async def login_supreme_user(
                 "is_super": True,
                 "permissions_version": 1,
                 "permissions_schema_version": 1,
-                "display_name": str(user_row._mapping.get("display_name") or "Supreme User"),
+                "display_name": display_name,
             },
             request_id_value=rid,
             message="Login successful",
