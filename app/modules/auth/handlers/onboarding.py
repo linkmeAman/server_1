@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import secrets
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Request
@@ -64,21 +63,29 @@ async def _ensure_supreme_tables(central_db: AsyncSession) -> None:
         )
     )
 
-    # Idempotently add totp_secret column if it doesn't already exist
-    # (handles databases created before this migration was applied).
-    try:
+    # Idempotently add totp_secret column if it doesn't already exist.
+    # Uses INFORMATION_SCHEMA so it works on MySQL 5.7+ (ADD COLUMN IF NOT EXISTS is 8.0+ only).
+    col_result = await central_db.execute(
+        text(
+            """
+            SELECT COUNT(*) AS col_count
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME   = 'auth_supreme_user'
+              AND COLUMN_NAME  = 'totp_secret'
+            """
+        )
+    )
+    col_row = col_result.fetchone()
+    if not col_row or int(col_row._mapping.get("col_count") or 0) == 0:
         await central_db.execute(
             text(
                 """
                 ALTER TABLE auth_supreme_user
-                ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(64) NULL
+                ADD COLUMN totp_secret VARCHAR(64) NULL
                 """
             )
         )
-    except Exception:
-        # Some MySQL versions don't support ADD COLUMN IF NOT EXISTS.
-        # Swallow the error — column either already exists or we'll catch it later.
-        pass
 
     await central_db.execute(
         text(
