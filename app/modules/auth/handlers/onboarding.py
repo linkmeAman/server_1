@@ -78,14 +78,18 @@ async def _ensure_supreme_tables(central_db: AsyncSession) -> None:
     )
     col_row = col_result.fetchone()
     if not col_row or int(col_row._mapping.get("col_count") or 0) == 0:
-        await central_db.execute(
-            text(
-                """
-                ALTER TABLE auth_supreme_user
-                ADD COLUMN totp_secret VARCHAR(64) NULL
-                """
+        try:
+            await central_db.execute(
+                text(
+                    """
+                    ALTER TABLE auth_supreme_user
+                    ADD COLUMN totp_secret VARCHAR(64) NULL
+                    """
+                )
             )
-        )
+        except Exception:
+            # Swallow duplicate column error in case the information_schema check missed it.
+            pass
 
     await central_db.execute(
         text(
@@ -577,14 +581,14 @@ async def login_supreme_user(
             request_id_value=rid,
             message="Login successful",
         )
-    except Exception:
+    except Exception as e:
         await central_db.rollback()
         return error_json_response(
             AUTH_SERVICE_UNAVAILABLE,
-            "Auth v2 onboarding unavailable",
+            f"Auth v2 onboarding unavailable: {str(e)}",
             503,
             rid,
-            details={},
+            details={"error": str(e)},
         )
 
 
