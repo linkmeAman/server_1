@@ -56,7 +56,11 @@ class ReportAdminService:
         central_db: AsyncSession,
         slug: str,
     ) -> ReportDefinition | None:
-        rows = await self._load_db_definitions(central_db, slug=self._normalize_slug(slug), status="all")
+        normalized = self._normalize_slug(slug)
+        draft = await self._load_latest_draft_definition(central_db, normalized)
+        if draft is not None:
+            return draft
+        rows = await self._load_db_definitions(central_db, slug=normalized, status="all")
         return rows[0] if rows else None
 
     async def list_report_versions(
@@ -630,6 +634,40 @@ class ReportAdminService:
             except Exception:
                 continue
         return definitions
+
+    async def _load_latest_draft_definition(
+        self,
+        central_db: AsyncSession,
+        slug: str,
+    ) -> ReportDefinition | None:
+        result = await central_db.execute(
+            text(
+                """
+                SELECT
+                    d.slug,
+                    v.version,
+                    v.status AS version_status,
+                    v.definition_json
+                FROM report_definitions d
+                JOIN report_versions v ON v.report_id = d.id
+                WHERE d.slug = :slug
+                  AND v.status = 'draft'
+                ORDER BY v.version DESC
+                LIMIT 1
+                """
+            ),
+            {"slug": slug},
+        )
+        row = result.fetchone()
+        if row is None:
+            return None
+        row_map = row._mapping
+        return self._definition_from_snapshot(
+            row_map["definition_json"],
+            slug=str(row_map["slug"]),
+            status=str(row_map["version_status"]),
+            version=int(row_map["version"]),
+        )
 
     async def _fetch_report_row(
         self,
