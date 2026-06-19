@@ -22,6 +22,7 @@ from app.modules.reports.schemas.models import (
     ReportQuerySort,
 )
 
+from .action_framework import ReportActionFramework
 from .permission import ReportPermissionService
 
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -30,6 +31,7 @@ IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 class ReportQueryService:
     def __init__(self, permissions: ReportPermissionService | None = None) -> None:
         self.permissions = permissions or ReportPermissionService()
+        self.action_framework = ReportActionFramework()
 
     async def run_query(
         self,
@@ -54,6 +56,7 @@ class ReportQueryService:
         try:
             rows, total, sort = await self._execute(main_db, caller, definition, request)
             actions = await self._allowed_actions(central_db, caller, definition)
+            row_actions = [self.action_framework.resolve_actions(actions=actions, row=row) for row in rows]
             return ReportQueryResponse(
                 slug=definition.slug,
                 columns=[col for col in definition.columns if col.visible],
@@ -63,6 +66,7 @@ class ReportQueryService:
                 page_size=request.page_size,
                 sort=sort,
                 actions=actions,
+                row_actions=row_actions,
             )
         except HTTPException as exc:
             status = "error"

@@ -335,3 +335,14 @@ It provides:
 - Add broader integration coverage once full end-to-end admin QA is available
 - Expand legacy import fidelity only where real migration cases require it
 - Add rollout gating only if environment-based exposure is needed beyond PRISM authorization
+
+## Row Action Framework
+
+The backend report module now includes a structured row-action framework:
+
+- `app/modules/reports/schemas/models.py` defines typed action metadata, bindings, visibility rules, confirmation settings, and resolved row actions
+- `app/modules/reports/services/action_framework.py` centralizes validation and row-resolution logic
+- `app/modules/reports/services/validator.py` enforces action-type-specific rules during draft save and publish
+- `app/modules/reports/services/query.py` resolves `row_actions` per returned row after permission filtering
+
+The query API remains backward compatible through the existing `actions` list while adding `row_actions` for the generic frontend runtime.
