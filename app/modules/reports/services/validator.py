@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import re
 
-from app.modules.reports.schemas.models import (
-    FilterOperator,
-    ReportDefinition,
-    ReportFieldError,
-)
+from app.modules.reports.schemas.models import FilterOperator, ReportDefinition, ReportFieldError
 
+from .action_framework import ReportActionFramework
 from .errors import ReportValidationException
 
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+ACTION_FRAMEWORK = ReportActionFramework()
 
 
 class ReportDefinitionValidator:
@@ -270,14 +268,33 @@ class ReportDefinitionValidator:
             else:
                 action_keys.add(action_key)
 
-            if action.route_template and not action.route_template.startswith("/"):
-                errors.append(
-                    self._error(
-                        f"actions.{index}.route_template",
-                        "invalid_value",
-                        "Action routes must start with '/'.",
+            if action.route_template:
+                normalized_route_template = action.route_template.strip()
+                normalized_route_template_lower = normalized_route_template.lower()
+                if normalized_route_template_lower.startswith(("http://", "https://")):
+                    errors.append(
+                        self._error(
+                            f"actions.{index}.route_template",
+                            "invalid_value",
+                            "Legacy action routes must use an app-relative path starting with '/'. External URLs are not supported in route_template.",
+                        )
                     )
+                elif not normalized_route_template.startswith("/"):
+                    errors.append(
+                        self._error(
+                            f"actions.{index}.route_template",
+                            "invalid_value",
+                            "Legacy action routes must start with '/'.",
+                        )
+                    )
+
+            errors.extend(
+                ACTION_FRAMEWORK.validate_action(
+                    action=action,
+                    index=index,
+                    known_columns=set(columns_by_key.keys()),
                 )
+            )
 
         if publish and definition.kind == "table" and not any(column.visible for column in definition.columns):
             errors.append(
