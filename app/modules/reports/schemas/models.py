@@ -10,13 +10,6 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 ReportKind = Literal["table", "route"]
 ReportStatus = Literal["draft", "published", "archived"]
 ReportAdminStatus = Literal["draft", "published", "archived", "all"]
-ReportActionType = Literal["navigate", "modal", "popup", "workflow", "api"]
-ReportActionOpenIn = Literal["same_tab", "new_tab"]
-ReportActionHttpMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
-ReportActionBindingSource = Literal["literal", "column"]
-ReportActionVisibilityMatch = Literal["all", "any"]
-ReportActionRuleOperator = Literal["eq", "ne", "in", "not_in", "is_truthy", "is_falsy", "is_empty", "not_empty"]
-ReportActionConfirmVariant = Literal["default", "secondary", "destructive"]
 FilterOperator = Literal[
     "eq",
     "ne",
@@ -103,95 +96,13 @@ class ReportSort(BaseModel):
     direction: SortDirection = "asc"
 
 
-class ReportActionBinding(BaseModel):
-    key: str = Field(..., min_length=1, max_length=128)
-    source: ReportActionBindingSource = "literal"
-    value: str = Field(..., min_length=1, max_length=191)
-
-
-class ReportActionRule(BaseModel):
-    column: str = Field(..., min_length=1, max_length=128)
-    operator: ReportActionRuleOperator = "eq"
-    value: str | list[str] | None = None
-
-
-class ReportActionVisibility(BaseModel):
-    match: ReportActionVisibilityMatch = "all"
-    rules: list[ReportActionRule] = Field(default_factory=list)
-
-
-class ReportActionConfirm(BaseModel):
-    title: str | None = Field(default=None, max_length=191)
-    message: str | None = Field(default=None, max_length=512)
-    confirm_label: str | None = Field(default=None, max_length=64)
-    variant: ReportActionConfirmVariant | None = "default"
-
-
 class ReportAction(BaseModel):
     key: str = Field(..., min_length=1, max_length=128)
     label: str = Field(..., min_length=1, max_length=191)
-    type: ReportActionType = "navigate"
     icon: str | None = Field(default=None, max_length=64)
     permission: str | None = Field(default=None, max_length=191)
     route_template: str | None = Field(default=None, max_length=512)
     predicate: dict[str, Any] | None = None
-    config: dict[str, Any] = Field(default_factory=dict)
-    bindings: list[ReportActionBinding] = Field(default_factory=list)
-    visibility: ReportActionVisibility | None = None
-    confirm: ReportActionConfirm | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def normalize_legacy_shape(cls, value: Any) -> Any:
-        if not isinstance(value, dict):
-            return value
-        data = dict(value)
-        action_type = data.get("type") or "navigate"
-        config = data.get("config")
-        if not isinstance(config, dict):
-            config = {}
-        if action_type == "navigate" and data.get("route_template") and "url_template" not in config:
-            config["url_template"] = data.get("route_template")
-            config.setdefault("open_in", "same_tab")
-        if not data.get("visibility") and isinstance(data.get("predicate"), dict):
-            predicate = data.get("predicate") or {}
-            rules = predicate.get("rules") if isinstance(predicate, dict) else None
-            if isinstance(rules, list):
-                data["visibility"] = {
-                    "match": predicate.get("match") if predicate.get("match") in {"all", "any"} else "all",
-                    "rules": rules,
-                }
-            elif predicate:
-                data["visibility"] = {
-                    "match": "all",
-                    "rules": [{"column": key, "operator": "eq", "value": item} for key, item in predicate.items()],
-                }
-        data["type"] = action_type
-        data["config"] = config
-        return data
-
-
-class ReportRowAction(BaseModel):
-    key: str = Field(..., min_length=1, max_length=128)
-    label: str = Field(..., min_length=1, max_length=191)
-    type: ReportActionType
-    icon: str | None = Field(default=None, max_length=64)
-    confirm: ReportActionConfirm | None = None
-    href: str | None = Field(default=None, max_length=1000)
-    open_in: ReportActionOpenIn | None = None
-    modal_key: str | None = Field(default=None, max_length=128)
-    title: str | None = Field(default=None, max_length=191)
-    description: str | None = Field(default=None, max_length=512)
-    endpoint: str | None = Field(default=None, max_length=1000)
-    method: ReportActionHttpMethod | None = None
-    payload: dict[str, Any] | None = None
-    workflow_key: str | None = Field(default=None, max_length=128)
-    success_message: str | None = Field(default=None, max_length=191)
-    failure_message: str | None = Field(default=None, max_length=191)
-    refresh_on_success: bool = True
-    popup_width: int | None = Field(default=None, ge=200, le=2400)
-    popup_height: int | None = Field(default=None, ge=200, le=1800)
-    popup_title: str | None = Field(default=None, max_length=128)
 
 
 class ReportSource(BaseModel):
@@ -305,7 +216,6 @@ class ReportQueryResponse(BaseModel):
     page_size: int
     sort: list[ReportQuerySort]
     actions: list[ReportAction] = Field(default_factory=list)
-    row_actions: list[list[ReportRowAction]] = Field(default_factory=list)
 
 
 class ReportFieldError(BaseModel):
