@@ -22,12 +22,14 @@ from .dependencies import CallerContext, require_any_caller
 from .holidays_router import router as holidays_router
 from .positions_router import router as positions_router
 from .workshifts_router import router as workshifts_router
+from .user_reports_router import router as user_reports_router
 from .services.workforce_service import WorkforceService
 
 router = APIRouter(prefix="/api/workforce", tags=["workforce"])
 router.include_router(holidays_router)
 router.include_router(positions_router)
 router.include_router(workshifts_router)
+router.include_router(user_reports_router)
 
 service = WorkforceService()
 
