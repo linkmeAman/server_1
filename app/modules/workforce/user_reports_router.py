@@ -23,49 +23,59 @@ async def get_metadata(
     main_db: AsyncSession = Depends(get_main_db_session),
     central_db: AsyncSession = Depends(get_central_db_session),
 ):
-    # 1. Fetch Branches
-    branches_query = text("SELECT id, branch FROM branch WHERE park = 0 AND id != 86")
-    branches_result = await main_db.execute(branches_query)
-    branches = [{"id": row.id, "name": row.branch} for row in branches_result]
+    try:
+        # 1. Fetch Branches
+        branches_query = text("SELECT id, branch FROM branch WHERE park = 0 AND id != 86")
+        branches_result = await main_db.execute(branches_query)
+        branches = [{"id": row.id, "name": row.branch} for row in branches_result]
 
-    # 2. Fetch Employees (Users mapped to branches)
-    users_query = text("""
-        SELECT u.id as user_id, u.fname, u.lname, ub.bid
-        FROM user u
-        JOIN user_bid ub ON u.id = ub.user_id
-        WHERE u.park = 0 AND u.inactive = 0 AND ub.bid != 86
-    """)
-    users_result = await central_db.execute(users_query)
-    
-    employees = {}
-    for row in users_result:
-        user_id = row.user_id
-        if user_id not in employees:
-            employees[user_id] = {
-                "id": user_id,
-                "name": f"{row.fname} {row.lname}".strip(),
-                "bids": []
+        # 2. Fetch Employees (Users mapped to branches)
+        users_query = text("""
+            SELECT u.id as user_id, u.fname, u.lname, ub.bid
+            FROM user u
+            JOIN user_bid ub ON u.id = ub.user_id
+            WHERE u.park = 0 AND u.inactive = 0 AND ub.bid != 86
+        """)
+        users_result = await central_db.execute(users_query)
+        
+        employees = {}
+        for row in users_result:
+            user_id = row.user_id
+            if user_id not in employees:
+                employees[user_id] = {
+                    "id": user_id,
+                    "name": f"{row.fname} {row.lname}".strip(),
+                    "bids": []
+                }
+            employees[user_id]["bids"].append(row.bid)
+
+        # 3. Fetch Modules and Reports
+        modules_query = text("""
+            SELECT m.id, MAX(cm.module) as name, m.parent_id 
+            FROM module m 
+            JOIN client_module cm ON m.id = cm.module_id 
+            WHERE m.park = 0 
+            GROUP BY m.id, m.parent_id
+        """)
+        modules_result = await central_db.execute(modules_query)
+        modules = [{"id": row.id, "name": row.name or f"Module {row.id}", "parent_id": row.parent_id} for row in modules_result]
+        
+        reports_query = text("SELECT id, module_id, name, title FROM report WHERE report = 1")
+        reports_result = await main_db.execute(reports_query)
+        reports = [{"id": row.id, "module_id": row.module_id, "name": row.name, "title": row.title} for row in reports_result]
+
+        return {
+            "success": True,
+            "data": {
+                "branches": branches,
+                "employees": list(employees.values()),
+                "modules": modules,
+                "reports": reports
             }
-        employees[user_id]["bids"].append(row.bid)
-
-    # 3. Fetch Modules and Reports
-    modules_query = text("SELECT id, name, parent_id FROM module WHERE park = 0")
-    modules_result = await central_db.execute(modules_query)
-    modules = [{"id": row.id, "name": row.name, "parent_id": row.parent_id} for row in modules_result]
-    
-    reports_query = text("SELECT id, module_id, name, title FROM report WHERE report = 1")
-    reports_result = await main_db.execute(reports_query)
-    reports = [{"id": row.id, "module_id": row.module_id, "name": row.name, "title": row.title} for row in reports_result]
-
-    return {
-        "success": True,
-        "data": {
-            "branches": branches,
-            "employees": list(employees.values()),
-            "modules": modules,
-            "reports": reports
         }
-    }
+    except Exception as e:
+        import traceback
+        return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
 
 @router.get("/permissions")
 async def get_permissions(
