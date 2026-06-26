@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from prometheus_fastapi_instrumentator import Instrumentator
 
 # Add the project root directory to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -138,6 +139,9 @@ app = FastAPI(
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
 )
+
+# Instrument FastAPI with Prometheus metrics
+Instrumentator().instrument(app).expose(app)
 
 
 # Exception handlers

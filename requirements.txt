@@ -9,6 +9,9 @@ pydantic-settings==2.1.0
 # ASGI server
 python-multipart==0.0.6
 
+# Metrics
+prometheus-fastapi-instrumentator==7.0.0
+
 # Environment variables
 python-dotenv==1.0.0
 
