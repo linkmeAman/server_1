@@ -9,6 +9,8 @@ from app.modules.example.router import router as example_router
 from app.modules.geosearch.router import router as geosearch_router
 from app.modules.google_calendar_v1.router import router as google_calendar_v1_router
 from app.modules.google_reviews.router import router as google_reviews_router
+from app.modules.documents.router import router as documents_router
+from app.modules.documents.router import template_router as document_templates_router
 from app.modules.hr.router import router as hr_router
 from app.modules.workforce.router import router as workforce_router
 from app.modules.llm.router import router as llm_router
@@ -39,6 +41,8 @@ api_router.include_router(query_gateway_router)
 api_router.include_router(employee_events_v1_router)
 api_router.include_router(google_calendar_v1_router)
 api_router.include_router(google_reviews_router)
+api_router.include_router(documents_router)
+api_router.include_router(document_templates_router)
 api_router.include_router(sqlgw_admin_router)
 api_router.include_router(reports_router)
 
