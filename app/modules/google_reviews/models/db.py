@@ -60,6 +60,7 @@ class GoogleReviewLocation(Base):
     display_name = Column(String(255), nullable=False)
     address = Column(Text, nullable=True)
     place_id = Column(String(255), nullable=True, comment="Google Maps Place ID")
+    review_url = Column(Text, nullable=True, comment="Optional custom Google review link from GBP dashboard")
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())

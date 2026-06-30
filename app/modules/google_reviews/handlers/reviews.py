@@ -42,6 +42,7 @@ async def list_reviews(
     location_id: Optional[int] = Query(None, ge=1),
     rating: Optional[int] = Query(None, ge=1, le=5),
     sentiment: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
     date_from: Optional[datetime] = Query(None),
     date_to: Optional[datetime] = Query(None),
     page: int = Query(1, ge=1),
@@ -69,6 +70,10 @@ async def list_reviews(
             filters.append(GoogleReview.review_time <= date_to)
         if sentiment:
             filters.append(ReviewAnalysis.sentiment == sentiment)
+        if status == "replied":
+            filters.append(GoogleReview.reply_text.is_not(None))
+        elif status == "pending":
+            filters.append(GoogleReview.reply_text.is_(None))
 
         count_stmt = select(func.count(GoogleReview.id))
         if sentiment:

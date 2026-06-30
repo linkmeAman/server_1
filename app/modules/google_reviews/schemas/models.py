@@ -31,6 +31,7 @@ class LocationOut(BaseModel):
     display_name: str
     address: Optional[str]
     place_id: Optional[str]
+    review_url: Optional[str]
     is_active: bool
     created_at: datetime
 
