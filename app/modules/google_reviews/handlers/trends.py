@@ -17,7 +17,7 @@ from app.modules.google_reviews.dependencies import (
     has_google_reviews_permission,
     require_auth,
 )
-from app.modules.google_reviews.models.db import GoogleReview, GoogleReviewAssignment, ReviewAnalysis
+from app.modules.google_reviews.models.db import GoogleReview, ReviewAnalysis
 from app.modules.google_reviews.schemas.models import TrendPoint, TrendsOut
 
 router = APIRouter()
@@ -41,8 +41,13 @@ async def get_trends(
 ):
     try:
         claims = require_auth(request.headers.get("Authorization"))
-        caller_employee_id = claims.get("employee_id")
-        can_read_all_reviews = await has_google_reviews_permission(claims, "reviews:read_all")
+        can_read_reviews = await has_google_reviews_permission(claims, "reviews:read")
+        if not can_read_reviews:
+            raise GoogleReviewsError(
+                code="REVIEWS_FORBIDDEN",
+                message="You are not authorized to view Google review trends",
+                status_code=403,
+            )
 
         filters = []
         if location_id:
@@ -53,14 +58,6 @@ async def get_trends(
             filters.append(GoogleReview.review_time <= date_to)
         # Only include reviews with a timestamp
         filters.append(GoogleReview.review_time.isnot(None))
-        if not can_read_all_reviews:
-            if caller_employee_id is None:
-                raise GoogleReviewsError(
-                    code="REVIEWS_EMPLOYEE_CONTEXT_MISSING",
-                    message="Logged-in user is missing employee context",
-                    status_code=403,
-                )
-            filters.append(GoogleReviewAssignment.counselor_employee_id == int(caller_employee_id))
 
         where_clause = and_(*filters)
 
@@ -90,11 +87,6 @@ async def get_trends(
                 ).label("mixed"),
             )
             .join(ReviewAnalysis, ReviewAnalysis.review_id == GoogleReview.id, isouter=True)
-            .join(
-                GoogleReviewAssignment,
-                GoogleReviewAssignment.review_id == GoogleReview.id,
-                isouter=can_read_all_reviews,
-            )
             .where(where_clause)
             .group_by("yr", "period_num")
             .order_by("yr", "period_num")

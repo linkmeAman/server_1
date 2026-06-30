@@ -70,6 +70,74 @@ class GmbApiClient:
 
         return response.status_code, payload
 
+    async def _put(
+        self,
+        base_url: str,
+        path: str,
+        access_token: str,
+        json_body: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[int, Dict[str, Any]]:
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        try:
+            async with httpx.AsyncClient(
+                base_url=base_url,
+                timeout=httpx.Timeout(self.timeout),
+            ) as client:
+                response = await client.put(path, headers=headers, json=json_body or {})
+        except httpx.RequestError as exc:
+            raise GoogleReviewsError(
+                code="GMB_UPSTREAM_ERROR",
+                message="Failed to reach Google My Business API",
+                status_code=502,
+                data={"reason": str(exc)},
+            ) from exc
+
+        payload: Dict[str, Any]
+        try:
+            parsed = response.json()
+            payload = parsed if isinstance(parsed, dict) else {"data": parsed}
+        except Exception:
+            payload = {"raw": response.text}
+
+        return response.status_code, payload
+
+    async def _delete(
+        self,
+        base_url: str,
+        path: str,
+        access_token: str,
+    ) -> Tuple[int, Dict[str, Any]]:
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+        }
+        try:
+            async with httpx.AsyncClient(
+                base_url=base_url,
+                timeout=httpx.Timeout(self.timeout),
+            ) as client:
+                response = await client.delete(path, headers=headers)
+        except httpx.RequestError as exc:
+            raise GoogleReviewsError(
+                code="GMB_UPSTREAM_ERROR",
+                message="Failed to reach Google My Business API",
+                status_code=502,
+                data={"reason": str(exc)},
+            ) from exc
+
+        payload: Dict[str, Any]
+        try:
+            parsed = response.json()
+            payload = parsed if isinstance(parsed, dict) else {"data": parsed}
+        except Exception:
+            payload = {"raw": response.text}
+
+        return response.status_code, payload
+
     # ------------------------------------------------------------------
     # Account / Location helpers
     # ------------------------------------------------------------------
@@ -148,3 +216,43 @@ class GmbApiClient:
                 break
 
         return all_reviews
+
+    async def update_review_reply(
+        self,
+        review_name: str,
+        access_token: str,
+        reply_text: str,
+    ) -> Dict[str, Any]:
+        """Create or update the business reply for a review."""
+        path = f"/{review_name}/reply"
+        status, payload = await self._put(
+            _REVIEWS_BASE,
+            path,
+            access_token,
+            json_body={"comment": reply_text},
+        )
+        if status != 200:
+            raise GoogleReviewsError(
+                code="GMB_REPLY_ERROR",
+                message=f"Failed to update review reply: {payload.get('error', {}).get('message', 'unknown')}",
+                status_code=502,
+                data={"upstream_status": status, "upstream_payload": payload},
+            )
+        return payload
+
+    async def delete_review_reply(
+        self,
+        review_name: str,
+        access_token: str,
+    ) -> Dict[str, Any]:
+        """Delete the business reply for a review."""
+        path = f"/{review_name}/reply"
+        status, payload = await self._delete(_REVIEWS_BASE, path, access_token)
+        if status not in (200, 204):
+            raise GoogleReviewsError(
+                code="GMB_REPLY_DELETE_ERROR",
+                message=f"Failed to delete review reply: {payload.get('error', {}).get('message', 'unknown')}",
+                status_code=502,
+                data={"upstream_status": status, "upstream_payload": payload},
+            )
+        return payload
