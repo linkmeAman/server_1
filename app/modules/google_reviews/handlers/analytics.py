@@ -17,7 +17,7 @@ from app.modules.google_reviews.dependencies import (
     has_google_reviews_permission,
     require_auth,
 )
-from app.modules.google_reviews.models.db import GoogleReview, GoogleReviewAssignment, ReviewAnalysis
+from app.modules.google_reviews.models.db import GoogleReview, ReviewAnalysis
 from app.modules.google_reviews.schemas.models import (
     AnalyticsOut,
     SentimentDistribution,
@@ -43,8 +43,13 @@ async def get_analytics(
 ):
     try:
         claims = require_auth(request.headers.get("Authorization"))
-        caller_employee_id = claims.get("employee_id")
-        can_read_all_reviews = await has_google_reviews_permission(claims, "reviews:read_all")
+        can_read_reviews = await has_google_reviews_permission(claims, "reviews:read")
+        if not can_read_reviews:
+            raise GoogleReviewsError(
+                code="REVIEWS_FORBIDDEN",
+                message="You are not authorized to view Google reviews analytics",
+                status_code=403,
+            )
 
         filters = []
         if location_id:
@@ -53,17 +58,8 @@ async def get_analytics(
             filters.append(GoogleReview.review_time >= date_from)
         if date_to:
             filters.append(GoogleReview.review_time <= date_to)
-        if not can_read_all_reviews:
-            if caller_employee_id is None:
-                raise GoogleReviewsError(
-                    code="REVIEWS_EMPLOYEE_CONTEXT_MISSING",
-                    message="Logged-in user is missing employee context",
-                    status_code=403,
-                )
-            filters.append(GoogleReviewAssignment.counselor_employee_id == int(caller_employee_id))
 
         where_clause = and_(*filters) if filters else None
-        needs_assignment_join = not can_read_all_reviews
 
         # --- Core aggregates ---
         base_stmt = select(
@@ -73,11 +69,6 @@ async def get_analytics(
                 func.cast(GoogleReview.reply_text.isnot(None), type_=func.count(GoogleReview.id).type)
             ).label("with_reply"),
         )
-        if needs_assignment_join:
-            base_stmt = base_stmt.join(
-                GoogleReviewAssignment,
-                GoogleReviewAssignment.review_id == GoogleReview.id,
-            )
         if where_clause is not None:
             base_stmt = base_stmt.where(where_clause)
         agg_result = await db.execute(base_stmt)
@@ -90,11 +81,6 @@ async def get_analytics(
         with_reply_stmt = select(func.count(GoogleReview.id)).where(
             GoogleReview.reply_text.isnot(None)
         )
-        if needs_assignment_join:
-            with_reply_stmt = with_reply_stmt.join(
-                GoogleReviewAssignment,
-                GoogleReviewAssignment.review_id == GoogleReview.id,
-            )
         if where_clause is not None:
             with_reply_stmt = with_reply_stmt.where(where_clause)
         with_reply_result = await db.execute(with_reply_stmt)
@@ -103,11 +89,6 @@ async def get_analytics(
 
         # --- Rating breakdown ---
         rating_stmt = select(GoogleReview.rating, func.count(GoogleReview.id).label("cnt"))
-        if needs_assignment_join:
-            rating_stmt = rating_stmt.join(
-                GoogleReviewAssignment,
-                GoogleReviewAssignment.review_id == GoogleReview.id,
-            )
         if where_clause is not None:
             rating_stmt = rating_stmt.where(where_clause)
         rating_stmt = rating_stmt.group_by(GoogleReview.rating)
@@ -123,11 +104,6 @@ async def get_analytics(
             select(ReviewAnalysis.sentiment, func.count(ReviewAnalysis.id).label("cnt"))
             .join(GoogleReview, GoogleReview.id == ReviewAnalysis.review_id)
         )
-        if needs_assignment_join:
-            sent_stmt = sent_stmt.join(
-                GoogleReviewAssignment,
-                GoogleReviewAssignment.review_id == GoogleReview.id,
-            )
         if where_clause is not None:
             sent_stmt = sent_stmt.where(where_clause)
         sent_stmt = sent_stmt.group_by(ReviewAnalysis.sentiment)

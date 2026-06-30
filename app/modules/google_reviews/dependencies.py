@@ -79,7 +79,7 @@ async def has_google_reviews_permission(claims: Dict[str, Any], action: str) -> 
             PDPRequest(
                 user_id=user_id_int,
                 action=action,
-                resource_type="google_reviews",
+                resource_type="reviews",
                 resource_id="*",
             ),
             central_db,
