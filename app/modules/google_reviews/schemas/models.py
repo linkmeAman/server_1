@@ -20,14 +20,6 @@ class SentimentLabel(str, Enum):
     mixed = "mixed"
 
 
-class ReviewAssignmentStatus(str, Enum):
-    assigned = "assigned"
-    draft_saved = "draft_saved"
-    reply_pending = "reply_pending"
-    replied = "replied"
-    reply_failed = "reply_failed"
-
-
 # ---------------------------------------------------------------------------
 # Location schemas
 # ---------------------------------------------------------------------------
@@ -39,6 +31,7 @@ class LocationOut(BaseModel):
     display_name: str
     address: Optional[str]
     place_id: Optional[str]
+    review_url: Optional[str]
     is_active: bool
     created_at: datetime
 
@@ -98,7 +91,6 @@ class ReviewOut(BaseModel):
     language: Optional[str]
     synced_at: datetime
     analysis: Optional[ReviewAnalysisOut]
-    assignment: Optional["ReviewAssignmentOut"] = None
 
     class Config:
         from_attributes = True
@@ -112,60 +104,15 @@ class ReviewsListResponse(BaseModel):
     pages: int
 
 
-class ReviewAssignmentOut(BaseModel):
-    id: int
-    review_id: int
-    location_id: int
-    counselor_employee_id: int
-    counselor_name: Optional[str]
-    assigned_by_employee_id: Optional[int]
-    assigned_by_name: Optional[str]
-    assigned_at: datetime
-    status: ReviewAssignmentStatus
-    last_action_at: Optional[datetime]
-    notes: Optional[str]
-
-    class Config:
-        from_attributes = True
-
-
-class ReviewAssignRequest(BaseModel):
-    counselor_employee_id: int = Field(..., ge=1)
-    counselor_name: Optional[str] = Field(None, max_length=255)
-    notes: Optional[str] = None
-
-
 class ReviewReplyRequest(BaseModel):
     reply_text: str = Field(..., min_length=1, max_length=4096)
 
 
 class ReplyActionResult(BaseModel):
     review_id: int
-    assignment_id: int
-    status: ReviewAssignmentStatus
     google_reply_updated: bool
-    reply_text: str
+    reply_text: Optional[str]
     reply_time: Optional[datetime]
-
-
-class CounselorLeaderboardRow(BaseModel):
-    counselor_employee_id: int
-    counselor_name: Optional[str]
-    assigned_reviews: int
-    replied_reviews: int
-    pending_reviews: int
-    failed_reviews: int
-    reply_rate: float
-
-
-class CounselorLeaderboardResponse(BaseModel):
-    location_id: Optional[int]
-    date_from: Optional[datetime]
-    date_to: Optional[datetime]
-    items: List[CounselorLeaderboardRow]
-
-
-ReviewOut.model_rebuild()
 
 
 # ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Path, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -155,6 +155,11 @@ class RegisterLocationRequest(BaseModel):
     display_name: str
     address: str | None = None
     place_id: str | None = None
+    review_url: str | None = None
+
+
+class UpdateLocationReviewLinkRequest(BaseModel):
+    review_url: str | None = None
 
 
 @router.post("/locations")
@@ -189,6 +194,9 @@ async def register_location(
             if not existing.is_active:
                 existing.is_active = True
                 existing.display_name = payload.display_name
+                existing.address = payload.address
+                existing.place_id = payload.place_id
+                existing.review_url = payload.review_url
                 await db.commit()
                 await db.refresh(existing)
                 return success_response(
@@ -207,6 +215,7 @@ async def register_location(
             display_name=payload.display_name,
             address=payload.address,
             place_id=payload.place_id,
+            review_url=payload.review_url,
             is_active=True,
         )
         db.add(loc)
@@ -226,5 +235,56 @@ async def register_location(
             content=error_response(
                 error="REVIEWS_REGISTER_ERROR",
                 message=f"Failed to register location: {exc}",
+            ).model_dump(mode="json"),
+        )
+
+
+@router.patch("/locations/{location_id}/review-link")
+async def update_location_review_link(
+    payload: UpdateLocationReviewLinkRequest,
+    request: Request,
+    location_id: int = Path(..., ge=1),
+    db: AsyncSession = Depends(get_main_db_session),
+):
+    try:
+        claims = require_auth(request.headers.get("Authorization"))
+        can_setup_locations = await has_google_reviews_permission(
+            claims,
+            "reviews:setup_locations",
+        )
+        if not can_setup_locations:
+            raise GoogleReviewsError(
+                code="REVIEWS_LOCATION_UPDATE_FORBIDDEN",
+                message="You are not authorized to update Google review locations",
+                status_code=403,
+            )
+
+        stmt = select(GoogleReviewLocation).where(GoogleReviewLocation.id == location_id)
+        result = await db.execute(stmt)
+        location = result.scalar_one_or_none()
+        if not location:
+            raise GoogleReviewsError(
+                code="REVIEWS_LOCATION_NOT_FOUND",
+                message="Google review location not found",
+                status_code=404,
+            )
+
+        cleaned_review_url = (payload.review_url or "").strip() or None
+        location.review_url = cleaned_review_url
+        await db.commit()
+        await db.refresh(location)
+
+        return success_response(
+            data=LocationOut.model_validate(location).model_dump(mode="json"),
+            message="Location review link updated",
+        ).model_dump(mode="json")
+    except GoogleReviewsError as exc:
+        return _err(exc)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content=error_response(
+                error="REVIEWS_LOCATION_UPDATE_ERROR",
+                message=f"Failed to update location review link: {exc}",
             ).model_dump(mode="json"),
         )

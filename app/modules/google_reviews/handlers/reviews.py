@@ -19,7 +19,7 @@ from app.modules.google_reviews.dependencies import (
     has_google_reviews_permission,
     require_auth,
 )
-from app.modules.google_reviews.models.db import GoogleReview, GoogleReviewAssignment, ReviewAnalysis
+from app.modules.google_reviews.models.db import GoogleReview, ReviewAnalysis
 from app.modules.google_reviews.schemas.models import ReviewOut, ReviewsListResponse
 
 router = APIRouter()
@@ -42,18 +42,22 @@ async def list_reviews(
     location_id: Optional[int] = Query(None, ge=1),
     rating: Optional[int] = Query(None, ge=1, le=5),
     sentiment: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
     date_from: Optional[datetime] = Query(None),
     date_to: Optional[datetime] = Query(None),
-    assignment_status: Optional[str] = Query(None),
-    counselor_employee_id: Optional[int] = Query(None, ge=1),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_main_db_session),
 ):
     try:
         claims = require_auth(request.headers.get("Authorization"))
-        caller_employee_id = claims.get("employee_id")
-        can_read_all_reviews = await has_google_reviews_permission(claims, "reviews:read_all")
+        can_read_reviews = await has_google_reviews_permission(claims, "reviews:read")
+        if not can_read_reviews:
+            raise GoogleReviewsError(
+                code="REVIEWS_FORBIDDEN",
+                message="You are not authorized to view Google reviews",
+                status_code=403,
+            )
 
         filters = []
         if location_id:
@@ -66,34 +70,16 @@ async def list_reviews(
             filters.append(GoogleReview.review_time <= date_to)
         if sentiment:
             filters.append(ReviewAnalysis.sentiment == sentiment)
-        if assignment_status:
-            filters.append(GoogleReviewAssignment.status == assignment_status)
-        if counselor_employee_id:
-            filters.append(GoogleReviewAssignment.counselor_employee_id == counselor_employee_id)
-        if not can_read_all_reviews:
-            if caller_employee_id is None:
-                raise GoogleReviewsError(
-                    code="REVIEWS_EMPLOYEE_CONTEXT_MISSING",
-                    message="Logged-in user is missing employee context",
-                    status_code=403,
-                )
-            filters.append(GoogleReviewAssignment.counselor_employee_id == int(caller_employee_id))
-
-        needs_assignment_join = bool(
-            assignment_status or counselor_employee_id or not can_read_all_reviews
-        )
+        if status == "replied":
+            filters.append(GoogleReview.reply_text.is_not(None))
+        elif status == "pending":
+            filters.append(GoogleReview.reply_text.is_(None))
 
         count_stmt = select(func.count(GoogleReview.id))
         if sentiment:
             count_stmt = count_stmt.join(
                 ReviewAnalysis,
                 ReviewAnalysis.review_id == GoogleReview.id,
-                isouter=True,
-            )
-        if needs_assignment_join:
-            count_stmt = count_stmt.join(
-                GoogleReviewAssignment,
-                GoogleReviewAssignment.review_id == GoogleReview.id,
                 isouter=True,
             )
         if filters:
@@ -106,7 +92,6 @@ async def list_reviews(
             select(GoogleReview)
             .options(
                 selectinload(GoogleReview.analysis),
-                selectinload(GoogleReview.assignment),
             )
             .order_by(GoogleReview.review_time.desc())
             .offset(offset)
@@ -116,12 +101,6 @@ async def list_reviews(
             fetch_stmt = fetch_stmt.join(
                 ReviewAnalysis,
                 ReviewAnalysis.review_id == GoogleReview.id,
-                isouter=True,
-            )
-        if needs_assignment_join:
-            fetch_stmt = fetch_stmt.join(
-                GoogleReviewAssignment,
-                GoogleReviewAssignment.review_id == GoogleReview.id,
                 isouter=True,
             )
         if filters:
