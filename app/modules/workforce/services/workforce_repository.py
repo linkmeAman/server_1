@@ -2877,12 +2877,14 @@ class WorkforceRepository:
         out: list[dict[str, Any]] = []
         for row in rows:
             m = dict(row._mapping)
+            name = m.get("Name")
+            dept_value = m.get("Dept")
             out.append({
                 "contact_id": int(m["contact_id"]) if m.get("contact_id") is not None else None,
                 "month": str(m["Month"]) if m.get("Month") is not None else None,
                 "from_date": str(m["from_date"]) if m.get("from_date") is not None else None,
-                "name": m.get("Name"),
-                "dept": m.get("Dept"),
+                "name": name,
+                "dept": dept_value,
                 "employee_category": m.get("Employee Category"),
                 "pan": m.get("PAN"),
                 "gender": m.get("Gender"),
