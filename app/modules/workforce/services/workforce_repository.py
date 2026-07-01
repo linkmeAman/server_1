@@ -2845,6 +2845,7 @@ class WorkforceRepository:
         )
         sql = f"""
             SELECT
+                `contact_id`,
                 `Month`,
                 `from_date`,
                 `Name`,
@@ -2877,6 +2878,7 @@ class WorkforceRepository:
         for row in rows:
             m = dict(row._mapping)
             out.append({
+                "contact_id": int(m["contact_id"]) if m.get("contact_id") is not None else None,
                 "month": str(m["Month"]) if m.get("Month") is not None else None,
                 "from_date": str(m["from_date"]) if m.get("from_date") is not None else None,
                 "name": m.get("Name"),
