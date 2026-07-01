@@ -1178,6 +1178,9 @@ class WorkforceService:
         return previous_month_start.isoformat(), previous_month_end.isoformat()
 
     def _salary_excel_employee_key(self, row: dict[str, Any]) -> str:
+        contact_id = self._as_int(row.get("contact_id"))
+        if contact_id is not None and contact_id > 0:
+            return f"contact:{contact_id}"
         pan = str(row.get("pan") or "").strip().lower()
         if pan:
             return f"pan:{pan}"
@@ -1203,10 +1206,12 @@ class WorkforceService:
         for key in sorted(set(current_by_key) | set(previous_by_key)):
             current_bucket = current_by_key.get(key, [])
             previous_bucket = previous_by_key.get(key, [])
-            matched_count = min(len(current_bucket), len(previous_bucket))
-            unchanged_rows.extend({**row, "comparison_status": None} for row in current_bucket[:matched_count])
-            new_rows.extend({**row, "comparison_status": "new"} for row in current_bucket[matched_count:])
-            missing_rows.extend({**row, "comparison_status": "missing"} for row in previous_bucket[matched_count:])
+            if current_bucket and previous_bucket:
+                unchanged_rows.extend({**row, "comparison_status": None} for row in current_bucket)
+            elif current_bucket:
+                new_rows.extend({**row, "comparison_status": "new"} for row in current_bucket)
+            else:
+                missing_rows.extend({**row, "comparison_status": "missing"} for row in previous_bucket)
         return new_rows + missing_rows + unchanged_rows
 
     def _serialize_employee_row(
